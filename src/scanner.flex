@@ -1,3 +1,39 @@
+/* The lexer for the CS-5300 CPSL compiler. */
+
+%{
+// atof, atoi
+include <cmath>
+%}
+
+DIGIT [0-9]
+
+IDENTIFIER array|begin|chr|const|do|downto|else|elseif|end|for|forward|function|if|of|ord|pred|procedure|read|record|ref|repeat|return|stop|succ|then|to|type|until|var|while|write
+OPERATOR "+"|"-"|"*"|"/"|"&"|"|"|"~"|"="|"<>"|"<"|"<="|">"|">="|"."|","|":"|";"|"("|")"|"["|"]"|":="|"%"
+INTEGER ()
+CHAR
+STRING
+WHITESPACE "\n"|"\t"|" "
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* scanner for a toy Pascal-like language */
 
 %{
