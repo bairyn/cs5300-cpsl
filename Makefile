@@ -7,7 +7,9 @@ DEBUG ?= 0
 # Chain of conditionals: c.f. https://stackoverflow.com/a/11659542
 # Override opt_debug to an empty string if debugging is disabled and to a
 # non-empty string if it is enabled.
-ifeq      ($(DEBUG),)
+ifndef    DEBUG
+	override opt_debug =
+else ifeq ($(DEBUG),)
 	override opt_debug =
 else ifeq ($(DEBUG),0)
 	override opt_debug =
@@ -34,11 +36,12 @@ RELEASE_LINKER ?= g++
 
 ALL_CFLAGS      ?= $(BASE_CFLAGS)      $(CFLAGS)      $(WARN_CFLAGS)      $(OPT_CFLAGS)      $(EXTRA_CFLAGS)
 ALL_CXXFLAGS    ?= $(BASE_CXXFLAGS)    $(CXXFLAGS)    $(WARN_CXXFLAGS)    $(OPT_CXXFLAGS)    $(EXTRA_CXXFLAGS)
-ALL_LINKERFLAGS ?= $(BASE_LINKERFLAGS) $(LINKERFLAGS) $(WARN_LINKERFLAGS) $(OPT_LINKERFLAGS) $(EXTRA_LINKERFLAGS)
+ALL_LDFLAGS     ?= $(BASE_LDFLAGS)     $(LDFLAGS)     $(WARN_LDFLAGS)     $(OPT_LDFLAGS)     $(EXTRA_LDFLAGS)
+ALL_LINKERFLAGS ?= $(ALL_LDFLAGS)
 ALL_FLEXFLAGS   ?= $(BASE_FLEXFLAGS)   $(FLEXFLAGS)   $(WARN_FLEXFLAGS)   $(OPT_FLEXFLAGS)   $(EXTRA_FLEXFLAGS)
 
 CFLAGS ?= -x c -std=c99
-BASE_CFLAGS ?= -Isrc
+BASE_CFLAGS ?= -Isrc -MMD
 WARN_CFLAGS ?= -Wall
 OPT_CFLAGS ?= $(if $(opt_debug),$(DEBUG_CFLAGS),$(RELEASE_CFLAGS))
 DEBUG_CFLAGS ?= -g -pg -DDEBUG=1
@@ -46,7 +49,7 @@ RELEASE_CFLAGS ?= -O2 -DRELEASE=1
 EXTRA_CFLAGS ?=
 
 CXXFLAGS ?= -x c++ -std=c++17
-BASE_CXXFLAGS ?= -Isrc
+BASE_CXXFLAGS ?= -Isrc -MMD
 WARN_CXXFLAGS ?=
 OPT_CXXFLAGS ?= $(if $(opt_debug),$(DEBUG_CXXFLAGS),$(RELEASE_CXXFLAGS))
 DEBUG_CXXFLAGS ?= -g -pg -DDEBUG=1
@@ -106,8 +109,10 @@ $(BUILD_DIRECTORIES):
 
 # dist: Create dist filesystem structure.
 .PHONY: dist
-dist: compile $(BUILD_DIR)/dist $(BUILD_DIR)/dist$(BINDIR)
-	install -m 0775 -- "$(BUILD_DIR)/$(EXEC)" "$(BUILD_DIR)/dist$(BINDIR)/$(EXEC)"
+dist: $(BUILD_DIR)/dist$(BINDIR)/$(EXEC)
+
+$(BUILD_DIR)/dist$(BINDIR)/$(EXEC): $(BUILD_DIR)/$(EXEC) | $(BUILD_DIR)/dist $(BUILD_DIR)/dist$(BINDIR)
+	install -m 0775 -- "$<" "$@"
 
 # compile: build the compiler executable, cpsl-cc, in _build/cpsl-cc.
 .PHONY: compile
@@ -133,21 +138,23 @@ CXX_GEN_OBJS = \
 	$(BUILD_DIR)/scanner.yy.o \
 	#
 
-$(BUILD_DIR)/$(EXEC): $(OBJS) $(BUILD_DIR)
+-include $(OBJS:%.o=%.d)
+
+$(BUILD_DIR)/$(EXEC): $(OBJS) | $(BUILD_DIR)
 	$(LINKER) $(ALL_LINKERFLAGS) -o "$@" $(OBJS)
 
-$(BUILD_DIR)/scanner.yy.cc: $(SRC_DIR)/scanner.flex $(BUILD_DIR)
+$(BUILD_DIR)/scanner.yy.cc: $(SRC_DIR)/scanner.flex | $(BUILD_DIR)
 	$(FLEX) $(FLEXFLAGS) $(EXTRA_FLEXFLAGS) -o "$@" "$<"
 
 # https://stackoverflow.com/a/16263002
-$(C_OBJS): $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c $(BUILD_DIR)
+$(C_OBJS): $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
 	$(CC) $(ALL_CFLAGS) -o "$@" -c "$<"
 
-$(CXX_OBJS): $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cc $(BUILD_DIR)
+$(CXX_OBJS): $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cc | $(BUILD_DIR)
 	$(CXX) $(ALL_CXXFLAGS) -o "$@" -c "$<"
 
-$(C_GEN_OBJS): $(BUILD_DIR)/%.o: $(BUILD_DIR)/%.c $(BUILD_DIR)
+$(C_GEN_OBJS): $(BUILD_DIR)/%.o: $(BUILD_DIR)/%.c | $(BUILD_DIR)
 	$(CC) $(ALL_CFLAGS) -o "$@" -c "$<"
 
-$(CXX_GEN_OBJS): $(BUILD_DIR)/%.o: $(BUILD_DIR)/%.cc $(BUILD_DIR)
+$(CXX_GEN_OBJS): $(BUILD_DIR)/%.o: $(BUILD_DIR)/%.cc | $(BUILD_DIR)
 	$(CXX) $(ALL_CXXFLAGS) -o "$@" -c "$<"
