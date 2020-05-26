@@ -1,0 +1,114 @@
+#------------------------------------------------------------------------------
+# Build directories
+
+/_build
+
+#------------------------------------------------------------------------------
+# git
+
+/MESSAGE
+
+#------------------------------------------------------------------------------
+# C
+# https://raw.githubusercontent.com/github/gitignore/f76d0890d4ee304590eb4b5cf77c51132fdc5ff9/C.gitignore
+
+# Prerequisites
+*.d
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Linker output
+*.ilk
+*.map
+*.exp
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Kernel Module Compile Results
+*.mod*
+*.cmd
+.tmp_versions/
+modules.order
+Module.symvers
+Mkfile.old
+dkms.conf
+
+#------------------------------------------------------------------------------
+# C++
+# https://raw.githubusercontent.com/github/gitignore/2c52d023ddb520962d1aa81ab030ee5172261eb2/C%2B%2B.gitignore
+
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+#------------------------------------------------------------------------------
+# vim
+# https://raw.githubusercontent.com/github/gitignore/9f1b7d77e24ec9c3e2681da93b68767fd96dd52b/Global/Vim.gitignore
+
+[._]*.s[a-w][a-z]
+[._]s[a-w][a-z]
+*.un~
+Session.vim
+.netrwhist
+*~
