@@ -102,8 +102,8 @@ clean:
 BUILD_DIR = _build
 BUILD_DIRECTORIES = $(BUILD_DIR) $(BUILD_DIR)/dist $(BUILD_DIR)/dist$(BINDIR)
 $(BUILD_DIR):
-$(BUILD_DIR)/dist: $(BUILD_DIR)
-$(BUILD_DIR)/dist$(BINDIR): $(BUILD_DIR) $(BUILD_DIR)/dist
+$(BUILD_DIR)/dist: | $(BUILD_DIR)
+$(BUILD_DIR)/dist$(BINDIR): | $(BUILD_DIR) $(BUILD_DIR)/dist
 $(BUILD_DIRECTORIES):
 	install -d -m 0775 -- "$@"
 

@@ -4,6 +4,8 @@
 %option noyywrap
 
 %{
+#include <sstream>  // std::ostringstream
+
 #include "lexer.hh"
 
 #include "scanner.hh"
@@ -43,7 +45,11 @@ IDENTIFIER  {
 	/* ... */
 }
 
-.  printf( "Unrecognized character: %s\n", yytext );
+. {
+	std::ostringstream sstr;
+	sstr << "Unrecognized character: %s" << yytext;
+	throw LexerError(sstr.str());
+}
 
 %%
 
