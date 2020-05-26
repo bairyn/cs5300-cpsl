@@ -1,5 +1,8 @@
 /* The lexer for the CS-5300 CPSL compiler. */
 
+/* Make compatible with C++: c.f. https://stackoverflow.com/a/57061573 */
+%option noyywrap
+
 %{
 #include "lexer.hh"
 
@@ -32,7 +35,9 @@ WHITESPACE "\n"|"\t"|" "
 
 %%
 
-/* Handlers. */
+	/* TODO */
+
+	/* Handlers. */
 
 IDENTIFIER  {
 	/* ... */

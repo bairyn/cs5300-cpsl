@@ -9,5 +9,5 @@ namespace cli {
 
 	// | run: Run the command-line interface to the compiler given the provided
 	// command-line arguments.
-	void run(std::vector<std::string> argv);
+	void run(const std::vector<std::string> &argv);
 }

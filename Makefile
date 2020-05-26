@@ -22,19 +22,23 @@ BINDIR ?= $(PREFIX)/bin
 
 CC ?= gcc
 CXX ?= g++
-LD ?= $(if $(opt_debug),$(DEBUG_LD),$(RELEASE_LD))
+LD ?= ld
+LINKER ?= $(if $(opt_debug),$(DEBUG_LINKER),$(RELEASE_LINKER))
 FLEX ?= flex
 # To simplify linking with profiling, use g++ with -pg rather than ld with gcrt1.o and -lc_p.
-DEBUG_LD ?= g++
-RELEASE_LD ?= ld
+DEBUG_LINKER ?= g++
+# Using ld directly to link seems to require additional configuration to not
+# generate tons of errors.
+#RELEASE_LINKER ?= $(LD)
+RELEASE_LINKER ?= g++
 
-ALL_CFLAGS    ?= $(BASE_CFLAGS)    $(CFLAGS)    $(WARN_CFLAGS)    $(OPT_CFLAGS)    $(EXTRA_CFLAGS)
-ALL_CXXFLAGS  ?= $(BASE_CXXFLAGS)  $(CXXFLAGS)  $(WARN_CXXFLAGS)  $(OPT_CXXFLAGS)  $(EXTRA_CXXFLAGS)
-ALL_LDFLAGS   ?= $(BASE_LDFLAGS)   $(LDFLAGS)   $(WARN_LDFLAGS)   $(OPT_LDFLAGS)   $(EXTRA_LDFLAGS)
-ALL_FLEXFLAGS ?= $(BASE_FLEXFLAGS) $(FLEXFLAGS) $(WARN_FLEXFLAGS) $(OPT_FLEXFLAGS) $(EXTRA_FLEXFLAGS)
+ALL_CFLAGS      ?= $(BASE_CFLAGS)      $(CFLAGS)      $(WARN_CFLAGS)      $(OPT_CFLAGS)      $(EXTRA_CFLAGS)
+ALL_CXXFLAGS    ?= $(BASE_CXXFLAGS)    $(CXXFLAGS)    $(WARN_CXXFLAGS)    $(OPT_CXXFLAGS)    $(EXTRA_CXXFLAGS)
+ALL_LINKERFLAGS ?= $(BASE_LINKERFLAGS) $(LINKERFLAGS) $(WARN_LINKERFLAGS) $(OPT_LINKERFLAGS) $(EXTRA_LINKERFLAGS)
+ALL_FLEXFLAGS   ?= $(BASE_FLEXFLAGS)   $(FLEXFLAGS)   $(WARN_FLEXFLAGS)   $(OPT_FLEXFLAGS)   $(EXTRA_FLEXFLAGS)
 
 CFLAGS ?= -x c -std=c99
-BASE_CFLAGS ?=
+BASE_CFLAGS ?= -Isrc
 WARN_CFLAGS ?= -Wall
 OPT_CFLAGS ?= $(if $(opt_debug),$(DEBUG_CFLAGS),$(RELEASE_CFLAGS))
 DEBUG_CFLAGS ?= -g -pg -DDEBUG=1
@@ -42,7 +46,7 @@ RELEASE_CFLAGS ?= -O2 -DRELEASE=1
 EXTRA_CFLAGS ?=
 
 CXXFLAGS ?= -x c++ -std=c++17
-BASE_CXXFLAGS ?=
+BASE_CXXFLAGS ?= -Isrc
 WARN_CXXFLAGS ?=
 OPT_CXXFLAGS ?= $(if $(opt_debug),$(DEBUG_CXXFLAGS),$(RELEASE_CXXFLAGS))
 DEBUG_CXXFLAGS ?= -g -pg -DDEBUG=1
@@ -58,6 +62,14 @@ OPT_LDFLAGS ?= $(if $(opt_debug),$(DEBUG_LDFLAGS),$(RELEASE_LDFLAGS))
 DEBUG_LDFLAGS ?= -pg
 RELEASE_LDFLAGS ?=
 EXTRA_LDFLAGS ?=
+
+LINKERFLAGS ?= $(LDFLAGS)
+BASE_LINKERFLAGS ?= $(BASE_LDFLAGS)
+WARN_LINKERFLAGS ?= $(WARN_LDFLAGS)
+OPT_LINKERFLAGS ?= $(OPT_LDFLAGS)
+DEBUG_LINKERFLAGS ?= $(DEBUG_LDFLAGS)
+RELEASE_LINKERFLAGS ?= $(RELEASE_LDFLAGS)
+EXTRA_LINKERFLAGS ?= $(DEBUG_LDFLAGS)
 
 FLEXFLAGS ?=
 BASE_FLEXFLAGS ?=
@@ -95,7 +107,7 @@ $(BUILD_DIRECTORIES):
 # dist: Create dist filesystem structure.
 .PHONY: dist
 dist: compile $(BUILD_DIR)/dist $(BUILD_DIR)/dist$(BINDIR)
-	install -m 0664 -- "$(BUILD_DIR)/$(EXEC)" "$(BUILD_DIR)/dist$(BINDIR)/$(EXEC)"
+	install -m 0775 -- "$(BUILD_DIR)/$(EXEC)" "$(BUILD_DIR)/dist$(BINDIR)/$(EXEC)"
 
 # compile: build the compiler executable, cpsl-cc, in _build/cpsl-cc.
 .PHONY: compile
@@ -112,6 +124,7 @@ C_GEN_OBJS = \
 	#
 
 CXX_OBJS = \
+	$(BUILD_DIR)/cli.o \
 	$(BUILD_DIR)/lexer.o \
 	$(BUILD_DIR)/main.o \
 	#
@@ -121,20 +134,20 @@ CXX_GEN_OBJS = \
 	#
 
 $(BUILD_DIR)/$(EXEC): $(OBJS) $(BUILD_DIR)
-	$(LD) $(ALL_LDFLAGS) -o "$@" -- $(OBJS)
+	$(LINKER) $(ALL_LINKERFLAGS) -o "$@" $(OBJS)
 
-$(BUILD_DIR)/scanner.yy.cc: $(SRC_DIR)/scanner.flex
+$(BUILD_DIR)/scanner.yy.cc: $(SRC_DIR)/scanner.flex $(BUILD_DIR)
 	$(FLEX) $(FLEXFLAGS) $(EXTRA_FLEXFLAGS) -o "$@" "$<"
 
 # https://stackoverflow.com/a/16263002
-$(C_OBJS): $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
+$(C_OBJS): $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c $(BUILD_DIR)
 	$(CC) $(ALL_CFLAGS) -o "$@" -c "$<"
 
-$(CXX_OBJS): $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cc
+$(CXX_OBJS): $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cc $(BUILD_DIR)
 	$(CXX) $(ALL_CXXFLAGS) -o "$@" -c "$<"
 
-$(C_GEN_OBJS): $(BUILD_DIR)/%.o: $(BUILD_DIR)/%.c
+$(C_GEN_OBJS): $(BUILD_DIR)/%.o: $(BUILD_DIR)/%.c $(BUILD_DIR)
 	$(CC) $(ALL_CFLAGS) -o "$@" -c "$<"
 
-$(CXX_GEN_OBJS): $(BUILD_DIR)/%.o: $(BUILD_DIR)/%.cc
+$(CXX_GEN_OBJS): $(BUILD_DIR)/%.o: $(BUILD_DIR)/%.cc $(BUILD_DIR)
 	$(CXX) $(ALL_CXXFLAGS) -o "$@" -c "$<"

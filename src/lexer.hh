@@ -1,6 +1,6 @@
 #include <cstdint>    // uint8_t, uint64_t
-#include <exception>  // std::runtime_error
 #include <map>        // std::map
+#include <stdexcept>  // std::runtime_error
 #include <string>     // std::string
 #include <utility>    // std::pair
 #include <variant>    // std::variant
