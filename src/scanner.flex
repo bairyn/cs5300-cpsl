@@ -1,86 +1,48 @@
 /* The lexer for the CS-5300 CPSL compiler. */
 
 %{
-// atof, atoi
-include <cmath>
+#include "lexer.hh"
+
+#include "scanner.hh"
 %}
 
-DIGIT [0-9]
+DIGIT       [0-9]
+HEXDIGIT    [0-9]|[a-f]|[A-F]
+OCTALDIGIT  [0-7]
+LOWER       [a-z]
+UPPER       [A-Z]
+LETTER      {UPPER}|{LOWER}
+INNERCHAR   [^\[^:print:]]|"\\"[[:print:]]
 
-IDENTIFIER array|begin|chr|const|do|downto|else|elseif|end|for|forward|function|if|of|ord|pred|procedure|read|record|ref|repeat|return|stop|succ|then|to|type|until|var|while|write
+OCTAL "0"{OCTALDIGIT}*
+HEX "0x"{HEXDIGIT}*
+/*
+ * Just fail on non-octal numbers beginning with "0", as opposed to treating it
+ * as a decimal value, at the lexer/scanner phase.
+ */
+DECIMAL [1-9]{DIGIT}*
+
+IDENTIFIER {LETTER}({LETTER}|{DIGIT}|"_")*
+KEYWORD array|begin|chr|const|do|downto|else|elseif|end|for|forward|function|if|of|ord|pred|procedure|read|record|ref|repeat|return|stop|succ|then|to|type|until|var|while|write
 OPERATOR "+"|"-"|"*"|"/"|"&"|"|"|"~"|"="|"<>"|"<"|"<="|">"|">="|"."|","|":"|";"|"("|")"|"["|"]"|":="|"%"
-INTEGER ()
-CHAR
-STRING
+INTEGER {OCTAL}|{HEX}|{DECIMAL}
+CHAR "'"{INNERCHAR}"'"
+STRING "\""{INNERCHAR}*"\""
 WHITESPACE "\n"|"\t"|" "
 
+%%
 
+/* Handlers. */
 
+IDENTIFIER  {
+	/* ... */
+}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/* scanner for a toy Pascal-like language */
-
-%{
-/* need this for the call to atof() below */
-#include <math.h>
-%}
-
-DIGIT    [0-9]
-ID       [a-z][a-z0-9]*
+.  printf( "Unrecognized character: %s\n", yytext );
 
 %%
 
-{DIGIT}+    {
-            printf( "An integer: %s (%d)\n", yytext,
-                    atoi( yytext ) );
-            }
-
-{DIGIT}+"."{DIGIT}*        {
-            printf( "A float: %s (%g)\n", yytext,
-                    atof( yytext ) );
-            }
-
-if|then|begin|end|procedure|function        {
-            printf( "A keyword: %s\n", yytext );
-            }
-
-{ID}        printf( "An identifier: %s\n", yytext );
-
-"+"|"-"|"*"|"/"   printf( "An operator: %s\n", yytext );
-
-"{"[^}\n]*"}"     /* eat up one-line comments */
-
-[ \t\n]+          /* eat up whitespace */
-
-.           printf( "Unrecognized character: %s\n", yytext );
-
-%%
-
-main( argc, argv )
-int argc;
-char **argv;
-    {
-    ++argv, --argc;  /* skip over program name */
-    if ( argc > 0 )
-            yyin = fopen( argv[0], "r" );
-    else
-            yyin = stdin;
-
-    yylex();
-    }
+void scan(FILE *fh) {
+	yyin = fh;
+	yylex();
+}

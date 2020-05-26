@@ -2,26 +2,77 @@
 .PHONY: default
 default: all
 
-# Configurable settings.
-CFLAGS ?= -Wall -x c -std=c99
-EXTRA_CFLAGS ?= -O2
-CXXFLAGS ?= -Wall -x c++ -std=c++17
-EXTRA_CXXFLAGS ?= -O2
-LDFLAGS ?=
-EXTRA_LDFLAGS ?=
-FLEXFLAGS ?=
-EXTRA_FLEXFLAGS ?=
-CC ?= gcc
-CXX ?= g++
-FLEX ?= flex
-LD ?= ld
+# Get debugging settings.
+DEBUG ?= 0
+# Chain of conditionals: c.f. https://stackoverflow.com/a/11659542
+# Override opt_debug to an empty string if debugging is disabled and to a
+# non-empty string if it is enabled.
+ifeq      ($(DEBUG),)
+	override opt_debug =
+else ifeq ($(DEBUG),0)
+	override opt_debug =
+else
+	override opt_debug = 1
+endif
+
+# Configurable settings.  (OPT_* can contain optimization and debugging flags.)
 
 PREFIX ?= /usr
 BINDIR ?= $(PREFIX)/bin
 
-# Constants.
+CC ?= gcc
+CXX ?= g++
+LD ?= $(if $(opt_debug),$(DEBUG_LD),$(RELEASE_LD))
+FLEX ?= flex
+# To simplify linking with profiling, use g++ with -pg rather than ld with gcrt1.o and -lc_p.
+DEBUG_LD ?= g++
+RELEASE_LD ?= ld
+
+ALL_CFLAGS    ?= $(BASE_CFLAGS)    $(CFLAGS)    $(WARN_CFLAGS)    $(OPT_CFLAGS)    $(EXTRA_CFLAGS)
+ALL_CXXFLAGS  ?= $(BASE_CXXFLAGS)  $(CXXFLAGS)  $(WARN_CXXFLAGS)  $(OPT_CXXFLAGS)  $(EXTRA_CXXFLAGS)
+ALL_LDFLAGS   ?= $(BASE_LDFLAGS)   $(LDFLAGS)   $(WARN_LDFLAGS)   $(OPT_LDFLAGS)   $(EXTRA_LDFLAGS)
+ALL_FLEXFLAGS ?= $(BASE_FLEXFLAGS) $(FLEXFLAGS) $(WARN_FLEXFLAGS) $(OPT_FLEXFLAGS) $(EXTRA_FLEXFLAGS)
+
+CFLAGS ?= -x c -std=c99
+BASE_CFLAGS ?=
+WARN_CFLAGS ?= -Wall
+OPT_CFLAGS ?= $(if $(opt_debug),$(DEBUG_CFLAGS),$(RELEASE_CFLAGS))
+DEBUG_CFLAGS ?= -g -pg -DDEBUG=1
+RELEASE_CFLAGS ?= -O2 -DRELEASE=1
+EXTRA_CFLAGS ?=
+
+CXXFLAGS ?= -x c++ -std=c++17
+BASE_CXXFLAGS ?=
+WARN_CXXFLAGS ?=
+OPT_CXXFLAGS ?= $(if $(opt_debug),$(DEBUG_CXXFLAGS),$(RELEASE_CXXFLAGS))
+DEBUG_CXXFLAGS ?= -g -pg -DDEBUG=1
+RELEASE_CXXFLAGS ?= -O2 -DRELEASE=1
+EXTRA_CXXFLAGS ?=
+
+LDFLAGS ?=
+BASE_LDFLAGS ?=
+WARN_LDFLAGS ?=
+OPT_LDFLAGS ?= $(if $(opt_debug),$(DEBUG_LDFLAGS),$(RELEASE_LDFLAGS))
+# If using ld directly, this resource may be useful:
+# https://ftp.gnu.org/old-gnu/Manuals/gprof-2.9.1/html_chapter/gprof_2.html
+DEBUG_LDFLAGS ?= -pg
+RELEASE_LDFLAGS ?=
+EXTRA_LDFLAGS ?=
+
+FLEXFLAGS ?=
+BASE_FLEXFLAGS ?=
+WARN_FLEXFLAGS ?=
+OPT_FLEXFLAGS ?= $(if $(opt_debug),$(DEBUG_FLEXFLAGS),$(RELEASE_FLEXFLAGS))
+DEBUG_FLEXFLAGS ?=
+RELEASE_FLEXFLAGS ?=
+EXTRA_FLEXFLAGS ?=
+
+# Constants and variables.
+
 # Compiler executable file name.
 EXEC = cpsl-cc
+
+SRC_DIR = src
 
 # all: compile and dist.
 .PHONY: all
@@ -50,26 +101,40 @@ dist: compile $(BUILD_DIR)/dist $(BUILD_DIR)/dist$(BINDIR)
 .PHONY: compile
 compile: $(BUILD_DIR)/$(EXEC)
 
-$(BUILD_DIR)/$(EXEC): $(OBJS) $(BUILD_DIR)
-	$(LD) $(LDFLAGS) $(LDFLAGS_EXTRA) -o "$@" -- $(OBJS)
-
-OBJS = $(C_OBJS) $(CXX_OBJS)
+OBJS = $(C_OBJS) $(CXX_OBJS) $(C_GEN_OBJS) $(CXX_GEN_OBJS)
 
 C_OBJS = \
 	#$(BUILD_DIR)/foo.o \
 	#
 
+C_GEN_OBJS = \
+	#$(BUILD_DIR)/foo.o \
+	#
+
 CXX_OBJS = \
-	$(BUILD_DIR)/scanner.yy.o \
 	$(BUILD_DIR)/lexer.o \
 	$(BUILD_DIR)/main.o \
 	#
 
-$(BUILD_DIR)/scanner.yy.o: src/scanner.flex
+CXX_GEN_OBJS = \
+	$(BUILD_DIR)/scanner.yy.o \
+	#
+
+$(BUILD_DIR)/$(EXEC): $(OBJS) $(BUILD_DIR)
+	$(LD) $(ALL_LDFLAGS) -o "$@" -- $(OBJS)
+
+$(BUILD_DIR)/scanner.yy.cc: $(SRC_DIR)/scanner.flex
 	$(FLEX) $(FLEXFLAGS) $(EXTRA_FLEXFLAGS) -o "$@" "$<"
 
-$(C_OBJS):
-	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o "$@" -c "$(shell basename -- "$@")"
+# https://stackoverflow.com/a/16263002
+$(C_OBJS): $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
+	$(CC) $(ALL_CFLAGS) -o "$@" -c "$<"
 
-$(CXX_OBJS):
-	$(CXX) $(CXXFLAGS) $(EXTRA_CXXFLAGS) -o "$@" -c "$(shell basename -- "$@")"
+$(CXX_OBJS): $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cc
+	$(CXX) $(ALL_CXXFLAGS) -o "$@" -c "$<"
+
+$(C_GEN_OBJS): $(BUILD_DIR)/%.o: $(BUILD_DIR)/%.c
+	$(CC) $(ALL_CFLAGS) -o "$@" -c "$<"
+
+$(CXX_GEN_OBJS): $(BUILD_DIR)/%.o: $(BUILD_DIR)/%.cc
+	$(CXX) $(ALL_CXXFLAGS) -o "$@" -c "$<"

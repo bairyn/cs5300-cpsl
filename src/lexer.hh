@@ -1,8 +1,14 @@
+#include <cstdint>    // uint8_t, uint64_t
 #include <exception>  // std::runtime_error
-#include <integer>    // uint64_t
 #include <map>        // std::map
 #include <string>     // std::string
+#include <utility>    // std::pair
+#include <variant>    // std::variant
 #include <vector>     // std::vector
+
+/*
+ * Exceptions types.
+ */
 
 class LexerError : public std::runtime_error {
 public:
@@ -10,46 +16,12 @@ public:
 	LexerError(std::string message);
 };
 
-class Lexeme {
-public:
-	Lexeme(lexeme_tag_t tag, const lexeme_data_t &data);
-	Lexeme(lexeme_tag_t tag, lexeme_data_t &&data);
-	lexeme_tag_t tag;
-	lexeme_data_t data;
+/*
+ * Lexeme types.
+ */
 
-	~Lexeme();
-	Lexeme(const Lexeme &val);
-	Lexeme &operator=(const Lexeme &val);
-	Lexeme(Lexeme &&val);
-	Lexeme &operator=(Lexeme &&val);
-};
-
-// Unrestricted unions: c.f. https://faouellet.github.io/unrestricted-unions/
-typedef enum lexeme_tag_e lexeme_tag_t;
-enum lexeme_tag_e {
-	null_lexeme_tag = 0,
-	identifier_tag  = 1,
-	operator_tag    = 2,
-	integer_tag     = 3,
-	char_tag        = 4,
-	string_tag      = 5,
-	whitespace_tag  = 6,
-	num_lexeme_tags = 6,
-};
-
-typedef union lexeme_data_u lexeme_data_t;
-union lexeme_data_u {
-	LexemeIdentifier identifier_lexeme;
-	LexemeOperator operator_lexeme;
-	LexemeInteger integer_lexeme;
-	LexemeString string_lexeme;
-	LexemeWhitespace whitespace_lexeme;
-};
-
-// TODO: add LexemeBase (or its arguments) to constructor arguments.
 class LexemeBase {
 public:
-	LexemeBase();
 	LexemeBase(uint64_t line, uint64_t column, std::string text);
 
 	uint64_t line;
@@ -57,58 +29,62 @@ public:
 	std::string text;
 };
 
-typedef enum identifier_e identifier_t;
-enum identifier_e {
-	null_identifier      = 0,
-	array_identifier     = 1,
-	begin_identifier     = 2,
-	chr_identifier       = 3,
-	const_identifier     = 4,
-	do_identifier        = 5,
-	downto_identifier    = 6,
-	else_identifier      = 7,
-	elseif_identifier    = 8,
-	end_identifier       = 9,
-	for_identifier       = 10,
-	forward_identifier   = 11,
-	function_identifier  = 12,
-	if_identifier        = 13,
-	of_identifier        = 14,
-	ord_identifier       = 15,
-	pred_identifier      = 16,
-	procedure_identifier = 17,
-	read_identifier      = 18,
-	record_identifier    = 19,
-	ref_identifier       = 20,
-	repeat_identifier    = 21,
-	return_identifier    = 22,
-	stop_identifier      = 23,
-	succ_identifier      = 24,
-	then_identifier      = 25,
-	to_identifier        = 26,
-	type_identifier      = 27,
-	until_identifier     = 28,
-	var_identifier       = 29,
-	while_identifier     = 30,
-	write_identifier     = 31,
-	num_identifiers      = 31,
-};
-
 class LexemeIdentifier : public LexemeBase {
 public:
-	LexemeIdentifier();
-	LexemeIdentifier(identifier_t identifier);
-	// | Construct an identifier lexeme by text, using "null_identifier" on an
-	// unrecognized identifier.
-	LexemeIdentifier(std::string text);
-
-	identifier_t identifier;
-
-	static const std::map<std::string, identifier_t> identifier_map;
-	static identifier_t get_identifier(std::string text);
+	LexemeIdentifier(const LexemeBase &lexeme_base);
 };
 
-typedef enum operator_e operator_t;
+enum keyword_e {
+	null_keyword      = 0,
+	array_keyword     = 1,
+	begin_keyword     = 2,
+	chr_keyword       = 3,
+	const_keyword     = 4,
+	do_keyword        = 5,
+	downto_keyword    = 6,
+	else_keyword      = 7,
+	elseif_keyword    = 8,
+	end_keyword       = 9,
+	for_keyword       = 10,
+	forward_keyword   = 11,
+	function_keyword  = 12,
+	if_keyword        = 13,
+	of_keyword        = 14,
+	ord_keyword       = 15,
+	pred_keyword      = 16,
+	procedure_keyword = 17,
+	read_keyword      = 18,
+	record_keyword    = 19,
+	ref_keyword       = 20,
+	repeat_keyword    = 21,
+	return_keyword    = 22,
+	stop_keyword      = 23,
+	succ_keyword      = 24,
+	then_keyword      = 25,
+	to_keyword        = 26,
+	type_keyword      = 27,
+	until_keyword     = 28,
+	var_keyword       = 29,
+	while_keyword     = 30,
+	write_keyword     = 31,
+	num_keywords      = 31,
+};
+typedef enum keyword_e keyword_t;
+
+class LexemeKeyword : public LexemeBase {
+public:
+	LexemeKeyword(const LexemeBase &lexeme_base, keyword_t keyword);
+	// | Automatically find the keyword from the text, raising an exception if
+	// it isn't recognized.
+	LexemeKeyword(const LexemeBase &lexeme_base);
+
+	keyword_t keyword;
+	bool uppercase;
+
+	static const std::map<std::string, keyword_t> keyword_map;
+	static std::pair<keyword_t, bool> get_keyword(std::string text);
+};
+
 enum operator_e {
 	null_operator                               = 0,
 	plus_operator                               = 1,
@@ -136,22 +112,21 @@ enum operator_e {
 	percent_operator                            = 23,
 	num_operators                               = 23,
 };
+typedef enum operator_e operator_t;
 
 class LexemeOperator : public LexemeBase {
 public:
-	LexemeOperator();
-	LexemeOperator(operator_t operator_);
-	// | Construct an operator lexeme by text, using "null_identifier" on an
-	// unrecognized identifier.
-	LexemeOperator(std::string text);
+	LexemeOperator(const LexemeBase &lexeme_base, operator_t operator_);
+	// | Automatically find the operator from the text, raising an exception if
+	// it isn't recognized.
+	LexemeOperator(const LexemeBase &lexeme_base);
 
-	identifier_t identifier;
+	operator_t operator_;
 
 	static const std::map<std::string, operator_t> operator_map;
 	static operator_t get_operator(std::string text);
 };
 
-typedef enum lexeme_integer_base_e lexeme_integer_base_t;
 enum lexeme_integer_base_e {
 	lexeme_integer_base_null = 0,
 	lexeme_integer_base_10 = 1,
@@ -159,12 +134,14 @@ enum lexeme_integer_base_e {
 	lexeme_integer_base_8 = 3,
 	num_lexeme_integer_bases = 3,
 };
+typedef enum lexeme_integer_base_e lexeme_integer_base_t;
 
 class LexemeInteger : public LexemeBase {
 public:
-	LexemeInteger();
-	LexemeInteger(lexeme_integer_base_t integer_base, uint64_t first_digits, std::vector<uint64_t> remaining_digits);
-	LexemeInteger(std::string text);
+	LexemeInteger(const LexemeBase &lexeme_base, lexeme_integer_base_t integer_base, uint64_t first_digits, const std::vector<uint64_t> &remaining_digits);
+	LexemeInteger(const LexemeBase &lexeme_base, lexeme_integer_base_t integer_base, uint64_t first_digits, std::vector<uint64_t> &&remaining_digits);
+	// | Automatically determine the integer from the text.
+	LexemeInteger(const LexemeBase &lexeme_base);
 
 	lexeme_integer_base_t integer_base;
 	// | Read the greatest number of digits that will fit into a uint64.
@@ -173,23 +150,70 @@ public:
 	std::vector<uint64_t> remaining_digits;
 };
 
+#define LEXEME_CHAR_PERMIT_OMITTED_QUOTES false
 class LexemeChar : public LexemeBase {
 public:
-	LexemeChar();
-	LexemeChar(uint8_t char_);
+	LexemeChar(const LexemeBase &lexeme_base, uint8_t char_);
+	LexemeChar(const LexemeBase &lexeme_base);
 	uint8_t char_;
+
+	static const bool permit_omitted_quotes;
 };
 
+class LexemeComment : public LexemeBase {
+public:
+	LexemeComment(const LexemeBase &lexeme_base);
+};
 
+#define LEXEME_STRING_PERMIT_OMITTED_QUOTES false
 class LexemeString : public LexemeBase {
 public:
-	LexemeString();
-	LexemeString(std::string expanded);
+	LexemeString(const LexemeBase &lexeme_base, std::string expanded);
+	LexemeString(const LexemeBase &lexeme_base);
 	// The string with escapes expanded.
 	std::string expanded;
+
+	static const bool permit_omitted_quotes;
 };
 
 class LexemeWhitespace : public LexemeBase {
 public:
 	LexemeWhitespace();
+};
+
+/*
+ * Lexeme class.
+ */
+
+enum lexeme_tag_e {
+	null_lexeme_tag = 0,
+	keyword_tag     = 1,
+	identifier_tag  = 2,
+	operator_tag    = 3,
+	integer_tag     = 4,
+	char_tag        = 5,
+	string_tag      = 6,
+	comment_tag     = 7,
+	whitespace_tag  = 8,
+	num_lexeme_tags = 8,
+};
+typedef enum lexeme_tag_e lexeme_tag_t;
+
+using lexeme_data_t = std::variant<
+	LexemeKeyword,
+	LexemeIdentifier,
+	LexemeOperator,
+	LexemeInteger,
+	LexemeChar,
+	LexemeString,
+	LexemeComment,
+	LexemeWhitespace
+>;
+
+class Lexeme {
+public:
+	Lexeme(lexeme_tag_t tag, const lexeme_data_t &data);
+	Lexeme(lexeme_tag_t tag, lexeme_data_t &&data);
+	lexeme_tag_t tag;
+	lexeme_data_t data;
 };

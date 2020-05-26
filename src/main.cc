@@ -1,4 +1,4 @@
-#include <cli.hh>
+#include "cli.hh"
 
 // Wrapper around cli::cli.
 int main(int argc, char *argv[]) {

@@ -1,8 +1,19 @@
+#include <algorithm>  // std::all_of
+#include <cctype>     // std::isupper, std::tolower
+#include <cstdint>    // uint8_t, uint64_t
+#include <iterator>   // std::back_inserter
+#include <map>        // std::map
+#include <sstream>    // std::ostringstream
+#include <string>     // std::string
+#include <utility>    // std::as_const, std::pair
+#include <variant>    // std::bad_variant_access, std::get
+#include <vector>     // std::vector
+
 #include "lexer.hh"
 
-#include <map>      // std::map
-#include <sstream>  // std::ostringstream
-#include <string>   // std::string
+/*
+ * Exception types.
+ */
 
 LexerError::LexerError()
 	: runtime_error("A lexer error occurred.")
@@ -12,232 +23,9 @@ LexerError::LexerError(std::string message)
 	: runtime_error(message)
 	{}
 
-Lexeme::Lexeme(lexeme_tag_t tag, const lexeme_data_t &data)
-	: tag(tag) {
-	switch (tag) {
-		case identifier_tag:
-			new (&this->data.identifier_lexeme) IdentifierLexeme(data.IdentifierLexeme);
-			break;
-
-		case operator_tag:
-			new (&this->data.operator_lexeme) OperatorLexeme(data.OperatorLexeme);
-			break;
-
-		case integer_tag:
-			new (&this->data.integer_lexeme) IntegerLexeme(data.IntegerLexeme);
-			break;
-
-		case char_tag:
-			new (&this->data.char_lexeme) CharLexeme(data.CharLexeme);
-			break;
-
-		case string_tag:
-			new (&this->data.string_lexeme) StringLexeme(data.StringLexeme);
-			break;
-
-		case null_lexeme_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Lexeme::Lexeme: invalid tag: " << tag << ".";
-			throw LexerException(sstr.str());
-			break;
-	}
-}
-
-Lexeme::Lexeme(lexeme_tag_t tag, lexeme_data_t &&data)
-	: tag(tag) {
-	switch (tag) {
-		case identifier_tag:
-			new (&this->data.identifier_lexeme) IdentifierLexeme(data.IdentifierLexeme);
-			break;
-
-		case operator_tag:
-			new (&this->data.operator_lexeme) OperatorLexeme(data.OperatorLexeme);
-			break;
-
-		case integer_tag:
-			new (&this->data.integer_lexeme) IntegerLexeme(data.IntegerLexeme);
-			break;
-
-		case char_tag:
-			new (&this->data.char_lexeme) CharLexeme(data.CharLexeme);
-			break;
-
-		case string_tag:
-			new (&this->data.string_lexeme) StringLexeme(data.StringLexeme);
-			break;
-
-		case null_lexeme_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Lexeme::Lexeme: invalid tag: " << tag << ".";
-			throw LexerException(sstr.str());
-			break;
-	}
-}
-
-Lexeme::~Lexeme()
-	: tag(tag) {
-	switch (tag) {
-		case identifier_tag:
-			new (&this->data.identifier_lexeme) IdentifierLexeme(data.IdentifierLexeme);
-			break;
-
-		case operator_tag:
-			new (&this->data.operator_lexeme) OperatorLexeme(data.OperatorLexeme);
-			break;
-
-		case integer_tag:
-			new (&this->data.integer_lexeme) IntegerLexeme(data.IntegerLexeme);
-			break;
-
-		case char_tag:
-			new (&this->data.char_lexeme) CharLexeme(data.CharLexeme);
-			break;
-
-		case string_tag:
-			new (&this->data.string_lexeme) StringLexeme(data.StringLexeme);
-			break;
-
-		case null_lexeme_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Lexeme::~Lexeme: invalid tag: " << tag << ".";
-			throw LexerException(sstr.str());
-			break;
-	}
-}
-
-Lexeme::Lexeme(const Lexeme &val)
-	: tag(val.tag) {
-	switch (tag) {
-		case identifier_tag:
-			new (&this->data.identifier_lexeme) IdentifierLexeme(val.data.IdentifierLexeme);
-			break;
-
-		case operator_tag:
-			new (&this->data.operator_lexeme) OperatorLexeme(val.data.OperatorLexeme);
-			break;
-
-		case integer_tag:
-			new (&this->data.integer_lexeme) IntegerLexeme(val.data.IntegerLexeme);
-			break;
-
-		case char_tag:
-			new (&this->data.char_lexeme) CharLexeme(val.data.CharLexeme);
-			break;
-
-		case string_tag:
-			new (&this->data.string_lexeme) StringLexeme(val.data.StringLexeme);
-			break;
-
-		case null_lexeme_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Lexeme::Lexeme: invalid tag: " << tag << ".";
-			throw LexerException(sstr.str());
-			break;
-	}
-}
-
-Lexeme::Lexeme &operator=(const Lexeme &val)
-	: tag(val.tag) {
-	switch (tag) {
-		case identifier_tag:
-			new (&this->data.identifier_lexeme) IdentifierLexeme(val.data.IdentifierLexeme);
-			break;
-
-		case operator_tag:
-			new (&this->data.operator_lexeme) OperatorLexeme(val.data.OperatorLexeme);
-			break;
-
-		case integer_tag:
-			new (&this->data.integer_lexeme) IntegerLexeme(val.data.IntegerLexeme);
-			break;
-
-		case char_tag:
-			new (&this->data.char_lexeme) CharLexeme(val.data.CharLexeme);
-			break;
-
-		case string_tag:
-			new (&this->data.string_lexeme) StringLexeme(val.data.StringLexeme);
-			break;
-
-		case null_lexeme_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Lexeme::operator=: invalid tag: " << tag << ".";
-			throw LexerException(sstr.str());
-			break;
-	}
-}
-
-Lexeme::Lexeme(Lexeme &&val)
-	: tag(val.tag) {
-	switch (tag) {
-		case identifier_tag:
-			new (&this->data.identifier_lexeme) IdentifierLexeme(std::move(val.data.IdentifierLexeme));
-			break;
-
-		case operator_tag:
-			new (&this->data.operator_lexeme) OperatorLexeme(std::move(val.data.OperatorLexeme));
-			break;
-
-		case integer_tag:
-			new (&this->data.integer_lexeme) IntegerLexeme(std::move(val.data.IntegerLexeme));
-			break;
-
-		case char_tag:
-			new (&this->data.char_lexeme) CharLexeme(std::move(val.data.CharLexeme));
-			break;
-
-		case string_tag:
-			new (&this->data.string_lexeme) StringLexeme(std::move(val.data.StringLexeme));
-			break;
-
-		case null_lexeme_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Lexeme::Lexeme: invalid tag: " << tag << ".";
-			throw LexerException(sstr.str());
-			break;
-	}
-}
-
-Lexeme::Lexeme &operator=(Lexeme &&val)
-	: tag(val.tag) {
-	switch (tag) {
-		case identifier_tag:
-			new (&this->data.identifier_lexeme) IdentifierLexeme(std::move(val.data.IdentifierLexeme));
-			break;
-
-		case operator_tag:
-			new (&this->data.operator_lexeme) OperatorLexeme(std::move(val.data.OperatorLexeme));
-			break;
-
-		case integer_tag:
-			new (&this->data.integer_lexeme) IntegerLexeme(std::move(val.data.IntegerLexeme));
-			break;
-
-		case char_tag:
-			new (&this->data.char_lexeme) CharLexeme(std::move(val.data.CharLexeme));
-			break;
-
-		case string_tag:
-			new (&this->data.string_lexeme) StringLexeme(std::move(val.data.StringLexeme));
-			break;
-
-		case null_lexeme_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Lexeme::operator=: invalid tag: " << tag << ".";
-			throw LexerException(sstr.str());
-			break;
-	}
-}
-
-LexemeBase::LexemeBase()
-	{}
+/*
+ * Lexeme types.
+ */
 
 LexemeBase::LexemeBase(uint64_t line, uint64_t column, std::string text)
 	: line(line)
@@ -245,83 +33,94 @@ LexemeBase::LexemeBase(uint64_t line, uint64_t column, std::string text)
 	, text(text)
 	{}
 
-LexemeIdentifier::LexemeIdentifier()
+LexemeIdentifier::LexemeIdentifier(const LexemeBase &lexeme_base)
+	: LexemeBase(lexeme_base)
 	{}
 
-LexemeIdentifier::LexemeIdentifier(identifier_t identifier)
-	: identifier(identifier)
+LexemeKeyword::LexemeKeyword(const LexemeBase &lexeme_base, keyword_t keyword)
+	: LexemeBase(lexeme_base)
+	, keyword(keyword)
 	{}
 
-// | Construct an identifier by text, using "null_identifier" on an
-// unrecognized identifier.
-LexemeIdentifier::LexemeIdentifier(std::string text)
-	: identifier(text)
+// | Automatically find the keyword from the text, raising an exception if
+// it isn't recognized.
+LexemeKeyword::LexemeKeyword(const LexemeBase &lexeme_base)
+	: LexemeBase(lexeme_base)
+	, keyword(LexemeKeyword::get_keyword(lexeme_base.text).first)
+	, uppercase(LexemeKeyword::get_keyword(lexeme_base.text).second)
 	{}
 
-static const std::map<std::string, identifier_t> LexemeIdentifier::identifier_map {
-	{"array",     array_identifier},
-	{"begin",     begin_identifier},
-	{"chr",       chr_identifier},
-	{"const",     const_identifier},
-	{"do",        do_identifier},
-	{"downto",    downto_identifier},
-	{"else",      else_identifier},
-	{"elseif",    elseif_identifier},
-	{"end",       end_identifier},
-	{"for",       for_identifier},
-	{"forward",   forward_identifier},
-	{"function",  function_identifier},
-	{"if",        if_identifier},
-	{"of",        of_identifier},
-	{"ord",       ord_identifier},
-	{"pred",      pred_identifier},
-	{"procedure", procedure_identifier},
-	{"read",      read_identifier},
-	{"record",    record_identifier},
-	{"ref",       ref_identifier},
-	{"repeat",    repeat_identifier},
-	{"return",    return_identifier},
-	{"stop",      stop_identifier},
-	{"succ",      succ_identifier},
-	{"then",      then_identifier},
-	{"to",        to_identifier},
-	{"type",      type_identifier},
-	{"until",     until_identifier},
-	{"var",       var_identifier},
-	{"while",     while_identifier},
+const std::map<std::string, keyword_t> LexemeKeyword::keyword_map {
+	{"array",     array_keyword},
+	{"begin",     begin_keyword},
+	{"chr",       chr_keyword},
+	{"const",     const_keyword},
+	{"do",        do_keyword},
+	{"downto",    downto_keyword},
+	{"else",      else_keyword},
+	{"elseif",    elseif_keyword},
+	{"end",       end_keyword},
+	{"for",       for_keyword},
+	{"forward",   forward_keyword},
+	{"function",  function_keyword},
+	{"if",        if_keyword},
+	{"of",        of_keyword},
+	{"ord",       ord_keyword},
+	{"pred",      pred_keyword},
+	{"procedure", procedure_keyword},
+	{"read",      read_keyword},
+	{"record",    record_keyword},
+	{"ref",       ref_keyword},
+	{"repeat",    repeat_keyword},
+	{"return",    return_keyword},
+	{"stop",      stop_keyword},
+	{"succ",      succ_keyword},
+	{"then",      then_keyword},
+	{"to",        to_keyword},
+	{"type",      type_keyword},
+	{"until",     until_keyword},
+	{"var",       var_keyword},
+	{"while",     while_keyword},
 };
-static identifier_t LexemeIdentifier::get_identifier(std::string text) {
-	std::map<std::string, identifier_t>::const_iterator search = identifier_map.find(text);
-	if (search == identifier_map.cend()) {
+std::pair<keyword_t, bool> LexemeKeyword::get_keyword(std::string text) {
+	std::string key;
+	bool uppercase;
+
+	// All uppercase?
+	if (text.size() > 0 && std::all_of(text.cbegin(), text.cend(), [](char c){return std::isupper(static_cast<unsigned char>(c));})) {
+		uppercase = true;
+		// c.f. https://stackoverflow.com/q/1489313
+		std::transform(text.cbegin(), text.cend(), std::back_inserter(key), [](char c){return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));});
+	} else {
+		uppercase = false;
+		key = text;
+	}
+
+	std::map<std::string, keyword_t>::const_iterator search = keyword_map.find(key);
+	if (search == keyword_map.cend()) {
 		// No match found.
-		if (false) {
-			// Just return "null_identifier".
-			return null_identifier;
-		} else {
-			std::ostringstream sstr;
-			sstr << "LexemeIdentifier::get_identifier: unrecognized identifier: " << text << "";
-			throw LexerException(sstr.str());
-		}
+		std::ostringstream sstr;
+		sstr << "LexemeKeyword::get_keyword: unrecognized keyword: " << text << "";
+		throw LexerError(sstr.str());
 	} else {
 		// Match found; return the value.
-		return search->second;
+		return std::pair<keyword_t, bool>(search->second, uppercase);
 	}
 }
 
-LexemeOperator::LexemeOperator()
+LexemeOperator::LexemeOperator(const LexemeBase &lexeme_base, operator_t operator_)
+	: LexemeBase(lexeme_base)
+	, operator_(operator_)
 	{}
 
-LexemeOperator::LexemeOperator(operator_t operator)
-	: operator(operator)
+// | Automatically find the operator from the text, raising an exception if
+// it isn't recognized.
+LexemeOperator::LexemeOperator(const LexemeBase &lexeme_base)
+	: LexemeBase(lexeme_base)
+	, operator_(LexemeOperator::get_operator(lexeme_base.text))
 	{}
 
-// | Construct an operator by text, using "null_operator" on an
-// unrecognized operator.
-LexemeOperator::LexemeOperator(std::string text)
-	: operator(text)
-	{}
-
-static const std::map<std::string, operator_t> LexemeOperator::operator_map {
+const std::map<std::string, operator_t> LexemeOperator::operator_map {
 	{"+", plus_operator},
 	{"-", minus_operator},
 	{"*", times_operator},
@@ -346,20 +145,572 @@ static const std::map<std::string, operator_t> LexemeOperator::operator_map {
 	{":", colonequals_operator},
 	{"%", percent_operator},
 };
-static operator_t LexemeOperator::get_operator(std::string text) {
+operator_t LexemeOperator::get_operator(std::string text) {
 	std::map<std::string, operator_t>::const_iterator search = operator_map.find(text);
 	if (search == operator_map.cend()) {
 		// No match found.
-		if (false) {
-			// Just return "null_operator".
-			return null_operator;
-		} else {
-			std::ostringstream sstr;
-			sstr << "LexemeOperator::get_operator: unrecognized identifier: " << text << "";
-			throw LexerException(sstr.str());
-		}
+		std::ostringstream sstr;
+		sstr << "LexemeOperator::get_operator: unrecognized operator: " << text << "";
+		throw LexerError(sstr.str());
 	} else {
 		// Match found; return the value.
 		return search->second;
+	}
+}
+
+LexemeInteger::LexemeInteger(const LexemeBase &lexeme_base, lexeme_integer_base_t integer_base, uint64_t first_digits, const std::vector<uint64_t> &remaining_digits)
+	: LexemeBase(lexeme_base)
+	, integer_base(integer_base)
+	, first_digits(first_digits)
+	, remaining_digits(remaining_digits)
+	{}
+
+LexemeInteger::LexemeInteger(const LexemeBase &lexeme_base, lexeme_integer_base_t integer_base, uint64_t first_digits, std::vector<uint64_t> &&remaining_digits)
+	: LexemeBase(lexeme_base)
+	, integer_base(integer_base)
+	, first_digits(first_digits)
+	, remaining_digits(std::move(remaining_digits))
+	{}
+
+// | Automatically determine the integer from the text.
+//
+// Only some validity checks are performed.
+LexemeInteger::LexemeInteger(const LexemeBase &lexeme_base)
+	: LexemeBase(lexeme_base)
+{
+	if (text.size() <= 0) {
+		std::ostringstream sstr;
+		sstr << "LexemeInteger::LexemeInteger: could not parse an empty string as an integer.";
+		throw LexerError(sstr.str());
+	} else if (text[0] != '0') {
+		// This is a decimal-formatted integer.
+		integer_base = lexeme_integer_base_10;
+
+		// Parse the (natural) integer value.
+		bool parsed_first_group = false;
+		uint64_t this_group = 0;
+
+		for (const char &c: std::as_const(text)) {
+			if (c < '0' || c > '9') {
+				std::ostringstream sstr;
+				sstr << "LexemeInteger::LexemeInteger: unexpected decimal character '" << c << "' when parsing a decimal integer.";
+				throw LexerError(sstr.str());
+			}
+
+			uint64_t digit = static_cast<uint64_t>(c - '0');
+
+			// Can we fit another digit into the group?
+			// The maximum value that can fit in the 64-bit group of digits is 2^64-1=18446744073709551615.
+			// An overflow will occur iff
+			//     10*this_group + digit > 18446744073709551615
+			// <=>    this_group + digit/10 > 1844674407370955161.5
+			// <=>    this_group > 1844674407370955161.5 - digit/10
+			// <=>    this_group > 1844674407370955161 if digit <= 5
+			//        this_group > 1844674407370955160 otherwise
+			if (
+				(digit <= 5 && this_group > 1844674407370955161) ||
+				(digit >  5 && this_group > 1844674407370955160)
+			) {
+				// We need another uint64_t to hold more digits.
+				if (!parsed_first_group) {
+					// This is the first group of digits; store it in
+					// first_digits.
+					first_digits = this_group;
+					parsed_first_group = true;
+					this_group = 0;
+				} else {
+					// This is not the first group of digits.
+					remaining_digits.push_back(this_group);
+					this_group = 0;
+				}
+			}
+
+			// We can now parse the additional digit into "this_group".
+			this_group = 10 * this_group + digit;
+		}
+	} else if (text.size() >= 2 && text[1] == 'x') {
+		// This is a hex value.
+		integer_base = lexeme_integer_base_16;
+
+		// Make sure there is at least one hex digit.
+		if (text.size() <= 2) {
+			std::ostringstream sstr;
+			sstr << "Lexeme::Lexeme: expecting hex value after parsing only ``0x\".  Are the digits missing?";
+			throw LexerError(sstr.str());
+		}
+
+		// Parse the (natural) integer value.
+		bool parsed_first_group = false;
+		uint64_t this_group = 0;
+
+		for (const char &c: text.substr(2)) {
+			uint64_t digit;
+
+			// Is this a decimal or a hex digit?
+			if        (c >= '0' && c <= '9') {
+				digit = static_cast<uint64_t>(c - '0');
+			} else if (c >= 'A' && c <= 'F') {
+				digit = static_cast<uint64_t>(c - 'A') + 10;
+			} else if (c >= 'a' && c <= 'f') {
+				digit = static_cast<uint64_t>(c - 'a') + 10;
+			} else {
+				std::ostringstream sstr;
+				sstr << "LexemeInteger::LexemeInteger: unexpected hex character '" << c << "' when parsing a hex integer.";
+				throw LexerError(sstr.str());
+			}
+
+			// Can we fit another digit into the group?
+			if (this_group >= 0x1000000000000000) {
+				// We need another uint64_t to hold more digits.
+				if (!parsed_first_group) {
+					// This is the first group of digits; store it in
+					// first_digits.
+					first_digits = this_group;
+					parsed_first_group = true;
+					this_group = 0;
+				} else {
+					// This is not the first group of digits.
+					remaining_digits.push_back(this_group);
+					this_group = 0;
+				}
+			}
+
+			// We can now parse the additional digit into "this_group".
+			this_group = 16 * this_group + digit;
+		}
+	} else if(text.size() <= 1) {
+		// It's just 0.
+		integer_base = lexeme_integer_base_10;
+		first_digits = 0;
+		remaining_digits.clear();
+	} else {
+		// It's an octal value.  The first character is 0.
+		integer_base = lexeme_integer_base_8;
+
+		// Make sure there is at least one octal digit; the case of only "0"
+		// should already be covered.
+		if (text.size() <= 1) {
+			std::ostringstream sstr;
+			sstr << "Lexeme::Lexeme: expecting hex value after parsing only ``0\"; there is an implementation error, since this should resolve to just 0.";
+			throw LexerError(sstr.str());
+		}
+
+		// Parse the (natural) integer value.
+		bool parsed_first_group = false;
+		uint64_t this_group = 0;
+
+		for (const char &c: text.substr(1)) {
+			if (c < '0' || c > '7') {
+				std::ostringstream sstr;
+				sstr << "LexemeInteger::LexemeInteger: unexpected octal character '" << c << "' when parsing an octal integer.";
+				throw LexerError(sstr.str());
+			}
+
+			uint64_t digit = static_cast<uint64_t>(c - '0');
+
+			// Can we fit another digit into the group?
+			if (this_group >= 0x8000000000000000) {
+				// We need another uint64_t to hold more digits.
+				if (!parsed_first_group) {
+					// This is the first group of digits; store it in
+					// first_digits.
+					first_digits = this_group;
+					parsed_first_group = true;
+					this_group = 0;
+				} else {
+					// This is not the first group of digits.
+					remaining_digits.push_back(this_group);
+					this_group = 0;
+				}
+			}
+
+			// We can now parse the additional digit into "this_group".
+			this_group = 8 * this_group + digit;
+		}
+	}
+}
+
+const bool LexemeChar::permit_omitted_quotes = LEXEME_CHAR_PERMIT_OMITTED_QUOTES;
+
+LexemeChar::LexemeChar(const LexemeBase &lexeme_base, uint8_t char_)
+	: LexemeBase(lexeme_base)
+	, char_(char_)
+	{}
+
+LexemeChar::LexemeChar(const LexemeBase &lexeme_base)
+	: LexemeBase(lexeme_base)
+{
+	if        (text.size() <= 0) {
+		std::ostringstream sstr;
+		sstr << "LexemeChar::LexemeChar: cannot parse an empty string as a char.";
+		throw LexerError(sstr.str());
+	} else if (text.size() == 1) {
+		if (!permit_omitted_quotes) {
+			std::ostringstream sstr;
+			sstr << "LexemeChar::LexemeChar: cannot parse a single character without quotes as a char.";
+			throw LexerError(sstr.str());
+		}
+
+		if (text[0] == '\\') {
+			std::ostringstream sstr;
+			sstr << "LexemeChar::LexemeChar: cannot parse a single backslash ('\\') as a char.";
+			throw LexerError(sstr.str());
+		}
+
+		char_ = static_cast<uint8_t>(text[0]);
+	} else if (text.size() == 2) {
+		if (!permit_omitted_quotes) {
+			std::ostringstream sstr;
+			sstr << "LexemeChar::LexemeChar: cannot parse two characters unquoted as a char.";
+			throw LexerError(sstr.str());
+		}
+
+		if (text[0] != '\\') {
+			std::ostringstream sstr;
+			sstr << "LexemeChar::LexemeChar: cannot parse two characters without an escape as a char.";
+			throw LexerError(sstr.str());
+		}
+
+		switch (text[1]) {
+			case 'n':
+				char_ = '\n';
+				break;
+
+			case 'r':
+				char_ = '\r';
+				break;
+
+			case 'b':
+				char_ = '\b';
+				break;
+
+			case 't':
+				char_ = '\t';
+				break;
+
+			case 'f':
+				char_ = '\f';
+				break;
+
+			default:
+				char_ = static_cast<uint8_t>(text[1]);
+				break;
+		}
+	} else if (text.size() == 3) {
+		if (text[0] != '\'' || text[2] != '\'') {
+			std::ostringstream sstr;
+			sstr << "LexemeChar::LexemeChar: cannot parse string as a character; it should contain a character surrounded by single quotes.";
+			throw LexerError(sstr.str());
+		}
+
+		if (text[1] == '\\') {
+			std::ostringstream sstr;
+			sstr << "LexemeChar::LexemeChar: cannot parse only a single backslash in quotes.  Escape a backslash with another, e.g. ``\\\\\".";
+			throw LexerError(sstr.str());
+		}
+
+		char_ = static_cast<uint8_t>(text[1]);
+	} else if (text.size() > 4) {
+		std::ostringstream sstr;
+		sstr << "LexemeChar::LexemeChar: too many characters for a valid char parse.";
+		throw LexerError(sstr.str());
+	} else {  // text.size() == 4
+		if (text[0] != '\'' || text[3] != '\'') {
+			std::ostringstream sstr;
+			sstr << "LexemeChar::LexemeChar: cannot parse string as a character (with an optional escape); it should contain a character surrounded by single quotes.";
+			throw LexerError(sstr.str());
+		}
+
+		if (text[1] != '\\') {
+			std::ostringstream sstr;
+			sstr << "LexemeChar::LexemeChar: two characters inside single quotes is only a valid character if there is an escape with a backslash ('\\').";
+			throw LexerError(sstr.str());
+		}
+
+		switch (text[2]) {
+			case 'n':
+				char_ = '\n';
+				break;
+
+			case 'r':
+				char_ = '\r';
+				break;
+
+			case 'b':
+				char_ = '\b';
+				break;
+
+			case 't':
+				char_ = '\t';
+				break;
+
+			case 'f':
+				char_ = '\f';
+				break;
+
+			default:
+				char_ = static_cast<uint8_t>(text[2]);
+				break;
+		}
+	}
+}
+
+LexemeComment::LexemeComment(const LexemeBase &lexeme_base)
+	: LexemeBase(lexeme_base)
+	{}
+
+const bool LexemeString::permit_omitted_quotes = LEXEME_STRING_PERMIT_OMITTED_QUOTES;
+
+LexemeString::LexemeString(const LexemeBase &lexeme_base, std::string expanded)
+	: LexemeBase(lexeme_base)
+	, expanded(expanded)
+	{}
+
+LexemeString::LexemeString(const LexemeBase &lexeme_base)
+	: LexemeBase(lexeme_base)
+{
+	// Skip the first and last characters, which should be quotes?  This should be true, since omitting quotes to the constructor is disabled.
+	bool skip_ends;
+
+	if (
+		text.size() < 2 ||
+		text.back() != '"' ||
+		text.front() != '"'
+	) {
+		if (!permit_omitted_quotes) {
+			std::ostringstream sstr;
+			sstr << "LexemeString::LexemeString: the constructor must be called with the quotes present.  The text does not contain both a beginning and an end quote.";
+			throw LexerError(sstr.str());
+		}
+
+		skip_ends = false;
+	} else {
+		skip_ends = true;
+	}
+
+	// Get a copy of the text string without the double quotes.
+	std::string text_unquoted;
+	if (skip_ends) {
+		// Note: this branch cannot be reached if the length is < 2.
+		text_unquoted = text.substr(1, text.size() - 1 - 1);
+	} else {
+		text_unquoted = std::move(std::string(text));
+	}
+
+	// Traverse the string, expanding all escapes.  Raise an error if there is
+	// a trailing backslash that escapes nothing afterward.
+	bool is_escape = false;
+	for (const char &c: std::as_const(text_unquoted)) {
+		if (is_escape) {
+			switch (c) {
+				case 'n':
+					expanded.push_back('\n');
+					break;
+
+				case 'r':
+					expanded.push_back('\r');
+					break;
+
+				case 'b':
+					expanded.push_back('\b');
+					break;
+
+				case 't':
+					expanded.push_back('\t');
+					break;
+
+				case 'f':
+					expanded.push_back('\f');
+					break;
+
+				default:
+					expanded.push_back(c);
+					break;
+			}
+		} else {
+			if (c == '\\') {
+				is_escape = true;
+			} else {
+				expanded.push_back(c);
+			}
+		}
+	}
+
+	if (is_escape) {
+		std::ostringstream sstr;
+		sstr << "LexemeString::LexemeString: the string ends with a trailing backslash with nothing to follow it.";
+		throw LexerError(sstr.str());
+	}
+}
+
+/*
+ * Lexeme class.
+ */
+
+Lexeme::Lexeme(lexeme_tag_t tag, const lexeme_data_t &data)
+	: tag(tag)
+	, data(data)
+{
+	switch (tag) {
+		case keyword_tag:
+			try {
+				std::get<LexemeKeyword>(this->data);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case identifier_tag:
+			try {
+				std::get<LexemeIdentifier>(this->data);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case operator_tag:
+			try {
+				std::get<LexemeOperator>(this->data);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case integer_tag:
+			try {
+				std::get<LexemeInteger>(this->data);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case char_tag:
+			try {
+				std::get<LexemeChar>(this->data);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case string_tag:
+			try {
+				std::get<LexemeString>(this->data);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case whitespace_tag:
+			try {
+				std::get<LexemeWhitespace>(this->data);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case null_lexeme_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Lexeme::Lexeme: invalid tag: " << tag << ".";
+			throw LexerError(sstr.str());
+			break;
+	}
+}
+
+Lexeme::Lexeme(lexeme_tag_t tag, lexeme_data_t &&data)
+	: tag(tag)
+	, data(data)
+{
+	switch (tag) {
+		case keyword_tag:
+			try {
+				std::get<LexemeKeyword>(this->data);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case identifier_tag:
+			try {
+				std::get<LexemeIdentifier>(this->data);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case operator_tag:
+			try {
+				std::get<LexemeOperator>(this->data);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case integer_tag:
+			try {
+				std::get<LexemeInteger>(this->data);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case char_tag:
+			try {
+				std::get<LexemeChar>(this->data);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case string_tag:
+			try {
+				std::get<LexemeString>(this->data);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case whitespace_tag:
+			try {
+				std::get<LexemeWhitespace>(this->data);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case null_lexeme_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Lexeme::Lexeme: invalid tag: " << tag << ".";
+			throw LexerError(sstr.str());
+			break;
 	}
 }
