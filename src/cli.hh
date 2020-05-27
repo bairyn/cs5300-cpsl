@@ -165,7 +165,7 @@ namespace cli {
 	void run_with_paths(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path, const ArgsSpec &args_spec);
 	void run_with_paths(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path);
 
-	// | Write lexer information after parsing each line and exit.
+	// | Write lexer information after each line and exit.
 	void lexer_info(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path, const ArgsSpec &args_spec, const std::vector<std::string> &args, const std::optional<std::string> &prog);
 	void lexer_info(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path, const ArgsSpec &args_spec);
 	void lexer_info(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path);

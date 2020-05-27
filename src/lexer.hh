@@ -6,7 +6,7 @@
 #include <stdexcept>  // std::runtime_error
 #include <string>     // std::string
 #include <utility>    // std::pair
-#include <variant>    // std::variant
+#include <variant>    // std::monostate, std::variant
 #include <vector>     // std::vector
 
 /*
@@ -203,6 +203,7 @@ enum lexeme_tag_e {
 typedef enum lexeme_tag_e lexeme_tag_t;
 
 using lexeme_data_t = std::variant<
+	std::monostate,
 	LexemeKeyword,
 	LexemeIdentifier,
 	LexemeOperator,
@@ -215,10 +216,23 @@ using lexeme_data_t = std::variant<
 
 class Lexeme {
 public:
+	Lexeme();
 	Lexeme(lexeme_tag_t tag, const lexeme_data_t &data);
 	Lexeme(lexeme_tag_t tag, lexeme_data_t &&data);
 	lexeme_tag_t tag;
 	lexeme_data_t data;
+
+	// | Get a string representation of this lexeme's tag.
+	std::string tag_repr() const;
+
+	// | Get the base values of the lexeme.
+	LexemeBase get_base() const;
+	// | Get the line of the lexeme.
+	uint64_t get_line() const;
+	// | Get the column of the lexeme.
+	uint64_t get_column() const;
+	// | Get a copy of the text of the lexeme.
+	std::string get_text() const;
 };
 
 #endif /* #ifndef CPSL_CC_LEXER_HH */

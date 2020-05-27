@@ -2,9 +2,16 @@
 
 /* Make compatible with C++: c.f. https://stackoverflow.com/a/57061573 */
 %option noyywrap
+/* Create a reentrant scanner: c.f. https://www.cs.virginia.edu/~cr4bd/flex-manual/Reentrant.html#Reentrant */
+%option reentrant
+/* Allow the current lexeme to be stored by rules' actions: c.f. https://www.cs.virginia.edu/~cr4bd/flex-manual/Extra-Data.html#Extra-Data */
+%option extra-type="Lexeme"
 
 %{
-#include <sstream>  // std::ostringstream
+#include <iostream>   // std::endl
+#include <sstream>    // std::ostringstream
+#include <string>     // std::string
+#include <vector>     // std::vector
 
 #include "lexer.hh"
 
@@ -42,19 +49,83 @@ WHITESPACE "\n"|"\t"|" "
 
 	/* Handlers. */
 
+[ \t\n] |
+. {
+	Lexeme lexeme(
+		keyword_tag,
+		LexemeKeyword(
+			LexemeBase(
+				2,
+				3,
+				yytext
+			),
+			do_keyword
+		)
+	);
+	yyset_extra(lexeme, yyscanner);
+	return keyword_tag;
+}
+
 IDENTIFIER  {
 	/* ... */
 }
 
+	/* c.f. https://stackoverflow.com/a/22713809 */
+[ \t\n] |
 . {
 	std::ostringstream sstr;
-	sstr << "Unrecognized character: %s" << yytext;
+	sstr << "Unrecognized character: '" << yytext << "'";
 	throw LexerError(sstr.str());
 }
 
 %%
 
-void scan(FILE *fh) {
-	yyin = fh;
-	yylex();
+std::vector<Lexeme> scanlines(const std::vector<std::string> &lines) {
+	// Get a buffer containing the lines that will be alive for the duration of
+	// the execution of this function, while we perform scanning with our
+	// lexer.
+	std::vector<Lexeme> lexemes;
+
+	std::ostringstream sconcatenated;
+	for (const std::string &line : lines) {
+		sconcatenated << line << std::endl;
+	}
+	std::string concatenated = sconcatenated.str();
+
+	const char *concatenated_c_str = concatenated.c_str();
+
+	// Initialize a scanner.
+	yyscan_t scanner;
+	yylex_init(&scanner);
+
+	// Tell flex to copy concatenated_c_str and use it.
+	// c.f.
+	// https://westes.github.io/flex/manual/Multiple-Input-Buffers.html#Scanning-Strings
+	// https://www.cs.virginia.edu/~cr4bd/flex-manual/Reentrant-Uses.html#Reentrant-Uses
+	YY_BUFFER_STATE buf;
+	buf = yy_scan_bytes(concatenated_c_str, concatenated.size(), scanner);
+
+	// Perform lexical scanning.
+	try {
+		int token;
+		(void) token;  // Unused, except for setting.
+		yyset_extra(Lexeme(), scanner);
+		while((token = yylex(scanner)) > 0) {
+			lexemes.push_back(Lexeme(yyget_extra(scanner)));
+			yyset_extra(Lexeme(), scanner);
+		}
+	} catch (const LexerError &ex) {
+		// Close the scanner.
+		yy_delete_buffer(buf, scanner);
+		yylex_destroy(scanner);
+
+		throw ex;
+	}
+
+	// Close the scanner.
+	yy_delete_buffer(buf, scanner);
+	yylex_destroy(scanner);
+
+	// Return the scanned lexemes.
+	return lexemes;
 }

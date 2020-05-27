@@ -1,6 +1,7 @@
 #include <algorithm>  // std::move
 #include <cassert>    // assert
 #include <cerrno>     // errno
+#include <cstddef>    // size_t
 #include <cstring>    // strerror
 #include <fstream>    // std::ifstream, std::ofstream
 #include <ios>        // std::ios_base::badbit, std::ios_base::binary, std::ios_base::failbit, std::ios_base::failure, std::ios_base::in, std::ios_base::iostate, std::ios_base::openmode, std::ios_base::out, std::ios_base::trunc
@@ -16,6 +17,8 @@
 #include <vector>     // std::vector
 
 #include "cli.hh"
+#include "lexer.hh"
+#include "scanner.hh"
 
 extern "C" {
 #include "version.h"
@@ -156,11 +159,11 @@ cli::ArgsSpec::ArgsSpec(
 
 bool cli::ArgsSpec::verify() const {
 	for (const std::pair<std::string, std::string> &alias_option : std::as_const(option_aliases)) {
-		assertm(options.find(alias_option->second) != options.cend(), "All CLI argument aliases are of existing options.");
+		assertm(options.find(alias_option.second) != options.cend(), "All CLI argument aliases are of existing options.");
 	}
 
 	for (const std::pair<char, std::string> &alias_option : std::as_const(short_aliases)) {
-		assertm(options.find(alias_option->second) != options.cend(), "All short CLI argument aliases are of existing options.");
+		assertm(options.find(alias_option.second) != options.cend(), "All short CLI argument aliases are of existing options.");
 	}
 
 	return true;
@@ -433,6 +436,18 @@ void cli::run(const std::vector<std::string> &argv) {
 			<< "  Message: " << ex.code().message() << std::endl
 			;
 		std::exit(4);
+	} catch (const LexerError &ex) {
+		const std::string err_msg = ex.what();
+		std::string err_msg_noprefix;
+		const std::string::size_type separator_pos = err_msg.find(": ");
+		if (separator_pos == std::string::npos) {
+			err_msg_noprefix = std::string(err_msg);
+		} else {
+			err_msg_noprefix = err_msg.substr(separator_pos + 2);
+		}
+
+		std::cerr << err_msg_noprefix << std::endl;
+		std::exit(5);
 	}
 }
 
@@ -700,12 +715,41 @@ std::vector<std::string> cli::get_lexer_info(const ParsedArgs &parsed_args, cons
 	return cli::get_lexer_info(parsed_args, input_lines, args_spec, parsed_args.normalized_args(), std::optional<std::string>());
 }
 
-// | Write lexer information after parsing each line and exit.
+// | Write lexer information before each line and exit.
 std::vector<std::string> cli::get_lexer_info(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines, const ArgsSpec &args_spec, const std::vector<std::string> &args, const std::optional<std::string> &prog) {
+	// Create our vector of lines to output.
 	std::vector<std::string> output_lines;
 
-	// TODO
-	output_lines = input_lines;
+	// Scan all the lexemes.
+	std::vector<Lexeme> lexemes = scanlines(input_lines);
+	std::vector<Lexeme>::const_iterator next_lexeme = lexemes.cbegin();
+
+	// For each input line, print it, and then print all lexemes that begin on
+	// this line.
+	for (size_t input_line_no = 0; input_line_no < input_lines.size(); ++input_line_no) {
+		// Get this input line.
+		const std::string &input_line = input_lines[input_line_no];
+
+		// Print the input line.
+		output_lines.push_back(input_line);
+
+		// Collect lexemes up to this input line.
+		std::vector<Lexeme> input_line_lexemes;
+		for (; next_lexeme != lexemes.cend() && next_lexeme->get_line() <= input_line_no; ++next_lexeme) {
+			input_line_lexemes.push_back(*next_lexeme);
+		}
+
+		// Print the lexeme line.
+		std::ostringstream slexeme_line;
+
+		slexeme_line << "LEXEMES";
+		for (const Lexeme &input_line_lexeme : input_line_lexemes) {
+			slexeme_line << " " << input_line_lexeme.tag_repr();
+		}
+
+		std::string lexeme_line = slexeme_line.str();
+		output_lines.push_back(lexeme_line);
+	}
 
 	return output_lines;
 }

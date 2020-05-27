@@ -7,7 +7,7 @@
 #include <stdexcept>  // std::runtime_error
 #include <string>     // std::string
 #include <utility>    // std::as_const, std::pair
-#include <variant>    // std::bad_variant_access, std::get
+#include <variant>    // std::bad_variant_access, std::get, std::monostate
 #include <vector>     // std::vector
 
 #include "lexer.hh"
@@ -548,11 +548,26 @@ LexemeString::LexemeString(const LexemeBase &lexeme_base)
  * Lexeme class.
  */
 
+Lexeme::Lexeme()
+	: tag(null_lexeme_tag)
+	, data(std::monostate())
+	{}
+
 Lexeme::Lexeme(lexeme_tag_t tag, const lexeme_data_t &data)
 	: tag(tag)
 	, data(data)
 {
 	switch (tag) {
+		case null_lexeme_tag:
+			try {
+				std::get<std::monostate>(this->data);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
 		case keyword_tag:
 			try {
 				std::get<LexemeKeyword>(this->data);
@@ -623,7 +638,6 @@ Lexeme::Lexeme(lexeme_tag_t tag, const lexeme_data_t &data)
 			}
 			break;
 
-		case null_lexeme_tag:
 		default:
 			std::ostringstream sstr;
 			sstr << "Lexeme::Lexeme: invalid tag: " << tag << ".";
@@ -637,6 +651,16 @@ Lexeme::Lexeme(lexeme_tag_t tag, lexeme_data_t &&data)
 	, data(data)
 {
 	switch (tag) {
+		case null_lexeme_tag:
+			try {
+				std::get<std::monostate>(this->data);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
 		case keyword_tag:
 			try {
 				std::get<LexemeKeyword>(this->data);
@@ -707,11 +731,150 @@ Lexeme::Lexeme(lexeme_tag_t tag, lexeme_data_t &&data)
 			}
 			break;
 
-		case null_lexeme_tag:
 		default:
 			std::ostringstream sstr;
 			sstr << "Lexeme::Lexeme: invalid tag: " << tag << ".";
 			throw LexerError(sstr.str());
 			break;
 	}
+}
+
+std::string Lexeme::tag_repr() const {
+	switch (tag) {
+		case keyword_tag:
+			return "KEYWORD";
+
+		case identifier_tag:
+			return "IDENTIFIER";
+
+		case operator_tag:
+			return "OPERATOR";
+
+		case integer_tag:
+			return "INTEGER";
+
+		case char_tag:
+			return "CHAR";
+
+		case string_tag:
+			return "TAG";
+
+		case whitespace_tag:
+			return "WHITESPACE";
+
+		case null_lexeme_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Lexeme::tag_repr: invalid tag: " << tag << ".";
+			throw LexerError(sstr.str());
+			break;
+	}
+}
+
+// | Get the base values of the lexeme.
+LexemeBase Lexeme::get_base() const {
+	switch (tag) {
+		case null_lexeme_tag:
+			// For convenience, this is the initial base state available for
+			// the lexer.
+			return LexemeBase(1, 0, "");
+
+		case keyword_tag:
+			try {
+				const LexemeKeyword &lexeme_keyword = std::get<LexemeKeyword>(this->data);
+				return LexemeBase(lexeme_keyword);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::get_base: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case identifier_tag:
+			try {
+				const LexemeIdentifier &lexeme_identifier = std::get<LexemeIdentifier>(this->data);
+				return LexemeBase(lexeme_identifier);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::get_base: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case operator_tag:
+			try {
+				const LexemeOperator &lexeme_operator = std::get<LexemeOperator>(this->data);
+				return LexemeBase(lexeme_operator);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::get_base: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case integer_tag:
+			try {
+				const LexemeInteger &lexeme_integer = std::get<LexemeInteger>(this->data);
+				return LexemeBase(lexeme_integer);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::get_base: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case char_tag:
+			try {
+				const LexemeChar &lexeme_char = std::get<LexemeChar>(this->data);
+				return LexemeBase(lexeme_char);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::get_base: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case string_tag:
+			try {
+				const LexemeString &lexeme_string = std::get<LexemeString>(this->data);
+				return LexemeBase(lexeme_string);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::get_base: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case whitespace_tag:
+			try {
+				const LexemeWhitespace &lexeme_whitespace = std::get<LexemeWhitespace>(this->data);
+				return LexemeBase(lexeme_whitespace);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::get_base: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		default:
+			std::ostringstream sstr;
+			sstr << "Lexeme::Lexeme: invalid tag: " << tag << ".";
+			throw LexerError(sstr.str());
+			break;
+	}
+}
+
+// | Get the line of the lexeme.
+uint64_t Lexeme::get_line() const {
+	return get_base().line;
+}
+
+// | Get the column of the lexeme.
+uint64_t Lexeme::get_column() const {
+	return get_base().column;
+}
+
+// | Get a copy of the text of the lexeme.
+std::string Lexeme::get_text() const {
+	return std::string(get_base().text);
 }
