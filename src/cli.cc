@@ -160,15 +160,17 @@ const cli::ArgsSpec cli::ArgsSpec::default_args_spec {
 		{"version", {true}},
 		{"input",   {false}},
 		{"output",  {false}},
+		{"lexer",   {true}},
 	},
 
 	// std::map<std::string, std::string> option_aliases
 	{
+		{"scanner", "lexer"},
 	},
 
 	// std::map<char, std::string> short_aliases
 	{
-		{'h', "help"},
+		{'H', "help"},
 		{'?', "help"},
 		{'V', "version"},
 		{'i', "input"},
@@ -259,7 +261,7 @@ cli::ParsedArgs cli::ArgsSpec::parse(const std::vector<std::string> &args, const
 
 				// If '=' was given, add the option now.
 				if (equals_pos != std::string::npos) {
-					std::string arg_value = arg_noprefix.substr(equals_pos);
+					std::string arg_value = arg_noprefix.substr(equals_pos + 1);
 					specified_string_options.insert({option, arg_value});
 				} else {
 					// The next argument will the value for this option.
@@ -413,7 +415,16 @@ std::string cli::get_usage(const std::optional<std::string> &prog) {
 	std::string prog_str = prog.value_or(cli::default_prog);
 	std::ostringstream sstr;
 	sstr
-		<< "Usage: " << prog_str << " -i PATH.cpsl -o PATH.asm" << std::endl
+		<< "Usage: " << prog_str << " [OPTION]... -o FILE [-i] FILE" << std::endl
+		<< std::endl
+		<< "Options:" << std::endl
+		<< "  -H," << std::endl
+		<< "  -?, --help         print usage information and exit." << std::endl
+		<< "  -V, --version      print version information and exit." << std::endl
+		<< "  -i, --input PATH   specify the path to the input file to process." << std::endl
+		<< "  -o, --output PATH  specify the path to the output file to write." << std::endl
+		<< "      --lexer," << std::endl
+		<< "      --scanner      stop after the lexer stage and print scanner information." << std::endl
 		;
 	return sstr.str();
 }
@@ -513,6 +524,7 @@ void cli::run_with_paths(const ParsedArgs &parsed_args, const std::string &input
 	std::cout << "To be implemented..." << std::endl;
 	std::cout << "Input path: " << input_path << std::endl;
 	std::cout << "Output path: " << output_path << std::endl;
+
 	return;
 }
 
