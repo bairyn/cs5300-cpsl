@@ -1,5 +1,9 @@
 #include <algorithm>  // std::move
 #include <cassert>    // assert
+#include <cerrno>     // errno
+#include <cstring>    // strerror
+#include <fstream>    // std::ifstream, std::ofstream
+#include <ios>        // std::ios_base::badbit, std::ios_base::binary, std::ios_base::failbit, std::ios_base::failure, std::ios_base::in, std::ios_base::iostate, std::ios_base::openmode, std::ios_base::out, std::ios_base::trunc
 #include <iostream>   // std::cerr, std::cout, std::endl
 #include <map>        // std::map
 #include <optional>   // std::optional
@@ -7,6 +11,7 @@
 #include <sstream>    // std::ostringstream
 #include <stdexcept>  // std::runtime_error
 #include <string>     // std::string
+#include <system_error>  // std::error_code (::message)
 #include <utility>    // std::as_const, std::exit, std::move, std::pair
 #include <vector>     // std::vector
 
@@ -26,6 +31,14 @@ cli::CLIError::CLIError()
 	{}
 
 cli::CLIError::CLIError(std::string message)
+	: runtime_error(std::move(message))
+	{}
+
+cli::RunError::RunError()
+	: runtime_error("A run error occurred.")
+	{}
+
+cli::RunError::RunError(std::string message)
 	: runtime_error(std::move(message))
 	{}
 
@@ -161,6 +174,7 @@ const cli::ArgsSpec cli::ArgsSpec::default_args_spec {
 		{"input",   {false}},
 		{"output",  {false}},
 		{"lexer",   {true}},
+		{"verbose", {true}},
 	},
 
 	// std::map<std::string, std::string> option_aliases
@@ -173,6 +187,7 @@ const cli::ArgsSpec cli::ArgsSpec::default_args_spec {
 		{'H', "help"},
 		{'?', "help"},
 		{'V', "version"},
+		{'v', "verbose"},
 		{'i', "input"},
 		{'o', "output"},
 	},
@@ -378,7 +393,7 @@ void cli::run(const std::vector<std::string> &argv) {
 	// Get the default argument specification.
 	cli::ArgsSpec args_spec(cli::ArgsSpec::default_args_spec);
 
-	// Print CLIErrors with friendlier formatting.
+	// Print CLIErrors, RunErrors, and std::ios_base::failures with friendlier formatting.
 	try {
 		// Parse the arguments.
 		cli::ParsedArgs parsed_args(args_spec.parse(args, prog));
@@ -397,6 +412,27 @@ void cli::run(const std::vector<std::string> &argv) {
 
 		std::cerr << err_msg_noprefix << std::endl;
 		return cli::usage(prog, 2, true);
+	} catch (const cli::RunError &ex) {
+		const std::string err_msg = ex.what();
+		std::string err_msg_noprefix;
+		const std::string::size_type separator_pos = err_msg.find(": ");
+		if (separator_pos == std::string::npos) {
+			err_msg_noprefix = std::string(err_msg);
+		} else {
+			err_msg_noprefix = err_msg.substr(separator_pos + 2);
+		}
+
+		std::cerr << err_msg_noprefix << std::endl;
+		return cli::usage(prog, 3, true);
+	} catch (const std::ios_base::failure &ex) {
+		std::cerr
+			<< "Error: " << const_cast<const char *>(strerror(errno)) << std::endl
+			<< "Details:" << std::endl
+			<< "  IO error: " << ex.what() << std::endl
+			<< "  Code: " << ex.code().value() << std::endl
+			<< "  Message: " << ex.code().message() << std::endl
+			;
+		std::exit(4);
 	}
 }
 
@@ -421,10 +457,11 @@ std::string cli::get_usage(const std::optional<std::string> &prog) {
 		<< "  -H," << std::endl
 		<< "  -?, --help         print usage information and exit." << std::endl
 		<< "  -V, --version      print version information and exit." << std::endl
+		<< "  -v, --verbose      increase verbosity." << std::endl
 		<< "  -i, --input PATH   specify the path to the input file to process." << std::endl
 		<< "  -o, --output PATH  specify the path to the output file to write." << std::endl
 		<< "      --lexer," << std::endl
-		<< "      --scanner      stop after the lexer stage and print scanner information." << std::endl
+		<< "      --scanner      write scanner information after each line and stop after the lexer stage." << std::endl
 		;
 	return sstr.str();
 }
@@ -510,6 +547,109 @@ void cli::run_with_parsed(const ParsedArgs &parsed_args, const ArgsSpec &args_sp
 	return cli::run_with_paths(parsed_args, input_path, output_path, args_spec, args, prog);
 }
 
+// | Read the lines of a file.
+std::vector<std::string> cli::readlines(const ParsedArgs &parsed_args, const std::string &input_path) {
+	// Collect the lines in the input file.
+	std::vector<std::string> input_lines;
+
+	if (input_path != "-") {
+		try {
+			// Iterate over the lines of input_path.
+			std::ifstream input(input_path, static_cast<std::ios_base::openmode>(std::ios_base::in));
+			// Ensure exceptions are thrown on failure.
+			//input.exceptions(input.exceptions() | static_cast<std::ios_base::iostate>(std::ios_base::badbit | std::ios_base::failbit));
+			input.exceptions(input.exceptions() | static_cast<std::ios_base::iostate>(std::ios_base::badbit));
+			// Don't add input.eof() as a condition in case the last line lacks a
+			// newline.
+			std::string line;
+			while(std::getline(input, line)) {
+				input_lines.push_back(line);
+			}
+
+			// Make sure the input file handle is in a good state.
+			if (input.bad()) {
+				std::ostringstream sstr;
+				sstr << "cli::readlines: an IO error occurred while reading `" << input_path << "'.";
+				throw cli::RunError(sstr.str());
+			}
+		} catch (const std::ios_base::failure &ex) {
+			std::cerr << "Error occurred while reading `" << input_path << "': " << const_cast<const char *>(strerror(errno)) << std::endl;
+			if (parsed_args.is("verbose")) {
+				throw ex;
+			} else {
+				std::exit(4);
+			}
+		}
+	} else {
+		std::string line;
+		while(std::getline(std::cin, line)) {
+			input_lines.push_back(line);
+		}
+
+		// Make sure stdin is in a good state.
+		if (std::cin.bad()) {
+			std::ostringstream sstr;
+			sstr << "cli::readlines: an IO error occurred while reading from standard input.";
+			throw cli::RunError(sstr.str());
+		}
+	}
+
+	// Return the collected lines.
+	return input_lines;
+}
+
+// | Write lines to a file.
+void cli::writelines(const ParsedArgs &parsed_args, const std::string &output_path, const std::vector<std::string> &lines) {
+	// Write the lines to the output file.
+	if (output_path != "-") {
+		try {
+			// Open the output file.
+			std::ofstream output(output_path, static_cast<std::ios_base::openmode>(std::ios_base::out | std::ios_base::trunc));
+			// Ensure exceptions are thrown on failure.
+			//output.exceptions(output.exceptions() | static_cast<std::ios_base::iostate>(std::ios_base::badbit | std::ios_base::failbit));
+			output.exceptions(output.exceptions() | static_cast<std::ios_base::iostate>(std::ios_base::badbit));
+			for (const std::string &line : lines) {
+				output << line << std::endl;
+			}
+
+			// Make sure the output file handle is in a good state.
+			if (output.bad()) {
+				std::ostringstream sstr;
+				sstr << "cli::writelines: an IO error occurred while writing to `" << output_path << "'.";
+				throw cli::RunError(sstr.str());
+			}
+
+			// Close the file handle.
+			output.close();
+
+			// Make sure the output file handle is in a good state.
+			if (output.bad()) {
+				std::ostringstream sstr;
+				sstr << "cli::writelines: an IO error occurred after writing to `" << output_path << "'.";
+				throw cli::RunError(sstr.str());
+			}
+		} catch (const std::ios_base::failure &ex) {
+			std::cerr << "Error occurred while writing to `" << output_path << "': " << const_cast<const char *>(strerror(errno)) << std::endl;
+			if (parsed_args.is("verbose")) {
+				throw ex;
+			} else {
+				std::exit(4);
+			}
+		}
+	} else {
+		for (const std::string &line : lines) {
+			std::cout << line << std::endl;
+		}
+
+		// Make sure stdout is in a good state.
+		if (std::cout.bad()) {
+			std::ostringstream sstr;
+			sstr << "cli::writelines: an IO error occurred while writing to standard output.";
+			throw cli::RunError(sstr.str());
+		}
+	}
+}
+
 void cli::run_with_paths(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path) {
 	return cli::run_with_paths(parsed_args, input_path, output_path, cli::ArgsSpec::default_args_spec);
 }
@@ -521,11 +661,53 @@ void cli::run_with_paths(const ParsedArgs &parsed_args, const std::string &input
 // | Handle input and output paths after handling information options, e.g.
 // --help and --version.
 void cli::run_with_paths(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path, const ArgsSpec &args_spec, const std::vector<std::string> &args, const std::optional<std::string> &prog) {
+	if (parsed_args.is("lexer")) {
+		return cli::lexer_info(parsed_args, input_path, output_path, args_spec, args, prog);
+	}
+
 	std::cout << "To be implemented..." << std::endl;
 	std::cout << "Input path: " << input_path << std::endl;
 	std::cout << "Output path: " << output_path << std::endl;
 
 	return;
+}
+
+void cli::lexer_info(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path) {
+	return cli::lexer_info(parsed_args, input_path, output_path, cli::ArgsSpec::default_args_spec);
+}
+
+void cli::lexer_info(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path, const ArgsSpec &args_spec) {
+	return cli::lexer_info(parsed_args, input_path, output_path, args_spec, parsed_args.normalized_args(), std::optional<std::string>());
+}
+
+// | Write lexer information after parsing each line and exit.
+void cli::lexer_info(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path, const ArgsSpec &args_spec, const std::vector<std::string> &args, const std::optional<std::string> &prog) {
+	// Collect the lines in the input file.
+	std::vector<std::string> input_lines = cli::readlines(parsed_args, input_path);
+
+	// Get the lines of output.
+	std::vector<std::string> output_lines = cli::get_lexer_info(parsed_args, input_lines, args_spec, args, prog);
+
+	// Write the output.
+	return cli::writelines(parsed_args, output_path, output_lines);
+}
+
+std::vector<std::string> cli::get_lexer_info(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines) {
+	return cli::get_lexer_info(parsed_args, input_lines, cli::ArgsSpec::default_args_spec);
+}
+
+std::vector<std::string> cli::get_lexer_info(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines, const ArgsSpec &args_spec) {
+	return cli::get_lexer_info(parsed_args, input_lines, args_spec, parsed_args.normalized_args(), std::optional<std::string>());
+}
+
+// | Write lexer information after parsing each line and exit.
+std::vector<std::string> cli::get_lexer_info(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines, const ArgsSpec &args_spec, const std::vector<std::string> &args, const std::optional<std::string> &prog) {
+	std::vector<std::string> output_lines;
+
+	// TODO
+	output_lines = input_lines;
+
+	return output_lines;
 }
 
 /*

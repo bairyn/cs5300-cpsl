@@ -18,6 +18,12 @@ namespace cli {
 		CLIError(std::string message);
 	};
 
+	class RunError : public std::runtime_error {
+	public:
+		RunError();
+		RunError(std::string message);
+	};
+
 	/*
 	 * CLI.
 	 */
@@ -148,11 +154,26 @@ namespace cli {
 	// | Get the version information.
 	std::string get_version_info(const std::optional<std::string> &prog = std::optional<std::string>());
 
+	// | Read the lines of a file.
+	std::vector<std::string> readlines (const ParsedArgs &parsed_args, const std::string &input_path);
+	// | Write lines to a file.
+	void                     writelines(const ParsedArgs &parsed_args, const std::string &output_path, const std::vector<std::string> &lines);
+
 	// | Handle input and output paths after handling information options, e.g.
 	// --help and --version.
 	void run_with_paths(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path, const ArgsSpec &args_spec, const std::vector<std::string> &args, const std::optional<std::string> &prog);
 	void run_with_paths(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path, const ArgsSpec &args_spec);
 	void run_with_paths(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path);
+
+	// | Write lexer information after parsing each line and exit.
+	void lexer_info(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path, const ArgsSpec &args_spec, const std::vector<std::string> &args, const std::optional<std::string> &prog);
+	void lexer_info(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path, const ArgsSpec &args_spec);
+	void lexer_info(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path);
+
+	// | Given lines of input, produce lines of output.
+	std::vector<std::string> get_lexer_info(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines, const ArgsSpec &args_spec, const std::vector<std::string> &args, const std::optional<std::string> &prog);
+	std::vector<std::string> get_lexer_info(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines, const ArgsSpec &args_spec);
+	std::vector<std::string> get_lexer_info(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines);
 
 	// | Assemble a CPSL file.
 	//void assemble(const std::string &in_path, const std::string &out_path);
