@@ -31,6 +31,7 @@ IDENTIFIER {LETTER}({LETTER}|{DIGIT}|"_")*
 KEYWORD array|begin|chr|const|do|downto|else|elseif|end|for|forward|function|if|of|ord|pred|procedure|read|record|ref|repeat|return|stop|succ|then|to|type|until|var|while|write
 OPERATOR "+"|"-"|"*"|"/"|"&"|"|"|"~"|"="|"<>"|"<"|"<="|">"|">="|"."|","|":"|";"|"("|")"|"["|"]"|":="|"%"
 INTEGER {OCTAL}|{HEX}|{DECIMAL}
+COMMENT "$"[^\n]*
 CHAR "'"{INNERCHAR}"'"
 STRING "\""{INNERCHAR}*"\""
 WHITESPACE "\n"|"\t"|" "

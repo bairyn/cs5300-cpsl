@@ -4,6 +4,7 @@
 #include <iterator>   // std::back_inserter
 #include <map>        // std::map
 #include <sstream>    // std::ostringstream
+#include <stdexcept>  // std::runtime_error
 #include <string>     // std::string
 #include <utility>    // std::as_const, std::pair
 #include <variant>    // std::bad_variant_access, std::get
@@ -20,7 +21,7 @@ LexerError::LexerError()
 	{}
 
 LexerError::LexerError(std::string message)
-	: runtime_error(message)
+	: runtime_error(std::move(message))
 	{}
 
 /*

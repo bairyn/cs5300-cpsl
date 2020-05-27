@@ -1,3 +1,6 @@
+#ifndef CPSL_CC_LEXER_HH
+#define CPSL_CC_LEXER_HH
+
 #include <cstdint>    // uint8_t, uint64_t
 #include <map>        // std::map
 #include <stdexcept>  // std::runtime_error
@@ -217,3 +220,5 @@ public:
 	lexeme_tag_t tag;
 	lexeme_data_t data;
 };
+
+#endif /* #ifndef CPSL_CC_LEXER_HH */
