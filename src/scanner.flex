@@ -29,6 +29,9 @@ UPPER           [A-Z]
 LETTER          {UPPER}|{LOWER}
 /* {-} operator: c.f. https://westes.github.io/flex/manual/Patterns.html */
 INNERCHAR       [[:print:]]{-}[\\]|"\\"[[:print:]]
+IDENTIFIER_PREFIX  {LETTER}
+IDENTIFIER_CHAR  {LETTER}|{DIGIT}|"_"
+IDENTIFIER_CHAR_NO_PREFIX {DIGIT}|"_"
 
 OCTAL "0"{OCTALDIGIT}*
 HEX "0x"{HEXDIGIT}*
@@ -46,7 +49,7 @@ COMMENT_NOPREFIX [^\n]*
  * Handle keywords through identifier matches and LexemeKeyword::is_keyword.
  * c.f. https://stackoverflow.com/a/34895995
  */
-IDENTIFIER {LETTER}({LETTER}|{DIGIT}|"_")*
+IDENTIFIER {IDENTIFIER_PREFIX}({IDENTIFIER_CHAR})*
 KEYWORD array|begin|chr|const|do|downto|else|elseif|end|for|forward|function|if|of|ord|pred|procedure|read|record|ref|repeat|return|stop|succ|then|to|type|until|var|while|write
 OPERATOR "+"|"-"|"*"|"/"|"&"|"|"|"~"|"="|"<>"|"<"|"<="|">"|">="|"."|","|":"|";"|"("|")"|"["|"]"|":="|"%"
 INTEGER {OCTAL}|{HEX}|{DECIMAL}
@@ -56,6 +59,14 @@ STRING "\""{INNERCHAR}*"\""
 WHITESPACE [ \n\t]+
 
 %%
+
+	/* Catch identifiers without the right prefix as a lexer error. */
+"_" |
+{IDENTIFIER_CHAR_NO_PREFIX}({IDENTIFIER_CHAR})*{LETTER}({IDENTIFIER_CHAR})* {
+	std::ostringstream sstr;
+	sstr << "scanner: error: identifiers need to begin with a letter (scanned `" << yytext << "').";
+	throw LexerError(sstr.str());
+}
 
 {IDENTIFIER} {
 	const std::string text(yytext);
