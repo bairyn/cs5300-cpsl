@@ -105,13 +105,29 @@
 
 %{
 #include <memory>      // std::shared_ptr
+#include <sstream>     // std::ostringstream
 #include <vector>      // std::vector
 
 #include "lexer.hh"    // Lexeme
-#include "grammar.hh"  // Grammar
+#include "grammar.hh"  // Grammar, GrammarError
 
 #include "parser.hh"
 %}
+
+/*
+ * Associativity and precedence.
+ * c.f.:
+ * - https://www.gnu.org/software/bison/manual/html_node/Precedence.html
+ * - https://www.gnu.org/software/bison/manual/html_node/Infix-Calc.html (c.f. "%prec")
+ */
+
+%right UNARY_MINUS
+%left TIMES_OPERATOR SLASH_OPERATOR PERCENT_OPERATOR
+%left PLUS_OPERATOR MINUS_OPERATOR
+%nonassoc EQUALS_OPERATOR LT_OR_GT_OPERATOR LT_OPERATOR LE_OPERATOR GT_OPERATOR GE_OPERATOR
+%left TILDE_OPERATOR
+%left AMPERSAND_OPERATOR
+%left PIPE_OPERATOR
 
 %%
 
@@ -150,7 +166,7 @@ keyword:
 ;
 
 operator:
-	| PLUS_OPERATOR
+	  PLUS_OPERATOR
 	| MINUS_OPERATOR
 	| TIMES_OPERATOR
 	| SLASH_OPERATOR
@@ -175,13 +191,321 @@ operator:
 	| PERCENT_OPERATOR
 ;
 
+	/* TODO: actions */
+
 start:
-	IDENTIFIER | keyword {
-		/* TODO */
-	}
+	program
 ;
 
-	/* TODO: rules */
+	/* Overall structure. */
+
+program:
+	constant_decl_opt type_decl_opt var_decl_opt procedure_decl_or_function_decl_list block DOT_OPERATOR
+;
+
+constant_decl_opt:
+	  %empty
+	| constant_decl
+;
+
+type_decl_opt:
+	  %empty
+	| type_decl
+;
+
+var_decl_opt:
+	  %empty
+	| var_decl
+;
+
+procedure_decl_or_function_decl_list:
+	  %empty
+	| procedure_decl_or_function_decl_list procedure_decl_or_function_decl
+;
+
+procedure_decl_or_function_decl:
+	  procedure_decl
+	| function_decl
+;
+
+	/* Declarations. */
+
+constant_decl:
+	CONST_KEYWORD constant_assignment constant_assignment_list
+;
+
+constant_assignment_list:
+	  %empty
+	| constant_assignment_list constant_assignment
+;
+
+constant_assignment:
+	IDENTIFIER EQUALS_OPERATOR expression SEMICOLON_OPERATOR
+;
+
+procedure_decl:
+	  PROCEDURE_KEYWORD IDENTIFIER LEFTPARENTHESIS_OPERATOR formal_parameters RIGHTPARENTHESIS_OPERATOR SEMICOLON_OPERATOR FORWARD_KEYWORD SEMICOLON_OPERATOR
+	| PROCEDURE_KEYWORD IDENTIFIER LEFTPARENTHESIS_OPERATOR formal_parameters RIGHTPARENTHESIS_OPERATOR SEMICOLON_OPERATOR body SEMICOLON_OPERATOR
+;
+
+function_decl:
+	  FUNCTION_KEYWORD IDENTIFIER LEFTPARENTHESIS_OPERATOR formal_parameters RIGHTPARENTHESIS_OPERATOR COLON_OPERATOR type SEMICOLON_OPERATOR FORWARD_KEYWORD SEMICOLON_OPERATOR
+	| FUNCTION_KEYWORD IDENTIFIER LEFTPARENTHESIS_OPERATOR formal_parameters RIGHTPARENTHESIS_OPERATOR COLON_OPERATOR type SEMICOLON_OPERATOR body SEMICOLON_OPERATOR
+;
+
+	/*
+	* The structure is equivalent to the documented one but the details differ a
+	* bit.
+	*/
+formal_parameters:
+	  %empty
+	| formal_parameter formal_parameter_prefixed_list
+;
+
+formal_parameter:
+	var_or_ref ident_list COLON_OPERATOR type
+;
+
+formal_parameter_prefixed_list:
+	  %empty
+	| formal_parameter_prefixed_list SEMICOLON_OPERATOR formal_parameter
+;
+
+var_or_ref:
+	  VAR_KEYWORD
+	| REF_KEYWORD
+;
+
+body:
+	constant_decl_opt type_decl_opt block
+;
+
+block:
+	BEGIN_KEYWORD statement_sequence END_KEYWORD
+;
+
+type_decl:
+	TYPE_KEYWORD type_assignment type_assignment_list;
+;
+
+type_assignment_list:
+	  %empty
+	| type_assignment_list type_assignment
+;
+
+type_assignment:
+	IDENTIFIER EQUALS_OPERATOR type SEMICOLON_OPERATOR
+;
+
+type:
+	  simple_type
+	| record_type
+	| array_type
+;
+
+simple_type:
+	IDENTIFIER
+;
+
+record_type:
+	RECORD_KEYWORD record_entry_list END_KEYWORD
+;
+
+record_entry_list:
+	  %empty
+	| record_entry_list typed_identifier_sequence_list
+;
+
+typed_identifier_sequence:
+	ident_list COLON_OPERATOR type SEMICOLON_OPERATOR
+;
+
+typed_identifier_sequence_list:
+	  %empty
+	| typed_identifier_sequence_list typed_identifier_sequence
+;
+
+array_type:
+	ARRAY_KEYWORD LEFTBRACKET_OPERATOR expression COLON_OPERATOR expression RIGHTBRACKET_OPERATOR OF_KEYWORD type
+;
+
+	/*
+	 * Non-empty, unlike other _list s; do be consistent with the
+	 * documentation.
+	 */
+ident_list:
+	IDENTIFIER identifier_prefixed_list
+;
+
+identifier_prefixed_list:
+	  %empty
+	| identifier_prefixed_list COMMA_OPERATOR IDENTIFIER
+;
+
+var_decl:
+	VAR_KEYWORD typed_identifier_sequence typed_identifier_sequence_list
+;
+
+	/* Statements. */
+
+statement_sequence:
+	statement statement_prefixed_list
+;
+
+statement_prefixed_list:
+	  %empty
+	| statement_prefixed_list SEMICOLON_OPERATOR statement
+;
+
+statement:
+	  assignment
+	| if_statement
+	| while_statement
+	| repeat_statement
+	| for_statement
+	| stop_statement
+	| return_statement
+	| read_statement
+	| write_statement
+	| procedure_call
+	| null_statement;
+;
+
+assignment:
+	lvalue COLONEQUALS_OPERATOR expression
+;
+
+if_statement:
+	IF_KEYWORD expression THEN_KEYWORD statement_sequence elseif_clause_list else_clause_opt END_KEYWORD
+;
+
+elseif_clause_list:
+	  %empty
+	| elseif_clause_list elseif_clause
+;
+
+elseif_clause:
+	ELSEIF_KEYWORD expression THEN_KEYWORD statement_sequence
+;
+
+else_clause_opt:
+	  %empty
+	| else_clause
+;
+
+else_clause:
+	ELSE_KEYWORD statement_sequence
+;
+
+while_statement:
+	WHILE_KEYWORD expression DO_KEYWORD statement_sequence END_KEYWORD
+;
+
+repeat_statement:
+	REPEAT_KEYWORD statement_sequence UNTIL_KEYWORD expression
+;
+
+for_statement:
+	FOR_KEYWORD IDENTIFIER COLONEQUALS_OPERATOR expression to_or_downto expression DO_KEYWORD statement_sequence END_KEYWORD
+;
+
+to_or_downto:
+	  TO_KEYWORD
+	| DOWNTO_KEYWORD
+;
+
+stop_statement:
+	STOP_KEYWORD
+;
+
+return_statement:
+	RETURN_KEYWORD expression_opt
+;
+
+expression_opt:
+	  %empty
+	| expression
+;
+
+read_statement:
+	READ_KEYWORD LEFTPARENTHESIS_OPERATOR lvalue_sequence RIGHTPARENTHESIS_OPERATOR
+;
+
+lvalue_sequence:
+	lvalue lvalue_prefixed_list
+;
+
+lvalue_prefixed_list:
+	  %empty
+	| lvalue_prefixed_list COMMA_OPERATOR lvalue
+;
+
+write_statement:
+	WRITE_KEYWORD LEFTPARENTHESIS_OPERATOR expression_sequence RIGHTPARENTHESIS_OPERATOR
+;
+
+expression_sequence:
+	expression expression_prefixed_list
+;
+
+expression_prefixed_list:
+	  %empty
+	| expression_prefixed_list COMMA_OPERATOR expression
+;
+
+procedure_call:
+	IDENTIFIER LEFTPARENTHESIS_OPERATOR expression_sequence_opt RIGHTPARENTHESIS_OPERATOR
+;
+
+expression_sequence_opt:
+	  %empty
+	| expression_sequence
+;
+
+null_statement:
+	  %empty
+;
+
+	/* Expressions. */
+
+expression:
+	  expression PIPE_OPERATOR      expression
+	| expression AMPERSAND_OPERATOR expression
+	| expression EQUALS_OPERATOR    expression
+	| expression LT_OR_GT_OPERATOR  expression
+	| expression LE_OPERATOR        expression
+	| expression GE_OPERATOR        expression
+	| expression LT_OPERATOR        expression
+	| expression GT_OPERATOR        expression
+	| expression PLUS_OPERATOR      expression
+	| expression MINUS_OPERATOR     expression
+	| expression TIMES_OPERATOR     expression
+	| expression SLASH_OPERATOR     expression
+	| expression PERCENT_OPERATOR   expression
+	| TILDE_OPERATOR expression
+	| MINUS_OPERATOR expression %prec UNARY_MINUS
+	| LEFTPARENTHESIS_OPERATOR expression RIGHTPARENTHESIS_OPERATOR
+	| IDENTIFIER LEFTPARENTHESIS_OPERATOR expression_sequence_opt RIGHTPARENTHESIS_OPERATOR
+	| CHR_KEYWORD LEFTPARENTHESIS_OPERATOR expression RIGHTPARENTHESIS_OPERATOR
+	| ORD_KEYWORD LEFTPARENTHESIS_OPERATOR expression RIGHTPARENTHESIS_OPERATOR
+	| PRED_KEYWORD LEFTPARENTHESIS_OPERATOR expression RIGHTPARENTHESIS_OPERATOR
+	| SUCC_KEYWORD LEFTPARENTHESIS_OPERATOR expression RIGHTPARENTHESIS_OPERATOR
+	| lvalue
+;
+
+lvalue:
+	IDENTIFIER lvalue_accessor_clause_list
+;
+
+lvalue_accessor_clause_list:
+	  %empty
+	| lvalue_accessor_clause_list lvalue_accessor_clause
+;
+
+lvalue_accessor_clause:
+	  DOT_OPERATOR IDENTIFIER
+	| LEFTBRACKET_OPERATOR expression RIGHTBRACKET_OPERATOR
+;
 
 %%
 
@@ -198,6 +522,8 @@ int yy_cpsl_cc_parserlex(parser_yystype_t *lvalp, std::shared_ptr<ParserState> p
 		// Done traversing lexemes.
 		return 0;
 	} else {
+		// TODO: skip whitespace and comments when feeding the parser.
+
 		const Lexeme &lexeme = parser_state->lexemes[parser_state->next_lexeme];
 		*lvalp = parser_state->next_lexeme;
 		++parser_state->next_lexeme;
@@ -206,7 +532,9 @@ int yy_cpsl_cc_parserlex(parser_yystype_t *lvalp, std::shared_ptr<ParserState> p
 }
 
 void yy_cpsl_cc_parsererror(std::shared_ptr<ParserState> parser_state, const char *s) {
-	// TODO
+	std::ostringstream sstr;
+	sstr << "parser error: " << s;
+	throw GrammarError(sstr.str());
 }
 
 Grammar parse_lexemes(const std::vector<Lexeme> &lexemes) {
@@ -214,21 +542,25 @@ Grammar parse_lexemes(const std::vector<Lexeme> &lexemes) {
 	int status = yy_cpsl_cc_parserparse(parser_state);
 	// status: c.f. https://www.gnu.org/software/bison/manual/html_node/Parser-Function.html
 	switch (status) {
-		case 0:
+		case 0: {
 			// Success.
 			break;
-
-		case 1:
+		} case 1: {
 			// Invalid input.
-			break;
-
-		case 2:
+			std::ostringstream sstr;
+			sstr << "parser: Invalid input.";
+			throw GrammarError(sstr.str());
+		} case 2: {
 			// Out of memory.
-			break;
-
-		default:
+			std::ostringstream sstr;
+			sstr << "parser: out of memory.";
+			throw GrammarError(sstr.str());
+		} default: {
 			// Unknown status.
-			break;
+			std::ostringstream sstr;
+			sstr << "parser: unrecognized status from parse: " << status;
+			throw GrammarError(sstr.str());
+		}
 	}
 
 	// TODO
