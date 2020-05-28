@@ -27,6 +27,7 @@ CXX ?= g++
 LD ?= ld
 LINKER ?= $(if $(opt_debug),$(DEBUG_LINKER),$(RELEASE_LINKER))
 FLEX ?= flex
+BISON ?= bison
 # To simplify linking with profiling, use g++ with -pg rather than ld with gcrt1.o and -lc_p.
 DEBUG_LINKER ?= g++
 # Using ld directly to link seems to require additional configuration to not
@@ -39,6 +40,7 @@ ALL_CXXFLAGS    ?= $(BASE_CXXFLAGS)    $(CXXFLAGS)    $(WARN_CXXFLAGS)    $(OPT_
 ALL_LDFLAGS     ?= $(BASE_LDFLAGS)     $(LDFLAGS)     $(WARN_LDFLAGS)     $(OPT_LDFLAGS)     $(EXTRA_LDFLAGS)
 ALL_LINKERFLAGS ?= $(ALL_LDFLAGS)
 ALL_FLEXFLAGS   ?= $(BASE_FLEXFLAGS)   $(FLEXFLAGS)   $(WARN_FLEXFLAGS)   $(OPT_FLEXFLAGS)   $(EXTRA_FLEXFLAGS)
+ALL_BISONFLAGS  ?= $(BASE_BISONFLAGS)  $(BISONFLAGS)  $(WARN_BISONFLAGS)  $(OPT_BISONFLAGS)  $(EXTRA_BISONFLAGS)
 
 CFLAGS ?= -x c -std=c99
 BASE_CFLAGS ?= -Isrc -MMD
@@ -81,6 +83,14 @@ OPT_FLEXFLAGS ?= $(if $(opt_debug),$(DEBUG_FLEXFLAGS),$(RELEASE_FLEXFLAGS))
 DEBUG_FLEXFLAGS ?=
 RELEASE_FLEXFLAGS ?=
 EXTRA_FLEXFLAGS ?=
+
+BISONFLAGS ?=
+BASE_BISONFLAGS ?=
+WARN_BISONFLAGS ?=
+OPT_BISONFLAGS ?= $(if $(opt_debug),$(DEBUG_FLEXFLAGS),$(RELEASE_FLEXFLAGS))
+DEBUG_BISONFLAGS ?=
+RELEASE_BISONFLAGS ?=
+EXTRA_BISONFLAGS ?=
 
 # Constants and variables.
 
@@ -130,12 +140,14 @@ C_GEN_OBJS = \
 
 CXX_OBJS = \
 	$(BUILD_DIR)/cli.o \
+	$(BUILD_DIR)/grammar.o \
 	$(BUILD_DIR)/lexer.o \
 	$(BUILD_DIR)/main.o \
 	#
 
 CXX_GEN_OBJS = \
 	$(BUILD_DIR)/scanner.yy.o \
+	$(BUILD_DIR)/parser.yy.o \
 	#
 
 -include $(OBJS:%.o=%.d)
@@ -145,6 +157,9 @@ $(BUILD_DIR)/$(EXEC): $(OBJS) | $(BUILD_DIR)
 
 $(BUILD_DIR)/scanner.yy.cc: $(SRC_DIR)/scanner.flex | $(BUILD_DIR)
 	$(FLEX) $(FLEXFLAGS) $(EXTRA_FLEXFLAGS) -o "$@" "$<"
+
+$(BUILD_DIR)/parser.yy.cc: $(SRC_DIR)/parser.bison | $(BUILD_DIR)
+	$(BISON) $(BISONFLAGS) $(EXTRA_BISONFLAGS) -o "$@" "$<"
 
 # https://stackoverflow.com/a/16263002
 $(C_OBJS): $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)

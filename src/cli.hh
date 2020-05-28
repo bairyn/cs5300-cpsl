@@ -1,3 +1,6 @@
+#ifndef CPSL_CC_CLI_HH
+#define CPSL_CC_CLI_HH
+
 #include <map>        // std::map
 #include <optional>   // std::optional
 #include <set>        // std::set
@@ -175,6 +178,18 @@ namespace cli {
 	std::vector<std::string> get_lexer_info(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines, const ArgsSpec &args_spec);
 	std::vector<std::string> get_lexer_info(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines);
 
+	// | Write parser information after each line and exit.
+	void parser_info(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path, const ArgsSpec &args_spec, const std::vector<std::string> &args, const std::optional<std::string> &prog);
+	void parser_info(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path, const ArgsSpec &args_spec);
+	void parser_info(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path);
+
+	// | Given lines of input, produce lines of output.
+	std::vector<std::string> get_parser_info(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines, const ArgsSpec &args_spec, const std::vector<std::string> &args, const std::optional<std::string> &prog);
+	std::vector<std::string> get_parser_info(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines, const ArgsSpec &args_spec);
+	std::vector<std::string> get_parser_info(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines);
+
 	// | Assemble a CPSL file.
 	//void assemble(const std::string &in_path, const std::string &out_path);
 }
+
+#endif /* #ifndef CPSL_CC_CLI_HH */

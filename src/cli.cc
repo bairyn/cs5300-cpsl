@@ -1,29 +1,31 @@
-#include <algorithm>  // std::move
-#include <cassert>    // assert
-#include <cerrno>     // errno
-#include <cstddef>    // size_t
-#include <cstring>    // strerror
-#include <fstream>    // std::ifstream, std::ofstream
-#include <ios>        // std::ios_base::badbit, std::ios_base::binary, std::ios_base::failbit, std::ios_base::failure, std::ios_base::in, std::ios_base::iostate, std::ios_base::openmode, std::ios_base::out, std::ios_base::trunc
-#include <iostream>   // std::cerr, std::cout, std::endl
-#include <map>        // std::map
-#include <optional>   // std::optional
-#include <set>        // std::set
-#include <sstream>    // std::ostringstream
-#include <stdexcept>  // std::runtime_error
-#include <string>     // std::string
+#include <algorithm>     // std::move
+#include <cassert>       // assert
+#include <cerrno>        // errno
+#include <cstddef>       // size_t
+#include <cstring>       // strerror
+#include <fstream>       // std::ifstream, std::ofstream
+#include <ios>           // std::ios_base::badbit, std::ios_base::binary, std::ios_base::failbit, std::ios_base::failure, std::ios_base::in, std::ios_base::iostate, std::ios_base::openmode, std::ios_base::out, std::ios_base::trunc
+#include <iostream>      // std::cerr, std::cout, std::endl
+#include <map>           // std::map
+#include <optional>      // std::optional
+#include <set>           // std::set
+#include <sstream>       // std::ostringstream
+#include <stdexcept>     // std::runtime_error
+#include <string>        // std::string
 #include <system_error>  // std::error_code (::message)
-#include <utility>    // std::as_const, std::exit, std::move, std::pair
-#include <vector>     // std::vector
+#include <utility>       // std::as_const, std::exit, std::move, std::pair
+#include <vector>        // std::vector
 
-#include "cli.hh"
 #include "lexer.hh"
+#include "grammar.hh"    // GrammarError
 #include "scanner.hh"
 
 extern "C" {
 #include "version.h"
-#include "util.h"     // assertm, STR
+#include "util.h"        // assertm, STR
 }
+
+#include "cli.hh"
 
 /*
  * Exception types.
@@ -174,15 +176,17 @@ const cli::ArgsSpec cli::ArgsSpec::default_args_spec {
 	{
 		{"help",    {true}},
 		{"version", {true}},
+		{"verbose", {true}},
 		{"input",   {false}},
 		{"output",  {false}},
 		{"lexer",   {true}},
-		{"verbose", {true}},
+		{"parser",  {true}},
 	},
 
 	// std::map<std::string, std::string> option_aliases
 	{
 		{"scanner", "lexer"},
+		{"grammar", "parser"},
 	},
 
 	// std::map<char, std::string> short_aliases
@@ -448,6 +452,18 @@ void cli::run(const std::vector<std::string> &argv) {
 
 		std::cerr << err_msg_noprefix << std::endl;
 		std::exit(5);
+	} catch (const ::GrammarError &ex) {
+		const std::string err_msg = ex.what();
+		std::string err_msg_noprefix;
+		const std::string::size_type separator_pos = err_msg.find(": ");
+		if (separator_pos == std::string::npos) {
+			err_msg_noprefix = std::string(err_msg);
+		} else {
+			err_msg_noprefix = err_msg.substr(separator_pos + 2);
+		}
+
+		std::cerr << err_msg_noprefix << std::endl;
+		std::exit(6);
 	}
 }
 
@@ -477,6 +493,8 @@ std::string cli::get_usage(const std::optional<std::string> &prog) {
 		<< "  -o, --output PATH  specify the path to the output file to write." << std::endl
 		<< "      --lexer," << std::endl
 		<< "      --scanner      write scanner information after each line and stop after the lexer stage." << std::endl
+		<< "      --parser," << std::endl
+		<< "      --grammar      write grammar information after each line and stop after the parser stage." << std::endl
 		;
 	return sstr.str();
 }
@@ -680,6 +698,10 @@ void cli::run_with_paths(const ParsedArgs &parsed_args, const std::string &input
 		return cli::lexer_info(parsed_args, input_path, output_path, args_spec, args, prog);
 	}
 
+	if (parsed_args.is("parser")) {
+		return cli::parser_info(parsed_args, input_path, output_path, args_spec, args, prog);
+	}
+
 	std::cout << "To be implemented..." << std::endl;
 	std::cout << "Input path: " << input_path << std::endl;
 	std::cout << "Output path: " << output_path << std::endl;
@@ -754,6 +776,41 @@ std::vector<std::string> cli::get_lexer_info(const ParsedArgs &parsed_args, cons
 	}
 
 	return output_lines;
+}
+
+void cli::parser_info(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path) {
+	return cli::parser_info(parsed_args, input_path, output_path, cli::ArgsSpec::default_args_spec);
+}
+
+void cli::parser_info(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path, const ArgsSpec &args_spec) {
+	return cli::parser_info(parsed_args, input_path, output_path, args_spec, parsed_args.normalized_args(), std::optional<std::string>());
+}
+
+// | Write parser information after parsing each line and exit.
+void cli::parser_info(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path, const ArgsSpec &args_spec, const std::vector<std::string> &args, const std::optional<std::string> &prog) {
+	// Collect the lines in the input file.
+	std::vector<std::string> input_lines = cli::readlines(parsed_args, input_path);
+
+	// Get the lines of output.
+	std::vector<std::string> output_lines = cli::get_parser_info(parsed_args, input_lines, args_spec, args, prog);
+
+	// Write the output.
+	return cli::writelines(parsed_args, output_path, output_lines);
+}
+
+std::vector<std::string> cli::get_parser_info(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines) {
+	return cli::get_parser_info(parsed_args, input_lines, cli::ArgsSpec::default_args_spec);
+}
+
+std::vector<std::string> cli::get_parser_info(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines, const ArgsSpec &args_spec) {
+	return cli::get_parser_info(parsed_args, input_lines, args_spec, parsed_args.normalized_args(), std::optional<std::string>());
+}
+
+// | Write parser information before each line and exit.
+std::vector<std::string> cli::get_parser_info(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines, const ArgsSpec &args_spec, const std::vector<std::string> &args, const std::optional<std::string> &prog) {
+	std::cout << "To be implemented..." << std::endl;
+
+	return std::vector<std::string>();
 }
 
 /*
