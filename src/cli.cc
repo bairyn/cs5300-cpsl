@@ -726,9 +726,11 @@ std::vector<std::string> cli::get_lexer_info(const ParsedArgs &parsed_args, cons
 
 	// For each input line, print it, and then print all lexemes that begin on
 	// this line.
-	for (size_t input_line_no = 0; input_line_no < input_lines.size(); ++input_line_no) {
+	//
+	// (Line numbers start at "1".
+	for (size_t input_line_no = 1; input_line_no < input_lines.size() + 1; ++input_line_no) {
 		// Get this input line.
-		const std::string &input_line = input_lines[input_line_no];
+		const std::string &input_line = input_lines[input_line_no - 1];
 
 		// Print the input line.
 		output_lines.push_back(input_line);
