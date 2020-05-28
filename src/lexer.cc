@@ -823,6 +823,53 @@ Lexeme::Lexeme(lexeme_tag_t tag, lexeme_data_t &&data)
 	}
 }
 
+// | Similar to retrieving the tag, this function treats certain lexeme
+// types, which have enumerations, as comprising multiple distinct lexeme
+// kinds.
+//
+// Use this rather than the tag for the lexeme kinds if you wish to treat
+// e.g. different keywords as having different lexeme kinds.
+uint64_t Lexeme::get_enumerated_token_kind() const {
+	switch (tag) {
+		// The simple cases: these token kinds aren't split.
+		case identifier_tag:
+		case integer_tag:
+		case char_tag:
+		case string_tag:
+		case comment_tag:
+		case whitespace_tag:
+			return tag;
+
+		// Return different token IDs for different enum values.
+		case keyword_tag:
+			try {
+				const LexemeKeyword &lexeme_keyword = std::get<LexemeKeyword>(data);
+				return num_lexeme_tags + 1 + lexeme_keyword.keyword;
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::get_base: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+		case operator_tag:
+			try {
+				const LexemeOperator &lexeme_operator = std::get<LexemeOperator>(data);
+				return num_lexeme_tags + 1 + num_keywords + 1 + lexeme_operator.operator_;
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::get_base: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+
+		// Unrecognized or invalid tags:
+		case null_lexeme_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Lexeme::tag_repr: invalid tag: " << tag << ".";
+			throw LexerError(sstr.str());
+			break;
+	}
+}
+
 std::string Lexeme::tag_repr() const {
 	switch (tag) {
 		case keyword_tag:

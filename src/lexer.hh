@@ -230,6 +230,14 @@ public:
 	lexeme_tag_t tag;
 	lexeme_data_t data;
 
+	// | Similar to retrieving the tag, this function treats certain lexeme
+	// types, which have enumerations, as comprising multiple distinct lexeme
+	// kinds.
+	//
+	// Use this rather than the tag for the lexeme kinds if you wish to treat
+	// e.g. different keywords as having different lexeme kinds.
+	uint64_t get_enumerated_token_kind() const;
+
 	// | Get a string representation of this lexeme's tag.
 	std::string tag_repr() const;
 
