@@ -624,7 +624,7 @@ Lexeme::Lexeme(lexeme_tag_t tag, const lexeme_data_t &data)
 	switch (tag) {
 		case null_lexeme_tag:
 			try {
-				std::get<std::monostate>(this->data);
+				std::get<std::monostate>(data);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
 				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
@@ -634,7 +634,7 @@ Lexeme::Lexeme(lexeme_tag_t tag, const lexeme_data_t &data)
 
 		case keyword_tag:
 			try {
-				std::get<LexemeKeyword>(this->data);
+				std::get<LexemeKeyword>(data);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
 				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
@@ -644,7 +644,7 @@ Lexeme::Lexeme(lexeme_tag_t tag, const lexeme_data_t &data)
 
 		case identifier_tag:
 			try {
-				std::get<LexemeIdentifier>(this->data);
+				std::get<LexemeIdentifier>(data);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
 				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
@@ -654,7 +654,7 @@ Lexeme::Lexeme(lexeme_tag_t tag, const lexeme_data_t &data)
 
 		case operator_tag:
 			try {
-				std::get<LexemeOperator>(this->data);
+				std::get<LexemeOperator>(data);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
 				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
@@ -664,7 +664,7 @@ Lexeme::Lexeme(lexeme_tag_t tag, const lexeme_data_t &data)
 
 		case integer_tag:
 			try {
-				std::get<LexemeInteger>(this->data);
+				std::get<LexemeInteger>(data);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
 				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
@@ -674,7 +674,7 @@ Lexeme::Lexeme(lexeme_tag_t tag, const lexeme_data_t &data)
 
 		case char_tag:
 			try {
-				std::get<LexemeChar>(this->data);
+				std::get<LexemeChar>(data);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
 				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
@@ -684,7 +684,7 @@ Lexeme::Lexeme(lexeme_tag_t tag, const lexeme_data_t &data)
 
 		case string_tag:
 			try {
-				std::get<LexemeString>(this->data);
+				std::get<LexemeString>(data);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
 				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
@@ -694,7 +694,7 @@ Lexeme::Lexeme(lexeme_tag_t tag, const lexeme_data_t &data)
 
 		case comment_tag:
 			try {
-				std::get<LexemeComment>(this->data);
+				std::get<LexemeComment>(data);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
 				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
@@ -704,7 +704,7 @@ Lexeme::Lexeme(lexeme_tag_t tag, const lexeme_data_t &data)
 
 		case whitespace_tag:
 			try {
-				std::get<LexemeWhitespace>(this->data);
+				std::get<LexemeWhitespace>(data);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
 				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
@@ -727,7 +727,7 @@ Lexeme::Lexeme(lexeme_tag_t tag, lexeme_data_t &&data)
 	switch (tag) {
 		case null_lexeme_tag:
 			try {
-				std::get<std::monostate>(this->data);
+				std::get<std::monostate>(data);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
 				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
@@ -737,7 +737,7 @@ Lexeme::Lexeme(lexeme_tag_t tag, lexeme_data_t &&data)
 
 		case keyword_tag:
 			try {
-				std::get<LexemeKeyword>(this->data);
+				std::get<LexemeKeyword>(data);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
 				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
@@ -747,7 +747,7 @@ Lexeme::Lexeme(lexeme_tag_t tag, lexeme_data_t &&data)
 
 		case identifier_tag:
 			try {
-				std::get<LexemeIdentifier>(this->data);
+				std::get<LexemeIdentifier>(data);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
 				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
@@ -757,7 +757,7 @@ Lexeme::Lexeme(lexeme_tag_t tag, lexeme_data_t &&data)
 
 		case operator_tag:
 			try {
-				std::get<LexemeOperator>(this->data);
+				std::get<LexemeOperator>(data);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
 				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
@@ -767,7 +767,7 @@ Lexeme::Lexeme(lexeme_tag_t tag, lexeme_data_t &&data)
 
 		case integer_tag:
 			try {
-				std::get<LexemeInteger>(this->data);
+				std::get<LexemeInteger>(data);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
 				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
@@ -777,7 +777,7 @@ Lexeme::Lexeme(lexeme_tag_t tag, lexeme_data_t &&data)
 
 		case char_tag:
 			try {
-				std::get<LexemeChar>(this->data);
+				std::get<LexemeChar>(data);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
 				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
@@ -787,7 +787,7 @@ Lexeme::Lexeme(lexeme_tag_t tag, lexeme_data_t &&data)
 
 		case string_tag:
 			try {
-				std::get<LexemeString>(this->data);
+				std::get<LexemeString>(data);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
 				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
@@ -797,7 +797,7 @@ Lexeme::Lexeme(lexeme_tag_t tag, lexeme_data_t &&data)
 
 		case comment_tag:
 			try {
-				std::get<LexemeComment>(this->data);
+				std::get<LexemeComment>(data);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
 				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
@@ -807,7 +807,7 @@ Lexeme::Lexeme(lexeme_tag_t tag, lexeme_data_t &&data)
 
 		case whitespace_tag:
 			try {
-				std::get<LexemeWhitespace>(this->data);
+				std::get<LexemeWhitespace>(data);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
 				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
@@ -868,7 +868,7 @@ LexemeBase Lexeme::get_base() const {
 
 		case keyword_tag:
 			try {
-				const LexemeKeyword &lexeme_keyword = std::get<LexemeKeyword>(this->data);
+				const LexemeKeyword &lexeme_keyword = std::get<LexemeKeyword>(data);
 				return LexemeBase(lexeme_keyword);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
@@ -879,7 +879,7 @@ LexemeBase Lexeme::get_base() const {
 
 		case identifier_tag:
 			try {
-				const LexemeIdentifier &lexeme_identifier = std::get<LexemeIdentifier>(this->data);
+				const LexemeIdentifier &lexeme_identifier = std::get<LexemeIdentifier>(data);
 				return LexemeBase(lexeme_identifier);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
@@ -890,7 +890,7 @@ LexemeBase Lexeme::get_base() const {
 
 		case operator_tag:
 			try {
-				const LexemeOperator &lexeme_operator = std::get<LexemeOperator>(this->data);
+				const LexemeOperator &lexeme_operator = std::get<LexemeOperator>(data);
 				return LexemeBase(lexeme_operator);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
@@ -901,7 +901,7 @@ LexemeBase Lexeme::get_base() const {
 
 		case integer_tag:
 			try {
-				const LexemeInteger &lexeme_integer = std::get<LexemeInteger>(this->data);
+				const LexemeInteger &lexeme_integer = std::get<LexemeInteger>(data);
 				return LexemeBase(lexeme_integer);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
@@ -912,7 +912,7 @@ LexemeBase Lexeme::get_base() const {
 
 		case char_tag:
 			try {
-				const LexemeChar &lexeme_char = std::get<LexemeChar>(this->data);
+				const LexemeChar &lexeme_char = std::get<LexemeChar>(data);
 				return LexemeBase(lexeme_char);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
@@ -923,7 +923,7 @@ LexemeBase Lexeme::get_base() const {
 
 		case string_tag:
 			try {
-				const LexemeString &lexeme_string = std::get<LexemeString>(this->data);
+				const LexemeString &lexeme_string = std::get<LexemeString>(data);
 				return LexemeBase(lexeme_string);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
@@ -934,7 +934,7 @@ LexemeBase Lexeme::get_base() const {
 
 		case comment_tag:
 			try {
-				const LexemeComment &lexeme_comment = std::get<LexemeComment>(this->data);
+				const LexemeComment &lexeme_comment = std::get<LexemeComment>(data);
 				return LexemeBase(lexeme_comment);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
@@ -945,7 +945,7 @@ LexemeBase Lexeme::get_base() const {
 
 		case whitespace_tag:
 			try {
-				const LexemeWhitespace &lexeme_whitespace = std::get<LexemeWhitespace>(this->data);
+				const LexemeWhitespace &lexeme_whitespace = std::get<LexemeWhitespace>(data);
 				return LexemeBase(lexeme_whitespace);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;

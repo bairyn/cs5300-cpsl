@@ -197,7 +197,6 @@ std::vector<Lexeme> scanlines(const std::vector<std::string> &lines) {
 		yyset_extra(Lexeme(), scanner);
 		while((token = yylex(scanner)) > 0) {
 			lexemes.push_back(Lexeme(yyget_extra(scanner)));
-			yyset_extra(Lexeme(), scanner);
 		}
 	} catch (const LexerError &ex) {
 		// Close the scanner.
