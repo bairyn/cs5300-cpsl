@@ -16,7 +16,7 @@
 class LexerError : public std::runtime_error {
 public:
 	LexerError();
-	LexerError(std::string message);
+	LexerError(const std::string &message);
 };
 
 /*

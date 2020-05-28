@@ -33,16 +33,16 @@ cli::CLIError::CLIError()
 	: runtime_error("A CLI error occurred.")
 	{}
 
-cli::CLIError::CLIError(std::string message)
-	: runtime_error(std::move(message))
+cli::CLIError::CLIError(const std::string &message)
+	: runtime_error(message)
 	{}
 
 cli::RunError::RunError()
 	: runtime_error("A run error occurred.")
 	{}
 
-cli::RunError::RunError(std::string message)
-	: runtime_error(std::move(message))
+cli::RunError::RunError(const std::string &message)
+	: runtime_error(message)
 	{}
 
 /*
@@ -436,7 +436,7 @@ void cli::run(const std::vector<std::string> &argv) {
 			<< "  Message: " << ex.code().message() << std::endl
 			;
 		std::exit(4);
-	} catch (const LexerError &ex) {
+	} catch (const ::LexerError &ex) {
 		const std::string err_msg = ex.what();
 		std::string err_msg_noprefix;
 		const std::string::size_type separator_pos = err_msg.find(": ");

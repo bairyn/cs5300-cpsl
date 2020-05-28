@@ -20,8 +20,8 @@ LexerError::LexerError()
 	: runtime_error("A lexer error occurred.")
 	{}
 
-LexerError::LexerError(std::string message)
-	: runtime_error(std::move(message))
+LexerError::LexerError(const std::string &message)
+	: runtime_error(message)
 	{}
 
 /*

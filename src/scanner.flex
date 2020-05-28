@@ -159,7 +159,7 @@ WHITESPACE [ \n\t]+
 	/* [ \t\n] | */  /* Comment out to suppress warning, even though it is deliberately redundant. */
 . {
 	std::ostringstream sstr;
-	sstr << "Unrecognized character: '" << yytext << "'";
+	sstr << "scanner: Unrecognized character: '" << yytext << "'";
 	throw LexerError(sstr.str());
 }
 

@@ -15,13 +15,13 @@ namespace cli {
 	class CLIError : public std::runtime_error {
 	public:
 		CLIError();
-		CLIError(std::string message);
+		CLIError(const std::string &message);
 	};
 
 	class RunError : public std::runtime_error {
 	public:
 		RunError();
-		RunError(std::string message);
+		RunError(const std::string &message);
 	};
 
 	/*
