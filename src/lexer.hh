@@ -25,11 +25,18 @@ public:
 
 class LexemeBase {
 public:
-	LexemeBase(uint64_t line, uint64_t column, std::string text);
+	LexemeBase(uint64_t line, uint64_t column, const std::string &text);
+	LexemeBase(uint64_t line, uint64_t column, std::string &&text);
+	// | Calculate the end line and column value for the next lexeme.
+	LexemeBase(const LexemeBase &previous_lexeme_base, const std::string &text);
+	LexemeBase(const LexemeBase &previous_lexeme_base, std::string &&text);
 
 	uint64_t line;
 	uint64_t column;
 	std::string text;
+
+	uint64_t get_line_end() const;
+	uint64_t get_column_end() const;
 };
 
 class LexemeIdentifier : public LexemeBase {
@@ -86,6 +93,7 @@ public:
 
 	static const std::map<std::string, keyword_t> keyword_map;
 	static std::pair<keyword_t, bool> get_keyword(std::string text);
+	static bool is_keyword(std::string text);
 };
 
 enum operator_e {
@@ -181,7 +189,7 @@ public:
 
 class LexemeWhitespace : public LexemeBase {
 public:
-	LexemeWhitespace();
+	LexemeWhitespace(const LexemeBase &lexeme_base);
 };
 
 /*

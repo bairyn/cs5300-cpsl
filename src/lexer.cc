@@ -1,4 +1,4 @@
-#include <algorithm>  // std::all_of
+#include <algorithm>  // std::all_of, std::count
 #include <cctype>     // std::isupper, std::tolower
 #include <cstdint>    // uint8_t, uint64_t
 #include <iterator>   // std::back_inserter
@@ -28,11 +28,46 @@ LexerError::LexerError(std::string message)
  * Lexeme types.
  */
 
-LexemeBase::LexemeBase(uint64_t line, uint64_t column, std::string text)
+LexemeBase::LexemeBase(uint64_t line, uint64_t column, const std::string &text)
 	: line(line)
 	, column(column)
 	, text(text)
 	{}
+
+LexemeBase::LexemeBase(uint64_t line, uint64_t column, std::string &&text)
+	: line(line)
+	, column(column)
+	, text(std::move(text))
+	{}
+
+// | Calculate the end line and column value for the next lexeme.
+LexemeBase::LexemeBase(const LexemeBase &previous_lexeme_base, const std::string &text)
+	: line(previous_lexeme_base.get_line_end())
+	, column(previous_lexeme_base.get_column_end())
+	, text(text)
+	{}
+
+LexemeBase::LexemeBase(const LexemeBase &previous_lexeme_base, std::string &&text)
+	: line(previous_lexeme_base.get_line_end())
+	, column(previous_lexeme_base.get_column_end())
+	, text(std::move(text))
+	{}
+
+uint64_t LexemeBase::get_line_end() const {
+	return line + static_cast<uint64_t>(std::count(text.cbegin(), text.cend(), '\n'));
+}
+
+uint64_t LexemeBase::get_column_end() const {
+	std::string::size_type last_newline_pos = text.rfind('\n');
+	std::string::size_type last_line_pos;
+	if (last_newline_pos == std::string::npos) {
+		last_line_pos = 0;
+	} else {
+		last_line_pos = last_newline_pos + 1;
+	}
+
+	return text.substr(last_line_pos).size() + 1;  // "+ 1": Columns begin at 1.
+}
 
 LexemeIdentifier::LexemeIdentifier(const LexemeBase &lexeme_base)
 	: LexemeBase(lexeme_base)
@@ -109,6 +144,31 @@ std::pair<keyword_t, bool> LexemeKeyword::get_keyword(std::string text) {
 	}
 }
 
+bool LexemeKeyword::is_keyword(std::string text) {
+	std::string key;
+	bool uppercase;
+	(void) uppercase;  // Unused, except for writing.
+
+	// All uppercase?
+	if (text.size() > 0 && std::all_of(text.cbegin(), text.cend(), [](char c){return std::isupper(static_cast<unsigned char>(c));})) {
+		uppercase = true;
+		// c.f. https://stackoverflow.com/q/1489313
+		std::transform(text.cbegin(), text.cend(), std::back_inserter(key), [](char c){return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));});
+	} else {
+		uppercase = false;
+		key = text;
+	}
+
+	std::map<std::string, keyword_t>::const_iterator search = keyword_map.find(key);
+	if (search == keyword_map.cend()) {
+		// No match found.
+		return false;
+	} else {
+		// Match found; this is a keyword.
+		return true;
+	}
+}
+
 LexemeOperator::LexemeOperator(const LexemeBase &lexeme_base, operator_t operator_)
 	: LexemeBase(lexeme_base)
 	, operator_(operator_)
@@ -143,7 +203,7 @@ const std::map<std::string, operator_t> LexemeOperator::operator_map {
 	{")", rightparenthesis_operator},
 	{"[", leftbracket_operator},
 	{"]", rightbracket_operator},
-	{":", colonequals_operator},
+	{":=", colonequals_operator},
 	{"%", percent_operator},
 };
 operator_t LexemeOperator::get_operator(std::string text) {
@@ -413,7 +473,7 @@ LexemeChar::LexemeChar(const LexemeBase &lexeme_base)
 		char_ = static_cast<uint8_t>(text[1]);
 	} else if (text.size() > 4) {
 		std::ostringstream sstr;
-		sstr << "LexemeChar::LexemeChar: too many characters for a valid char parse.";
+		sstr << "LexemeChar::LexemeChar: too many characters for a valid char parse (`" << text << "').";
 		throw LexerError(sstr.str());
 	} else {  // text.size() == 4
 		if (text[0] != '\'' || text[3] != '\'') {
@@ -457,6 +517,10 @@ LexemeChar::LexemeChar(const LexemeBase &lexeme_base)
 }
 
 LexemeComment::LexemeComment(const LexemeBase &lexeme_base)
+	: LexemeBase(lexeme_base)
+	{}
+
+LexemeWhitespace::LexemeWhitespace(const LexemeBase &lexeme_base)
 	: LexemeBase(lexeme_base)
 	{}
 
@@ -628,6 +692,16 @@ Lexeme::Lexeme(lexeme_tag_t tag, const lexeme_data_t &data)
 			}
 			break;
 
+		case comment_tag:
+			try {
+				std::get<LexemeComment>(this->data);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
 		case whitespace_tag:
 			try {
 				std::get<LexemeWhitespace>(this->data);
@@ -721,6 +795,16 @@ Lexeme::Lexeme(lexeme_tag_t tag, lexeme_data_t &&data)
 			}
 			break;
 
+		case comment_tag:
+			try {
+				std::get<LexemeComment>(this->data);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::Lexeme: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
 		case whitespace_tag:
 			try {
 				std::get<LexemeWhitespace>(this->data);
@@ -758,6 +842,9 @@ std::string Lexeme::tag_repr() const {
 
 		case string_tag:
 			return "TAG";
+
+		case comment_tag:
+			return "COMMENT";
 
 		case whitespace_tag:
 			return "WHITESPACE";
@@ -838,6 +925,17 @@ LexemeBase Lexeme::get_base() const {
 			try {
 				const LexemeString &lexeme_string = std::get<LexemeString>(this->data);
 				return LexemeBase(lexeme_string);
+			} catch (const std::bad_variant_access &ex) {
+				std::ostringstream sstr;
+				sstr << "Lexeme::get_base: the tag does not correspond to the data's std::variant tag.";
+				throw LexerError(sstr.str());
+			}
+			break;
+
+		case comment_tag:
+			try {
+				const LexemeComment &lexeme_comment = std::get<LexemeComment>(this->data);
+				return LexemeBase(lexeme_comment);
 			} catch (const std::bad_variant_access &ex) {
 				std::ostringstream sstr;
 				sstr << "Lexeme::get_base: the tag does not correspond to the data's std::variant tag.";

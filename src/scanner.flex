@@ -7,6 +7,9 @@
 /* Allow the current lexeme to be stored by rules' actions: c.f. https://www.cs.virginia.edu/~cr4bd/flex-manual/Extra-Data.html#Extra-Data */
 %option extra-type="Lexeme"
 
+/* Start conditions: c.f. https://www.cs.virginia.edu/~cr4bd/flex-manual/Start-Conditions.html */
+%x COMMENT
+
 %{
 #include <iostream>   // std::endl
 #include <sstream>    // std::ostringstream
@@ -18,13 +21,14 @@
 #include "scanner.hh"
 %}
 
-DIGIT       [0-9]
-HEXDIGIT    [0-9]|[a-f]|[A-F]
-OCTALDIGIT  [0-7]
-LOWER       [a-z]
-UPPER       [A-Z]
-LETTER      {UPPER}|{LOWER}
-INNERCHAR   [^\[^:print:]]|"\\"[[:print:]]
+DIGIT           [0-9]
+HEXDIGIT        [0-9]|[a-f]|[A-F]
+OCTALDIGIT      [0-7]
+LOWER           [a-z]
+UPPER           [A-Z]
+LETTER          {UPPER}|{LOWER}
+/* {-} operator: c.f. https://westes.github.io/flex/manual/Patterns.html */
+INNERCHAR       [[:print:]]{-}[\\]|"\\"[[:print:]]
 
 OCTAL "0"{OCTALDIGIT}*
 HEX "0x"{HEXDIGIT}*
@@ -34,44 +38,125 @@ HEX "0x"{HEXDIGIT}*
  */
 DECIMAL [1-9]{DIGIT}*
 
+COMMENT_PREFIX "$"
+COMMENT_NOPREFIX [^\n]*
+
+/*
+ * Note: flex orders rules by longest match, then order; not order first!
+ * Handle keywords through identifier matches and LexemeKeyword::is_keyword.
+ * c.f. https://stackoverflow.com/a/34895995
+ */
 IDENTIFIER {LETTER}({LETTER}|{DIGIT}|"_")*
 KEYWORD array|begin|chr|const|do|downto|else|elseif|end|for|forward|function|if|of|ord|pred|procedure|read|record|ref|repeat|return|stop|succ|then|to|type|until|var|while|write
 OPERATOR "+"|"-"|"*"|"/"|"&"|"|"|"~"|"="|"<>"|"<"|"<="|">"|">="|"."|","|":"|";"|"("|")"|"["|"]"|":="|"%"
 INTEGER {OCTAL}|{HEX}|{DECIMAL}
-COMMENT "$"[^\n]*
+COMMENT {COMMENT_PREFIX}{COMMENT_NOPREFIX}
 CHAR "'"{INNERCHAR}"'"
 STRING "\""{INNERCHAR}*"\""
-WHITESPACE "\n"|"\t"|" "
+WHITESPACE [ \n\t]+
 
 %%
 
-	/* TODO */
+{IDENTIFIER} {
+	const std::string text(yytext);
+	const Lexeme last_lexeme(yyget_extra(yyscanner));
 
-	/* Handlers. */
-
-[ \t\n] |
-. {
-	Lexeme lexeme(
-		keyword_tag,
-		LexemeKeyword(
-			LexemeBase(
-				2,
-				3,
-				yytext
-			),
-			do_keyword
-		)
-	);
-	yyset_extra(lexeme, yyscanner);
-	return keyword_tag;
+	if (LexemeKeyword::is_keyword(text)) {
+		Lexeme current_lexeme(
+			keyword_tag,
+			LexemeKeyword(LexemeBase(last_lexeme.get_base(), text))
+		);
+		yyset_extra(current_lexeme, yyscanner);
+		return current_lexeme.tag;
+	} else {
+		Lexeme current_lexeme(
+			identifier_tag,
+			LexemeIdentifier(LexemeBase(last_lexeme.get_base(), text))
+		);
+		yyset_extra(current_lexeme, yyscanner);
+		return current_lexeme.tag;
+	}
 }
 
-IDENTIFIER  {
-	/* ... */
+{OPERATOR} {
+	const std::string text(yytext);
+	const Lexeme last_lexeme(yyget_extra(yyscanner));
+
+	Lexeme current_lexeme(
+		operator_tag,
+		LexemeOperator(LexemeBase(last_lexeme.get_base(), text))
+	);
+	yyset_extra(current_lexeme, yyscanner);
+	return current_lexeme.tag;
+}
+
+{INTEGER} {
+	const std::string text(yytext);
+	const Lexeme last_lexeme(yyget_extra(yyscanner));
+
+	Lexeme current_lexeme(
+		integer_tag,
+		LexemeInteger(LexemeBase(last_lexeme.get_base(), text))
+	);
+	yyset_extra(current_lexeme, yyscanner);
+	return current_lexeme.tag;
+}
+
+{COMMENT_PREFIX} {
+	BEGIN(COMMENT);
+}
+<COMMENT>{COMMENT_NOPREFIX} {
+	BEGIN(INITIAL);
+
+	const std::string text(std::string("$") + std::string(yytext));
+	const Lexeme last_lexeme(yyget_extra(yyscanner));
+
+	Lexeme current_lexeme(
+		comment_tag,
+		LexemeComment(LexemeBase(last_lexeme.get_base(), text))
+	);
+	yyset_extra(current_lexeme, yyscanner);
+	return current_lexeme.tag;
+}
+
+{CHAR} {
+	const std::string text(yytext);
+	const Lexeme last_lexeme(yyget_extra(yyscanner));
+
+	Lexeme current_lexeme(
+		char_tag,
+		LexemeChar(LexemeBase(last_lexeme.get_base(), text))
+	);
+	yyset_extra(current_lexeme, yyscanner);
+	return current_lexeme.tag;
+}
+
+{STRING} {
+	const std::string text(yytext);
+	const Lexeme last_lexeme(yyget_extra(yyscanner));
+
+	Lexeme current_lexeme(
+		string_tag,
+		LexemeString(LexemeBase(last_lexeme.get_base(), text))
+	);
+	yyset_extra(current_lexeme, yyscanner);
+	return current_lexeme.tag;
+}
+
+{WHITESPACE} {
+	const std::string text(yytext);
+	const Lexeme last_lexeme(yyget_extra(yyscanner));
+
+	Lexeme current_lexeme(
+		whitespace_tag,
+		LexemeWhitespace(LexemeBase(last_lexeme.get_base(), text))
+	);
+	yyset_extra(current_lexeme, yyscanner);
+	return current_lexeme.tag;
 }
 
 	/* c.f. https://stackoverflow.com/a/22713809 */
-[ \t\n] |
+	/* [ \t\n] | */  /* Comment out to suppress warning, even though it is deliberately redundant. */
 . {
 	std::ostringstream sstr;
 	sstr << "Unrecognized character: '" << yytext << "'";
