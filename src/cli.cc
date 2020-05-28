@@ -744,7 +744,7 @@ std::vector<std::string> cli::get_lexer_info(const ParsedArgs &parsed_args, cons
 		// Print the lexeme line.
 		std::ostringstream slexeme_line;
 
-		slexeme_line << "LEXEMES";
+		slexeme_line << "LEXEMES:";
 		for (const Lexeme &input_line_lexeme : input_line_lexemes) {
 			slexeme_line << " " << input_line_lexeme.tag_repr();
 		}
