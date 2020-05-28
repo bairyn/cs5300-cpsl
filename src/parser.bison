@@ -108,7 +108,7 @@
 #include <sstream>     // std::ostringstream
 #include <vector>      // std::vector
 
-#include "lexer.hh"    // Lexeme
+#include "lexer.hh"    // comment_tag, Lexeme, whitespace_tag
 #include "grammar.hh"  // Grammar, GrammarError
 
 #include "parser.hh"
@@ -518,17 +518,20 @@ ParserState::ParserState(const std::vector<Lexeme> &lexemes)
  * Feed in a lexeme: *lvalp = semantic value; return token type;
  */
 int yy_cpsl_cc_parserlex(parser_yystype_t *lvalp, std::shared_ptr<ParserState> parser_state) {
-	if (parser_state->next_lexeme >= parser_state->lexemes.size()) {
-		// Done traversing lexemes.
-		return 0;
-	} else {
-		// TODO: skip whitespace and comments when feeding the parser.
-
+	for (; parser_state->next_lexeme < parser_state->lexemes.size(); ++parser_state->next_lexeme) {
 		const Lexeme &lexeme = parser_state->lexemes[parser_state->next_lexeme];
-		*lvalp = parser_state->next_lexeme;
-		++parser_state->next_lexeme;
-		return lexeme.get_enumerated_token_kind();
+
+		// Skip whitespace and comments when feeding the parser.
+		if (lexeme.tag == comment_tag || lexeme.tag == whitespace_tag) {
+			continue;
+		} else {
+			*lvalp = parser_state->next_lexeme++;
+			return lexeme.get_enumerated_token_kind();
+		}
 	}
+
+	// Done traversing lexemes.
+	return 0;
 }
 
 void yy_cpsl_cc_parsererror(std::shared_ptr<ParserState> parser_state, const char *s) {
