@@ -636,14 +636,14 @@ uint64_t Grammar::STRCAT_4(new_, s, _, b10)(uint64_t b10c0) { \
 	return index; \
 }
 
-#define DEFINE_SYMBOL_3_3_3_3_3_3_3_3_3_3_3_3_3_2_2_3_4_4_4_4_4_1( \
+#define DEFINE_SYMBOL_3_3_3_3_3_3_3_3_3_3_3_3_3_2_2_3_4_4_4_4_4_1_1_1_1( \
 	S, s, \
 	B0,  B1,  B2,  B3,  B4,  B5,  B6,  B7,  B8,  B9, \
 	B10, B11, B12, B13, B14, B15, B16, B17, B18, B19, \
-	B20, B21, \
+	B20, B21, B22, B23, B24, \
 	b0,  b1,  b2,  b3,  b4,  b5,  b6,  b7,  b8,  b9, \
 	b10, b11, b12, b13, b14, b15, b16, b17, b18, b19, \
-	b20, b21, \
+	b20, b21, b22, b23, b24, \
 	b0c0, b0c1, b0c2, \
 	b1c0, b1c1, b1c2, \
 	b2c0, b2c1, b2c2, \
@@ -665,7 +665,10 @@ uint64_t Grammar::STRCAT_4(new_, s, _, b10)(uint64_t b10c0) { \
 	b18c0, b18c1, b18c2, b18c3, \
 	b19c0, b19c1, b19c2, b19c3, \
 	b20c0, b20c1, b20c2, b20c3, \
-	b21c0 \
+	b21c0, \
+	b22c0, \
+	b23c0, \
+	b24c0 \
 ) \
 S::S(uint64_t branch, uint64_t data) \
 	: branch(branch) \
@@ -803,6 +806,18 @@ S::B20::B20(uint64_t b20c0, uint64_t b20c1, uint64_t b20c2, uint64_t b20c3) \
  \
 S::B21::B21(uint64_t b21c0) \
 	: b21c0(b21c0) \
+	{} \
+ \
+S::B22::B22(uint64_t b22c0) \
+	: b22c0(b22c0) \
+	{} \
+ \
+S::B23::B23(uint64_t b23c0) \
+	: b23c0(b23c0) \
+	{} \
+ \
+S::B24::B24(uint64_t b24c0) \
+	: b24c0(b24c0) \
 	{} \
  \
 uint64_t Grammar::STRCAT_4(new_, s, _, b0)(uint64_t b0c0, uint64_t b0c1, uint64_t b0c2) { \
@@ -979,10 +994,34 @@ uint64_t Grammar::STRCAT_4(new_, s, _, b21)(uint64_t b21c0) { \
 	STRCAT_4(s, _, b21, _storage).emplace_back(b21c0); \
 	STRCAT_2(s, _storage).emplace_back(S::STRCAT_2(b21, _branch), branch_index); \
 	return index; \
+} \
+ \
+uint64_t Grammar::STRCAT_4(new_, s, _, b22)(uint64_t b22c0) { \
+	uint64_t index = static_cast<uint64_t>(STRCAT_2(s, _storage).size()); \
+	uint64_t branch_index = static_cast<uint64_t>(STRCAT_4(s, _, b22, _storage).size()); \
+	STRCAT_4(s, _, b22, _storage).emplace_back(b22c0); \
+	STRCAT_2(s, _storage).emplace_back(S::STRCAT_2(b22, _branch), branch_index); \
+	return index; \
+} \
+ \
+uint64_t Grammar::STRCAT_4(new_, s, _, b23)(uint64_t b23c0) { \
+	uint64_t index = static_cast<uint64_t>(STRCAT_2(s, _storage).size()); \
+	uint64_t branch_index = static_cast<uint64_t>(STRCAT_4(s, _, b23, _storage).size()); \
+	STRCAT_4(s, _, b23, _storage).emplace_back(b23c0); \
+	STRCAT_2(s, _storage).emplace_back(S::STRCAT_2(b23, _branch), branch_index); \
+	return index; \
+} \
+ \
+uint64_t Grammar::STRCAT_4(new_, s, _, b24)(uint64_t b24c0) { \
+	uint64_t index = static_cast<uint64_t>(STRCAT_2(s, _storage).size()); \
+	uint64_t branch_index = static_cast<uint64_t>(STRCAT_4(s, _, b24, _storage).size()); \
+	STRCAT_4(s, _, b24, _storage).emplace_back(b24c0); \
+	STRCAT_2(s, _storage).emplace_back(S::STRCAT_2(b24, _branch), branch_index); \
+	return index; \
 }
 
 DEFINE_SYMBOL_1(Keyword, keyword, lexeme)
-DEFINE_SYMBOL_1(Operator, operator_, lexeme)
+DEFINE_SYMBOL_1(Operator, operator, lexeme)
 DEFINE_SYMBOL_1(Start, start, program)
 DEFINE_SYMBOL_6(Program, program, constant_decl_opt, type_decl_opt, var_decl_opt, procedure_decl_or_function_decl_list, block, dot_operator0)
 DEFINE_SYMBOL_0_1(ConstantDeclOpt, constant_decl_opt, Empty, Value, empty, value, constant_decl)
@@ -1051,10 +1090,10 @@ DEFINE_SYMBOL_0_3(ExpressionPrefixedList, expression_prefixed_list, Empty, Cons,
 DEFINE_SYMBOL_4(ProcedureCall, procedure_call, identifier, leftparenthesis_operator0, expression_sequence_opt, rightparenthesis_operator0)
 DEFINE_SYMBOL_0_1(ExpressionSequenceOpt, expression_sequence_opt, Empty, Value, empty, value, expression_sequence)
 DEFINE_SYMBOL_0(NullStatement, null_statement)
-DEFINE_SYMBOL_3_3_3_3_3_3_3_3_3_3_3_3_3_2_2_3_4_4_4_4_4_1(
+DEFINE_SYMBOL_3_3_3_3_3_3_3_3_3_3_3_3_3_2_2_3_4_4_4_4_4_1_1_1_1(
 	Expression, expression,
-	Pipe, Ampersand, Equals, LtOrGt, Le, Ge, Lt, Gt, Plus, Minus, Times, Slash, Percent, Tilde, UnaryMinus, Parentheses, Call, Chr, Ord, Pred, Succ, Lvalue,
-	pipe, ampersand, equals, lt_or_gt, le, ge, lt, gt, plus, minus, times, slash, percent, tilde, unary_minus, parentheses, call, chr, ord, pred, succ, lvalue,
+	Pipe, Ampersand, Equals, LtOrGt, Le, Ge, Lt, Gt, Plus, Minus, Times, Slash, Percent, Tilde, UnaryMinus, Parentheses, Call, Chr, Ord, Pred, Succ, Lvalue, Integer, Char_, String,
+	pipe, ampersand, equals, lt_or_gt, le, ge, lt, gt, plus, minus, times, slash, percent, tilde, unary_minus, parentheses, call, chr, ord, pred, succ, lvalue, integer, char_, string,
 	expression0, pipe_operator0, expression1,
 	expression0, ampersand_operator0, expression1,
 	expression0, equals_operator0, expression1,
@@ -1076,7 +1115,10 @@ DEFINE_SYMBOL_3_3_3_3_3_3_3_3_3_3_3_3_3_2_2_3_4_4_4_4_4_1(
 	ord_keyword0, leftparenthesis_operator0, expression, rightparenthesis_operator0,
 	pred_keyword0, leftparenthesis_operator0, expression, rightparenthesis_operator0,
 	succ_keyword0, leftparenthesis_operator0, expression, rightparenthesis_operator0,
-	lvalue
+	lvalue,
+	integer,
+	char_,
+	string
 )
 DEFINE_SYMBOL_2(Lvalue, lvalue, identifier, lvalue_accessor_clause_list)
 DEFINE_SYMBOL_0_2(LvalueAccessorClauseList, lvalue_accessor_clause_list, Empty, Cons, empty, cons, lvalue_accessor_clause_list, lvalue_accessor_clause)

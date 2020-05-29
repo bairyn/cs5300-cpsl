@@ -529,14 +529,14 @@ public: \
 	}; \
 };
 
-#define DECLARE_SYMBOL_CLASS_3_3_3_3_3_3_3_3_3_3_3_3_3_2_2_3_4_4_4_4_4_1( \
+#define DECLARE_SYMBOL_CLASS_3_3_3_3_3_3_3_3_3_3_3_3_3_2_2_3_4_4_4_4_4_1_1_1_1( \
 	S, s, \
 	B0,  B1,  B2,  B3,  B4,  B5,  B6,  B7,  B8,  B9, \
 	B10, B11, B12, B13, B14, B15, B16, B17, B18, B19, \
-	B20, B21, \
+	B20, B21, B22, B23, B24, \
 	b0,  b1,  b2,  b3,  b4,  b5,  b6,  b7,  b8,  b9, \
 	b10, b11, b12, b13, b14, b15, b16, b17, b18, b19, \
-	b20, b21, \
+	b20, b21, b22, b23, b24, \
 	b0c0, b0c1, b0c2, \
 	b1c0, b1c1, b1c2, \
 	b2c0, b2c1, b2c2, \
@@ -558,7 +558,10 @@ public: \
 	b18c0, b18c1, b18c2, b18c3, \
 	b19c0, b19c1, b19c2, b19c3, \
 	b20c0, b20c1, b20c2, b20c3, \
-	b21c0 \
+	b21c0, \
+	b22c0, \
+	b23c0, \
+	b24c0 \
 ) \
 class S : public NonterminalSymbol { \
 public: \
@@ -590,7 +593,10 @@ public: \
 		STRCAT_2(b19, _branch) = 20, \
 		STRCAT_2(b20, _branch) = 21, \
 		STRCAT_2(b21, _branch) = 22, \
-		num_branches           = 23, \
+		STRCAT_2(b22, _branch) = 23, \
+		STRCAT_2(b23, _branch) = 24, \
+		STRCAT_2(b24, _branch) = 25, \
+		num_branches           = 25, \
 	}; \
  \
  	class B0 : public Branch { \
@@ -769,10 +775,28 @@ public: \
 		B21(uint64_t b21c0); \
 		uint64_t b21c0; \
 	}; \
+ \
+ 	class B22 : public Branch { \
+	public: \
+		B22(uint64_t b22c0); \
+		uint64_t b22c0; \
+	}; \
+ \
+ 	class B23 : public Branch { \
+	public: \
+		B23(uint64_t b23c0); \
+		uint64_t b23c0; \
+	}; \
+ \
+ 	class B24 : public Branch { \
+	public: \
+		B24(uint64_t b24c0); \
+		uint64_t b24c0; \
+	}; \
 };
 
 DECLARE_SYMBOL_CLASS_1(Keyword, keyword, lexeme)
-DECLARE_SYMBOL_CLASS_1(Operator, operator_, lexeme)
+DECLARE_SYMBOL_CLASS_1(Operator, operator, lexeme)
 DECLARE_SYMBOL_CLASS_1(Start, start, program)
 DECLARE_SYMBOL_CLASS_6(Program, program, constant_decl_opt, type_decl_opt, var_decl_opt, procedure_decl_or_function_decl_list, block, dot_operator0)
 DECLARE_SYMBOL_CLASS_0_1(ConstantDeclOpt, constant_decl_opt, Empty, Value, empty, value, constant_decl)
@@ -841,10 +865,10 @@ DECLARE_SYMBOL_CLASS_0_3(ExpressionPrefixedList, expression_prefixed_list, Empty
 DECLARE_SYMBOL_CLASS_4(ProcedureCall, procedure_call, identifier, leftparenthesis_operator0, expression_sequence_opt, rightparenthesis_operator0)
 DECLARE_SYMBOL_CLASS_0_1(ExpressionSequenceOpt, expression_sequence_opt, Empty, Value, empty, value, expression_sequence)
 DECLARE_SYMBOL_CLASS_0(NullStatement, null_statement)
-DECLARE_SYMBOL_CLASS_3_3_3_3_3_3_3_3_3_3_3_3_3_2_2_3_4_4_4_4_4_1(
+DECLARE_SYMBOL_CLASS_3_3_3_3_3_3_3_3_3_3_3_3_3_2_2_3_4_4_4_4_4_1_1_1_1(
 	Expression, expression,
-	Pipe, Ampersand, Equals, LtOrGt, Le, Ge, Lt, Gt, Plus, Minus, Times, Slash, Percent, Tilde, UnaryMinus, Parentheses, Call, Chr, Ord, Pred, Succ, Lvalue,
-	pipe, ampersand, equals, lt_or_gt, le, ge, lt, gt, plus, minus, times, slash, percent, tilde, unary_minus, parentheses, call, chr, ord, pred, succ, lvalue,
+	Pipe, Ampersand, Equals, LtOrGt, Le, Ge, Lt, Gt, Plus, Minus, Times, Slash, Percent, Tilde, UnaryMinus, Parentheses, Call, Chr, Ord, Pred, Succ, Lvalue, Integer, Char_, String,
+	pipe, ampersand, equals, lt_or_gt, le, ge, lt, gt, plus, minus, times, slash, percent, tilde, unary_minus, parentheses, call, chr, ord, pred, succ, lvalue, integer, char_, string,
 	expression0, pipe_operator0, expression1,
 	expression0, ampersand_operator0, expression1,
 	expression0, equals_operator0, expression1,
@@ -866,7 +890,10 @@ DECLARE_SYMBOL_CLASS_3_3_3_3_3_3_3_3_3_3_3_3_3_2_2_3_4_4_4_4_4_1(
 	ord_keyword0, leftparenthesis_operator0, expression, rightparenthesis_operator0,
 	pred_keyword0, leftparenthesis_operator0, expression, rightparenthesis_operator0,
 	succ_keyword0, leftparenthesis_operator0, expression, rightparenthesis_operator0,
-	lvalue
+	lvalue,
+	integer,
+	char_,
+	string
 )
 DECLARE_SYMBOL_CLASS_2(Lvalue, lvalue, identifier, lvalue_accessor_clause_list)
 DECLARE_SYMBOL_CLASS_0_2(LvalueAccessorClauseList, lvalue_accessor_clause_list, Empty, Cons, empty, cons, lvalue_accessor_clause_list, lvalue_accessor_clause)
@@ -1041,14 +1068,14 @@ uint64_t STRCAT_4(new_, s, _, b8)(uint64_t b8c0); \
 uint64_t STRCAT_4(new_, s, _, b9)(uint64_t b9c0); \
 uint64_t STRCAT_4(new_, s, _, b10)(uint64_t b10c0);
 
-#define DECLARE_SYMBOL_FIELDS_3_3_3_3_3_3_3_3_3_3_3_3_3_2_2_3_4_4_4_4_4_1( \
+#define DECLARE_SYMBOL_FIELDS_3_3_3_3_3_3_3_3_3_3_3_3_3_2_2_3_4_4_4_4_4_1_1_1_1( \
 	S, s, \
 	B0,  B1,  B2,  B3,  B4,  B5,  B6,  B7,  B8,  B9, \
 	B10, B11, B12, B13, B14, B15, B16, B17, B18, B19, \
-	B20, B21, \
+	B20, B21, B22, B23, B24, \
 	b0,  b1,  b2,  b3,  b4,  b5,  b6,  b7,  b8,  b9, \
 	b10, b11, b12, b13, b14, b15, b16, b17, b18, b19, \
-	b20, b21, \
+	b20, b21, b22, b23, b24, \
 	b0c0, b0c1, b0c2, \
 	b1c0, b1c1, b1c2, \
 	b2c0, b2c1, b2c2, \
@@ -1070,7 +1097,10 @@ uint64_t STRCAT_4(new_, s, _, b10)(uint64_t b10c0);
 	b18c0, b18c1, b18c2, b18c3, \
 	b19c0, b19c1, b19c2, b19c3, \
 	b20c0, b20c1, b20c2, b20c3, \
-	b21c0 \
+	b21c0, \
+	b22c0, \
+	b23c0, \
+	b24c0 \
 ) \
 std::vector<S> STRCAT_2(s, _storage); \
 std::vector<S::B0> STRCAT_4(s, _, b0, _storage); \
@@ -1095,6 +1125,9 @@ std::vector<S::B18> STRCAT_4(s, _, b18, _storage); \
 std::vector<S::B19> STRCAT_4(s, _, b19, _storage); \
 std::vector<S::B20> STRCAT_4(s, _, b20, _storage); \
 std::vector<S::B21> STRCAT_4(s, _, b21, _storage); \
+std::vector<S::B22> STRCAT_4(s, _, b22, _storage); \
+std::vector<S::B23> STRCAT_4(s, _, b23, _storage); \
+std::vector<S::B24> STRCAT_4(s, _, b24, _storage); \
 uint64_t STRCAT_4(new_, s, _, b0)(uint64_t b0c0, uint64_t b0c1, uint64_t b0c2); \
 uint64_t STRCAT_4(new_, s, _, b1)(uint64_t b1c0, uint64_t b1c1, uint64_t b1c2); \
 uint64_t STRCAT_4(new_, s, _, b2)(uint64_t b2c0, uint64_t b2c1, uint64_t b2c2); \
@@ -1116,7 +1149,10 @@ uint64_t STRCAT_4(new_, s, _, b17)(uint64_t b17c0, uint64_t b17c1, uint64_t b17c
 uint64_t STRCAT_4(new_, s, _, b18)(uint64_t b18c0, uint64_t b18c1, uint64_t b18c2, uint64_t b18c3); \
 uint64_t STRCAT_4(new_, s, _, b19)(uint64_t b19c0, uint64_t b19c1, uint64_t b19c2, uint64_t b19c3); \
 uint64_t STRCAT_4(new_, s, _, b20)(uint64_t b20c0, uint64_t b20c1, uint64_t b20c2, uint64_t b20c3); \
-uint64_t STRCAT_4(new_, s, _, b21)(uint64_t b21c0);
+uint64_t STRCAT_4(new_, s, _, b21)(uint64_t b21c0); \
+uint64_t STRCAT_4(new_, s, _, b22)(uint64_t b22c0); \
+uint64_t STRCAT_4(new_, s, _, b23)(uint64_t b23c0); \
+uint64_t STRCAT_4(new_, s, _, b24)(uint64_t b24c0);
 
 // | A complete parse tree of a vector of lexemes.
 //
@@ -1131,7 +1167,7 @@ public:
 	std::vector<Lexeme> lexemes;
 
 	DECLARE_SYMBOL_FIELDS_1(Keyword, keyword, lexeme)
-	DECLARE_SYMBOL_FIELDS_1(Operator, operator_, lexeme)
+	DECLARE_SYMBOL_FIELDS_1(Operator, operator, lexeme)
 	DECLARE_SYMBOL_FIELDS_1(Start, start, program)
 	DECLARE_SYMBOL_FIELDS_6(Program, program, constant_decl_opt, type_decl_opt, var_decl_opt, procedure_decl_or_function_decl_list, block, dot_operator0)
 	DECLARE_SYMBOL_FIELDS_0_1(ConstantDeclOpt, constant_decl_opt, Empty, Value, empty, value, constant_decl)
@@ -1200,10 +1236,10 @@ public:
 	DECLARE_SYMBOL_FIELDS_4(ProcedureCall, procedure_call, identifier, leftparenthesis_operator0, expression_sequence_opt, rightparenthesis_operator0)
 	DECLARE_SYMBOL_FIELDS_0_1(ExpressionSequenceOpt, expression_sequence_opt, Empty, Value, empty, value, expression_sequence)
 	DECLARE_SYMBOL_FIELDS_0(NullStatement, null_statement)
-	DECLARE_SYMBOL_FIELDS_3_3_3_3_3_3_3_3_3_3_3_3_3_2_2_3_4_4_4_4_4_1(
+	DECLARE_SYMBOL_FIELDS_3_3_3_3_3_3_3_3_3_3_3_3_3_2_2_3_4_4_4_4_4_1_1_1_1(
 		Expression, expression,
-		Pipe, Ampersand, Equals, LtOrGt, Le, Ge, Lt, Gt, Plus, Minus, Times, Slash, Percent, Tilde, UnaryMinus, Parentheses, Call, Chr, Ord, Pred, Succ, Lvalue,
-		pipe, ampersand, equals, lt_or_gt, le, ge, lt, gt, plus, minus, times, slash, percent, tilde, unary_minus, parentheses, call, chr, ord, pred, succ, lvalue,
+		Pipe, Ampersand, Equals, LtOrGt, Le, Ge, Lt, Gt, Plus, Minus, Times, Slash, Percent, Tilde, UnaryMinus, Parentheses, Call, Chr, Ord, Pred, Succ, Lvalue, Integer, Char_, String,
+		pipe, ampersand, equals, lt_or_gt, le, ge, lt, gt, plus, minus, times, slash, percent, tilde, unary_minus, parentheses, call, chr, ord, pred, succ, lvalue, integer, char_, string,
 		expression0, pipe_operator0, expression1,
 		expression0, ampersand_operator0, expression1,
 		expression0, equals_operator0, expression1,
@@ -1225,7 +1261,10 @@ public:
 		ord_keyword0, leftparenthesis_operator0, expression, rightparenthesis_operator0,
 		pred_keyword0, leftparenthesis_operator0, expression, rightparenthesis_operator0,
 		succ_keyword0, leftparenthesis_operator0, expression, rightparenthesis_operator0,
-		lvalue
+		lvalue,
+		integer,
+		char_,
+		string
 	)
 	DECLARE_SYMBOL_FIELDS_2(Lvalue, lvalue, identifier, lvalue_accessor_clause_list)
 	DECLARE_SYMBOL_FIELDS_0_2(LvalueAccessorClauseList, lvalue_accessor_clause_list, Empty, Cons, empty, cons, lvalue_accessor_clause_list, lvalue_accessor_clause)

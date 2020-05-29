@@ -474,6 +474,12 @@ null_statement:
 
 	/* Expressions. */
 
+	/*
+	 * Note: the int, char, and str branches are missing from the CPSL
+	 * documentation, but the document says that ConstExpression is a subset of
+	 * Expression, so I'm assuming these were meant to be in this symbol's
+	 * branches.
+	 */
 expression:
 	  expression PIPE_OPERATOR      expression                                              {$$ = pg.new_expression_pipe($1, $2, $3);}
 	| expression AMPERSAND_OPERATOR expression                                              {$$ = pg.new_expression_ampersand($1, $2, $3);}
@@ -497,6 +503,9 @@ expression:
 	| PRED_KEYWORD LEFTPARENTHESIS_OPERATOR expression RIGHTPARENTHESIS_OPERATOR            {$$ = pg.new_expression_pred($1, $2, $3, $4);}
 	| SUCC_KEYWORD LEFTPARENTHESIS_OPERATOR expression RIGHTPARENTHESIS_OPERATOR            {$$ = pg.new_expression_succ($1, $2, $3, $4);}
 	| lvalue                                                                                {$$ = pg.new_expression_lvalue($1);}
+	| INTEGER                                                                               {$$ = pg.new_expression_integer($1);}
+	| CHAR                                                                                  {$$ = pg.new_expression_char_($1);}
+	| STRING                                                                                {$$ = pg.new_expression_string($1);}
 ;
 
 lvalue:
