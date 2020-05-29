@@ -553,7 +553,7 @@ void yy_cpsl_cc_parsererror(std::shared_ptr<ParserState> parser_state, const cha
 
 Grammar parse_lexemes(const std::vector<Lexeme> &lexemes) {
 	// Create a new storage for an AST.
-	Grammar grammar;
+	Grammar grammar(lexemes);
 
 #if defined(PARSER_ENABLE_TRACE) && PARSER_ENABLE_TRACE
 	yy_cpsl_cc_parserdebug = 1;
