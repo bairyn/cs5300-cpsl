@@ -136,6 +136,7 @@
 
 %%
 
+	/*
 keyword:
 	  ARRAY_KEYWORD     {$$ = pg.new_keyword($1);}
 	| BEGIN_KEYWORD     {$$ = pg.new_keyword($1);}
@@ -169,7 +170,9 @@ keyword:
 	| WHILE_KEYWORD     {$$ = pg.new_keyword($1);}
 	| WRITE_KEYWORD     {$$ = pg.new_keyword($1);}
 ;
+	*/
 
+	/*
 operator:
 	  PLUS_OPERATOR             {$$ = pg.new_operator($1);}
 	| MINUS_OPERATOR            {$$ = pg.new_operator($1);}
@@ -195,6 +198,7 @@ operator:
 	| COLONEQUALS_OPERATOR      {$$ = pg.new_operator($1);}
 	| PERCENT_OPERATOR          {$$ = pg.new_operator($1);}
 ;
+	*/
 
 start:
 	program  {$$ = pg.new_start($1);}
@@ -271,65 +275,60 @@ formal_parameter_prefixed_list:
 ;
 
 formal_parameter:
-	var_or_ref ident_list COLON_OPERATOR type
+	var_or_ref ident_list COLON_OPERATOR type {$$ = pg.new_formal_parameter($1, $2, $3, $4);}
 ;
 
 var_or_ref:
-	  VAR_KEYWORD
-	| REF_KEYWORD
+	  VAR_KEYWORD {$$ = pg.new_var_or_ref_var($1);}
+	| REF_KEYWORD {$$ = pg.new_var_or_ref_ref($1);}
 ;
 
 body:
-	constant_decl_opt type_decl_opt block
+	constant_decl_opt type_decl_opt block {$$ = pg.new_body($1, $2, $3);}
 ;
 
 block:
-	BEGIN_KEYWORD statement_sequence END_KEYWORD
+	BEGIN_KEYWORD statement_sequence END_KEYWORD {$$ = pg.new_block($1, $2, $3);}
 ;
 
 type_decl:
-	TYPE_KEYWORD type_assignment type_assignment_list;
+	TYPE_KEYWORD type_assignment type_assignment_list {$$ = pg.new_type_decl($1, $2, $3);}
 ;
 
 type_assignment_list:
-	  %empty
-	| type_assignment_list type_assignment
+	  %empty                               {$$ = pg.new_type_assignment_list_empty();}
+	| type_assignment_list type_assignment {$$ = pg.new_type_assignment_list_cons($1, $2);}
 ;
 
 type_assignment:
-	IDENTIFIER EQUALS_OPERATOR type SEMICOLON_OPERATOR
+	IDENTIFIER EQUALS_OPERATOR type SEMICOLON_OPERATOR {$$ = pg.new_type_assignment($1, $2, $3, $4);}
 ;
 
 type:
-	  simple_type
-	| record_type
-	| array_type
+	  simple_type {$$ = pg.new_type_simple($1);}
+	| record_type {$$ = pg.new_type_record($1);}
+	| array_type  {$$ = pg.new_type_array($1);}
 ;
 
 simple_type:
-	IDENTIFIER
+	IDENTIFIER {$$ = pg.new_simple_type($1);}
 ;
 
 record_type:
-	RECORD_KEYWORD record_entry_list END_KEYWORD
-;
-
-record_entry_list:
-	  %empty
-	| record_entry_list typed_identifier_sequence_list
-;
-
-typed_identifier_sequence:
-	ident_list COLON_OPERATOR type SEMICOLON_OPERATOR
+	RECORD_KEYWORD typed_identifier_sequence_list END_KEYWORD {$$ = pg.new_record_type($1, $2, $3);}
 ;
 
 typed_identifier_sequence_list:
-	  %empty
-	| typed_identifier_sequence_list typed_identifier_sequence
+	  %empty                                                   {$$ = pg.new_typed_identifier_sequence_list_empty();}
+	| typed_identifier_sequence_list typed_identifier_sequence {$$ = pg.new_typed_identifier_sequence_list_cons($1, $2);}
+;
+
+typed_identifier_sequence:
+	ident_list COLON_OPERATOR type SEMICOLON_OPERATOR {$$ = pg.new_typed_identifier_sequence($1, $2, $3, $4);}
 ;
 
 array_type:
-	ARRAY_KEYWORD LEFTBRACKET_OPERATOR expression COLON_OPERATOR expression RIGHTBRACKET_OPERATOR OF_KEYWORD type
+	ARRAY_KEYWORD LEFTBRACKET_OPERATOR expression COLON_OPERATOR expression RIGHTBRACKET_OPERATOR OF_KEYWORD type {$$ = pg.new_array_type($1, $2, $3, $4, $5, $6, $7, $8);}
 ;
 
 	/*
@@ -337,172 +336,172 @@ array_type:
 	 * documentation.
 	 */
 ident_list:
-	IDENTIFIER identifier_prefixed_list
+	IDENTIFIER identifier_prefixed_list {$$ = pg.new_ident_list($1, $2);}
 ;
 
 identifier_prefixed_list:
-	  %empty
-	| identifier_prefixed_list COMMA_OPERATOR IDENTIFIER
+	  %empty                                             {$$ = pg.new_identifier_prefixed_list_empty();}
+	| identifier_prefixed_list COMMA_OPERATOR IDENTIFIER {$$ = pg.new_identifier_prefixed_list_cons($1, $2, $3);}
 ;
 
 var_decl:
-	VAR_KEYWORD typed_identifier_sequence typed_identifier_sequence_list
+	VAR_KEYWORD typed_identifier_sequence typed_identifier_sequence_list {$$ = pg.new_var_decl($1, $2, $3);}
 ;
 
 	/* Statements. */
 
 statement_sequence:
-	statement statement_prefixed_list
+	statement statement_prefixed_list {$$ = pg.new_statement_sequence($1, $2);}
 ;
 
 statement_prefixed_list:
-	  %empty
-	| statement_prefixed_list SEMICOLON_OPERATOR statement
+	  %empty                                               {$$ = pg.new_statement_prefixed_list_empty();}
+	| statement_prefixed_list SEMICOLON_OPERATOR statement {$$ = pg.new_statement_prefixed_list_cons($1, $2, $3);}
 ;
 
 statement:
-	  assignment
-	| if_statement
-	| while_statement
-	| repeat_statement
-	| for_statement
-	| stop_statement
-	| return_statement
-	| read_statement
-	| write_statement
-	| procedure_call
-	| null_statement;
+	  assignment       {$$ = pg.new_statement_assignment($1);}
+	| if_statement     {$$ = pg.new_statement_if($1);}
+	| while_statement  {$$ = pg.new_statement_while($1);}
+	| repeat_statement {$$ = pg.new_statement_repeat($1);}
+	| for_statement    {$$ = pg.new_statement_for($1);}
+	| stop_statement   {$$ = pg.new_statement_stop($1);}
+	| return_statement {$$ = pg.new_statement_return($1);}
+	| read_statement   {$$ = pg.new_statement_read($1);}
+	| write_statement  {$$ = pg.new_statement_write($1);}
+	| procedure_call   {$$ = pg.new_statement_call($1);}
+	| null_statement   {$$ = pg.new_statement_null_($1);}
 ;
 
 assignment:
-	lvalue COLONEQUALS_OPERATOR expression
+	lvalue COLONEQUALS_OPERATOR expression {$$ = pg.new_assignment($1, $2, $3);}
 ;
 
 if_statement:
-	IF_KEYWORD expression THEN_KEYWORD statement_sequence elseif_clause_list else_clause_opt END_KEYWORD
+	IF_KEYWORD expression THEN_KEYWORD statement_sequence elseif_clause_list else_clause_opt END_KEYWORD {$$ = pg.new_if_statement($1, $2, $3, $4, $5, $6, $7);}
 ;
 
 elseif_clause_list:
-	  %empty
-	| elseif_clause_list elseif_clause
+	  %empty                           {$$ = pg.new_elseif_clause_list_empty();}
+	| elseif_clause_list elseif_clause {$$ = pg.new_elseif_clause_list_cons($1, $2);}
 ;
 
 elseif_clause:
-	ELSEIF_KEYWORD expression THEN_KEYWORD statement_sequence
+	ELSEIF_KEYWORD expression THEN_KEYWORD statement_sequence {$$ = pg.new_elseif_clause($1, $2, $3, $4);}
 ;
 
 else_clause_opt:
-	  %empty
-	| else_clause
+	  %empty      {$$ = pg.new_else_clause_opt_empty();}
+	| else_clause {$$ = pg.new_else_clause_opt_value($1);}
 ;
 
 else_clause:
-	ELSE_KEYWORD statement_sequence
+	ELSE_KEYWORD statement_sequence {$$ = pg.new_else_clause($1, $2);}
 ;
 
 while_statement:
-	WHILE_KEYWORD expression DO_KEYWORD statement_sequence END_KEYWORD
+	WHILE_KEYWORD expression DO_KEYWORD statement_sequence END_KEYWORD {$$ = pg.new_while_statement($1, $2, $3, $4, $5);}
 ;
 
 repeat_statement:
-	REPEAT_KEYWORD statement_sequence UNTIL_KEYWORD expression
+	REPEAT_KEYWORD statement_sequence UNTIL_KEYWORD expression {$$ = pg.new_repeat_statement($1, $2, $3, $4);}
 ;
 
 for_statement:
-	FOR_KEYWORD IDENTIFIER COLONEQUALS_OPERATOR expression to_or_downto expression DO_KEYWORD statement_sequence END_KEYWORD
+	FOR_KEYWORD IDENTIFIER COLONEQUALS_OPERATOR expression to_or_downto expression DO_KEYWORD statement_sequence END_KEYWORD {$$ = pg.new_for_statement($1, $2, $4, $4, $5, $6, $7, $8, $9);}
 ;
 
 to_or_downto:
-	  TO_KEYWORD
-	| DOWNTO_KEYWORD
+	  TO_KEYWORD     {$$ = pg.new_to_or_downto_to($1);}
+	| DOWNTO_KEYWORD {$$ = pg.new_to_or_downto_downto($1);}
 ;
 
 stop_statement:
-	STOP_KEYWORD
+	STOP_KEYWORD {$$ = pg.new_stop_statement($1);}
 ;
 
 return_statement:
-	RETURN_KEYWORD expression_opt
+	RETURN_KEYWORD expression_opt {$$ = pg.new_return_statement($1, $2);}
 ;
 
 expression_opt:
-	  %empty
-	| expression
+	  %empty     {$$ = pg.new_expression_opt_empty();}
+	| expression {$$ = pg.new_expression_opt_value($1);}
 ;
 
 read_statement:
-	READ_KEYWORD LEFTPARENTHESIS_OPERATOR lvalue_sequence RIGHTPARENTHESIS_OPERATOR
+	READ_KEYWORD LEFTPARENTHESIS_OPERATOR lvalue_sequence RIGHTPARENTHESIS_OPERATOR {$$ = pg.new_read_statement($1, $2, $3, $4);}
 ;
 
 lvalue_sequence:
-	lvalue lvalue_prefixed_list
+	lvalue lvalue_prefixed_list {$$ = pg.new_lvalue_sequence($1, $2);}
 ;
 
 lvalue_prefixed_list:
-	  %empty
-	| lvalue_prefixed_list COMMA_OPERATOR lvalue
+	  %empty                                     {$$ = pg.new_lvalue_prefixed_list_empty();}
+	| lvalue_prefixed_list COMMA_OPERATOR lvalue {$$ = pg.new_lvalue_prefixed_list_cons($1, $2, $3);}
 ;
 
 write_statement:
-	WRITE_KEYWORD LEFTPARENTHESIS_OPERATOR expression_sequence RIGHTPARENTHESIS_OPERATOR
+	WRITE_KEYWORD LEFTPARENTHESIS_OPERATOR expression_sequence RIGHTPARENTHESIS_OPERATOR {$$ = pg.new_write_statement($1, $2, $3, $4);}
 ;
 
 expression_sequence:
-	expression expression_prefixed_list
+	expression expression_prefixed_list {$$ = pg.new_expression_sequence($1, $2);}
 ;
 
 expression_prefixed_list:
-	  %empty
-	| expression_prefixed_list COMMA_OPERATOR expression
+	  %empty                                             {$$ = pg.new_expression_prefixed_list_empty();}
+	| expression_prefixed_list COMMA_OPERATOR expression {$$ = pg.new_expression_prefixed_list_cons($1, $2, $3);}
 ;
 
 procedure_call:
-	IDENTIFIER LEFTPARENTHESIS_OPERATOR expression_sequence_opt RIGHTPARENTHESIS_OPERATOR
+	IDENTIFIER LEFTPARENTHESIS_OPERATOR expression_sequence_opt RIGHTPARENTHESIS_OPERATOR {$$ = pg.new_procedure_call($1, $2, $3, $4);}
 ;
 
 expression_sequence_opt:
-	  %empty
-	| expression_sequence
+	  %empty              {$$ = pg.new_expression_sequence_opt_empty();}
+	| expression_sequence {$$ = pg.new_expression_sequence_opt_value($1);}
 ;
 
 null_statement:
-	  %empty
+	  %empty {$$ = pg.new_null_statement();}
 ;
 
 	/* Expressions. */
 
 expression:
-	  expression PIPE_OPERATOR      expression
-	| expression AMPERSAND_OPERATOR expression
-	| expression EQUALS_OPERATOR    expression
-	| expression LT_OR_GT_OPERATOR  expression
-	| expression LE_OPERATOR        expression
-	| expression GE_OPERATOR        expression
-	| expression LT_OPERATOR        expression
-	| expression GT_OPERATOR        expression
-	| expression PLUS_OPERATOR      expression
-	| expression MINUS_OPERATOR     expression
-	| expression TIMES_OPERATOR     expression
-	| expression SLASH_OPERATOR     expression
-	| expression PERCENT_OPERATOR   expression
-	| TILDE_OPERATOR expression
-	| MINUS_OPERATOR expression  %prec UNARY_MINUS
-	| LEFTPARENTHESIS_OPERATOR expression RIGHTPARENTHESIS_OPERATOR
-	| IDENTIFIER LEFTPARENTHESIS_OPERATOR expression_sequence_opt RIGHTPARENTHESIS_OPERATOR
-	| CHR_KEYWORD LEFTPARENTHESIS_OPERATOR expression RIGHTPARENTHESIS_OPERATOR
-	| ORD_KEYWORD LEFTPARENTHESIS_OPERATOR expression RIGHTPARENTHESIS_OPERATOR
-	| PRED_KEYWORD LEFTPARENTHESIS_OPERATOR expression RIGHTPARENTHESIS_OPERATOR
-	| SUCC_KEYWORD LEFTPARENTHESIS_OPERATOR expression RIGHTPARENTHESIS_OPERATOR
-	| lvalue
+	  expression PIPE_OPERATOR      expression                                              {$$ = pg.new_expression_pipe($1, $2, $3);}
+	| expression AMPERSAND_OPERATOR expression                                              {$$ = pg.new_expression_ampersand($1, $2, $3);}
+	| expression EQUALS_OPERATOR    expression                                              {$$ = pg.new_expression_equals($1, $2, $3);}
+	| expression LT_OR_GT_OPERATOR  expression                                              {$$ = pg.new_expression_lt_or_gt($1, $2, $3);}
+	| expression LE_OPERATOR        expression                                              {$$ = pg.new_expression_le($1, $2, $3);}
+	| expression GE_OPERATOR        expression                                              {$$ = pg.new_expression_ge($1, $2, $3);}
+	| expression LT_OPERATOR        expression                                              {$$ = pg.new_expression_lt($1, $2, $3);}
+	| expression GT_OPERATOR        expression                                              {$$ = pg.new_expression_gt($1, $2, $3);}
+	| expression PLUS_OPERATOR      expression                                              {$$ = pg.new_expression_plus($1, $2, $3);}
+	| expression MINUS_OPERATOR     expression                                              {$$ = pg.new_expression_minus($1, $2, $3);}
+	| expression TIMES_OPERATOR     expression                                              {$$ = pg.new_expression_times($1, $2, $3);}
+	| expression SLASH_OPERATOR     expression                                              {$$ = pg.new_expression_slash($1, $2, $3);}
+	| expression PERCENT_OPERATOR   expression                                              {$$ = pg.new_expression_percent($1, $2, $3);}
+	| TILDE_OPERATOR expression                                                             {$$ = pg.new_expression_tilde($1, $2);}
+	| MINUS_OPERATOR expression  %prec UNARY_MINUS                                          {$$ = pg.new_expression_unary_minus($1, $2);}
+	| LEFTPARENTHESIS_OPERATOR expression RIGHTPARENTHESIS_OPERATOR                         {$$ = pg.new_expression_parentheses($1, $2, $3);}
+	| IDENTIFIER LEFTPARENTHESIS_OPERATOR expression_sequence_opt RIGHTPARENTHESIS_OPERATOR {$$ = pg.new_expression_call($1, $2, $3, $4);}
+	| CHR_KEYWORD LEFTPARENTHESIS_OPERATOR expression RIGHTPARENTHESIS_OPERATOR             {$$ = pg.new_expression_chr($1, $2, $3, $4);}
+	| ORD_KEYWORD LEFTPARENTHESIS_OPERATOR expression RIGHTPARENTHESIS_OPERATOR             {$$ = pg.new_expression_ord($1, $2, $3, $4);}
+	| PRED_KEYWORD LEFTPARENTHESIS_OPERATOR expression RIGHTPARENTHESIS_OPERATOR            {$$ = pg.new_expression_pred($1, $2, $3, $4);}
+	| SUCC_KEYWORD LEFTPARENTHESIS_OPERATOR expression RIGHTPARENTHESIS_OPERATOR            {$$ = pg.new_expression_succ($1, $2, $3, $4);}
+	| lvalue                                                                                {$$ = pg.new_expression_lvalue($1);}
 ;
 
 lvalue:
-	IDENTIFIER lvalue_accessor_clause_list
+	IDENTIFIER lvalue_accessor_clause_list {$$ = pg.new_lvalue($1, $2);}
 ;
 
 lvalue_accessor_clause_list:
-	  %empty
-	| lvalue_accessor_clause_list lvalue_accessor_clause
+	  %empty                                             {$$ = pg.new_lvalue_accessor_clause_list_empty();}
+	| lvalue_accessor_clause_list lvalue_accessor_clause {$$ = pg.new_lvalue_accessor_clause_list_cons($1, $2);}
 ;
 
 lvalue_accessor_clause:
