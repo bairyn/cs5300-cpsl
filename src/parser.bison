@@ -138,6 +138,8 @@
 
 %%
 
+	/* Comment out "keyword" and "operator" symbols to hide the unused symbol warnings. */
+
 	/*
 keyword:
 	  ARRAY_KEYWORD     {$$ = pg.new_keyword($1);}
