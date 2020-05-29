@@ -12,20 +12,12 @@
 
 #define CPSL_CC_VERSION_NUM_COMPONENTS 3
 
-#define CPSL_CC_VERSION_RAW_STRING STRCAT( \
-	CPSL_CC_VERSION_MAJOR, \
-	STRCAT( \
-		., \
-		STRCAT( \
-			CPSL_CC_VERSION_MINOR, \
-			STRCAT( \
-				., \
-				CPSL_CC_VERSION_PATCH \
-			) \
-		) \
-	) \
+#define CPSL_CC_VERSION_STRING STRCAT_5( \
+	CPSL_CC_VERSION_MAJOR, ., \
+	CPSL_CC_VERSION_MINOR, ., \
+	CPSL_CC_VERSION_PATCH \
 )
-#define CPSL_CC_VERSION_STRING STR(CPSL_CC_VERSION_RAW_STRING)
+#define CPSL_CC_VERSION_QUOTED_STRING STRQUOTE(CPSL_CC_VERSION_RAW_STRING)
 
 extern const uint64_t  cpsl_cc_version_major;
 extern const uint64_t  cpsl_cc_version_minor;

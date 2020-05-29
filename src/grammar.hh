@@ -5,6 +5,7 @@
 #include <variant>    // std::variant
 
 #include "lexer.hh"   // Lexeme
+#include "util.h"     // STRCAT*
 
 /*
  * Exceptions types.
@@ -28,387 +29,420 @@ class Branch {
 public:
 };
 
-class Keyword : public NonterminalSymbol {
-public:
-	Keyword(uint64_t lexeme);
-	uint64_t lexeme;
+// | DECLARE_SYMBOL_CLASS* macros:
+//
+// DECLARE_SYMBOL_CLASS_X:
+// 	Declare a non-branching symbol class with X components.
+// DECLARE_SYMBOL_CLASS_X_Y:
+// 	Declare a symbol class with 2 branches.  The first has X components, and
+// 	the second has Y components.
+// DECLARE_SYMBOL_CLASS_X_Y_Z:
+// 	Declare a symbol class with 3 branches.
+#define DECLARE_SYMBOL_CLASS_1( \
+	S, s, c0 \
+) \
+class S : public NonterminalSymbol { \
+public: \
+	S(uint64_t c0); \
+	uint64_t c0; \
 };
 
-class Operator : public NonterminalSymbol {
-public:
-	Operator(uint64_t lexeme);
-	uint64_t lexeme;
+#define DECLARE_SYMBOL_CLASS_3( \
+	S, s, c0, c1, c2 \
+) \
+class S : public NonterminalSymbol { \
+public: \
+	S(uint64_t c0, uint64_t c1, uint64_t c2); \
+	uint64_t c0; \
+	uint64_t c1; \
+	uint64_t c2; \
 };
 
-class Start : public NonterminalSymbol {
-public:
-	Start(uint64_t program);
-	uint64_t program;
+#define DECLARE_SYMBOL_CLASS_4( \
+	S, s, c0, c1, c2, c3 \
+) \
+class S : public NonterminalSymbol { \
+public: \
+	S(uint64_t c0, uint64_t c1, uint64_t c2, uint64_t c3); \
+	uint64_t c0; \
+	uint64_t c1; \
+	uint64_t c2; \
+	uint64_t c3; \
 };
 
-class Program : public NonterminalSymbol {
-public:
-	Program(uint64_t constant_decl_opt, uint64_t type_decl_opt, uint64_t var_decl_opt, uint64_t procedure_decl_or_function_decl_list, uint64_t block, uint64_t dot_operator0);
-	uint64_t constant_decl_opt;
-	uint64_t type_decl_opt;
-	uint64_t var_decl_opt;
-	uint64_t procedure_decl_or_function_decl_list;
-	uint64_t block;
-	uint64_t dot_operator0;
+#define DECLARE_SYMBOL_CLASS_6( \
+	S, s, c0, c1, c2, c3, c4, c5 \
+) \
+class S : public NonterminalSymbol { \
+public: \
+	S(uint64_t c0, uint64_t c1, uint64_t c2, uint64_t c3, uint64_t c4, uint64_t c5); \
+	uint64_t c0; \
+	uint64_t c1; \
+	uint64_t c2; \
+	uint64_t c3; \
+	uint64_t c4; \
+	uint64_t c5; \
 };
 
-class ConstantDeclOpt : public NonterminalSymbol {
-public:
-	ConstantDeclOpt(uint64_t branch, uint64_t data);
-	uint64_t branch;
-	uint64_t data;
-
-	enum branch_e {
-		null_branch  = 0,
-		empty_branch = 1,
-		value_branch = 2,
-		num_branches = 2,
-	};
-	typedef enum branch_e branch_t;
-
-	class Empty : public Branch {
-	public:
-		Empty();
-	};
-
-	class Value : public Branch {
-	public:
-		Value(uint64_t constant_decl);
-		uint64_t constant_decl;
-	};
+#define DECLARE_SYMBOL_CLASS_0_1( \
+	S, s, B0, B1, b0, b1, b1c0 \
+) \
+class S : public NonterminalSymbol { \
+public: \
+	S(uint64_t branch, uint64_t data); \
+	uint64_t branch; \
+	uint64_t data; \
+ \
+ 	enum branch_e { \
+		null_branch           = 0, \
+		STRCAT_2(b0, _branch) = 1, \
+		STRCAT_2(b1, _branch) = 2, \
+		num_branches          = 2, \
+	}; \
+ \
+ 	class B0 : public Branch { \
+	public: \
+		B0(); \
+	}; \
+ \
+ 	class B1 : public Branch { \
+	public: \
+		B1(uint64_t b1c0); \
+		uint64_t b1c0; \
+	}; \
 };
 
-class TypeDeclOpt : public NonterminalSymbol {
-public:
-	TypeDeclOpt(uint64_t branch, uint64_t data);
-	uint64_t branch;
-	uint64_t data;
-
-	enum branch_e {
-		null_branch  = 0,
-		empty_branch = 1,
-		value_branch = 2,
-		num_branches = 2,
-	};
-	typedef enum branch_e branch_t;
-
-	class Empty : public Branch {
-	public:
-		Empty();
-	};
-
-	class Value : public Branch {
-	public:
-		Value(uint64_t type_decl);
-		uint64_t type_decl;
-	};
+#define DECLARE_SYMBOL_CLASS_0_2( \
+	S, s, B0, B1, b0, b1, b1c0, b1c1 \
+) \
+class S : public NonterminalSymbol { \
+public: \
+	S(uint64_t branch, uint64_t data); \
+	uint64_t branch; \
+	uint64_t data; \
+ \
+ 	enum branch_e { \
+		null_branch           = 0, \
+		STRCAT_2(b0, _branch) = 1, \
+		STRCAT_2(b1, _branch) = 2, \
+		num_branches          = 2, \
+	}; \
+ \
+ 	class B0 : public Branch { \
+	public: \
+		B0(); \
+	}; \
+ \
+ 	class B1 : public Branch { \
+	public: \
+		B1(uint64_t b1c0, uint64_t b1c1); \
+		uint64_t b1c0; \
+		uint64_t b1c1; \
+	}; \
 };
 
-class VarDeclOpt : public NonterminalSymbol {
-public:
-	VarDeclOpt(uint64_t branch, uint64_t data);
-	uint64_t branch;
-	uint64_t data;
-
-	enum branch_e {
-		null_branch  = 0,
-		empty_branch = 1,
-		value_branch = 2,
-		num_branches = 2,
-	};
-	typedef enum branch_e branch_t;
-
-	class Empty : public Branch {
-	public:
-		Empty();
-	};
-
-	class Value : public Branch {
-	public:
-		Value(uint64_t var_decl);
-		uint64_t var_decl;
-	};
+#define DECLARE_SYMBOL_CLASS_0_3( \
+	S, s, B0, B1, b0, b1, b1c0, b1c1, b1c2 \
+) \
+class S : public NonterminalSymbol { \
+public: \
+	S(uint64_t branch, uint64_t data); \
+	uint64_t branch; \
+	uint64_t data; \
+ \
+ 	enum branch_e { \
+		null_branch           = 0, \
+		STRCAT_2(b0, _branch) = 1, \
+		STRCAT_2(b1, _branch) = 2, \
+		num_branches          = 2, \
+	}; \
+ \
+ 	class B0 : public Branch { \
+	public: \
+		B0(); \
+	}; \
+ \
+ 	class B1 : public Branch { \
+	public: \
+		B1(uint64_t b1c0, uint64_t b1c1, uint64_t b1c2); \
+		uint64_t b1c0; \
+		uint64_t b1c1; \
+		uint64_t b1c2; \
+	}; \
 };
 
-class ProcedureDeclOrFunctionDeclList : public NonterminalSymbol {
-public:
-	ProcedureDeclOrFunctionDeclList(uint64_t branch, uint64_t data);
-	uint64_t branch;
-	uint64_t data;
-
-	enum branch_e {
-		null_branch  = 0,
-		empty_branch = 1,
-		cons_branch  = 2,
-		num_branches = 2,
-	};
-	typedef enum branch_e branch_t;
-
-	class Empty : public Branch {
-	public:
-		Empty();
-	};
-
-	class Cons : public Branch {
-	public:
-		Cons(uint64_t procedure_decl_or_function_decl_list, uint64_t procedure_decl_or_function_decl);
-		uint64_t procedure_decl_or_function_decl_list;
-		uint64_t procedure_decl_or_function_decl;
-	};
+#define DECLARE_SYMBOL_CLASS_1_1( \
+	S, s, B0, B1, b0, b1, b0c0, b1c0 \
+) \
+class S : public NonterminalSymbol { \
+public: \
+	S(uint64_t branch, uint64_t data); \
+	uint64_t branch; \
+	uint64_t data; \
+ \
+ 	enum branch_e { \
+		null_branch           = 0, \
+		STRCAT_2(b0, _branch) = 1, \
+		STRCAT_2(b1, _branch) = 2, \
+		num_branches          = 2, \
+	}; \
+ \
+ 	class B0 : public Branch { \
+	public: \
+		B0(uint64_t b0c0); \
+		uint64_t b0c0; \
+	}; \
+ \
+ 	class B1 : public Branch { \
+	public: \
+		B1(uint64_t b1c0); \
+		uint64_t b1c0; \
+	}; \
 };
 
-class ProcedureDeclOrFunctionDecl : public NonterminalSymbol {
-public:
-	ProcedureDeclOrFunctionDecl(uint64_t branch, uint64_t data);
-	uint64_t branch;
-	uint64_t data;
-
-	enum branch_e {
-		null_branch      = 0,
-		procedure_branch = 1,
-		function_branch  = 2,
-		num_branches     = 2,
-	};
-	typedef enum branch_e branch_t;
-
-	class Procedure : public Branch {
-	public:
-		Procedure(uint64_t procedure_decl);
-		uint64_t procedure_decl;
-	};
-
-	class Function : public Branch {
-	public:
-		Function(uint64_t function_decl);
-		uint64_t function_decl;
-	};
+#define DECLARE_SYMBOL_CLASS_2_3( \
+	S, s, B0, B1, b0, b1, b0c0, b0c1, b1c0, b1c1, b1c2 \
+) \
+class S : public NonterminalSymbol { \
+public: \
+	S(uint64_t branch, uint64_t data); \
+	uint64_t branch; \
+	uint64_t data; \
+ \
+ 	enum branch_e { \
+		null_branch           = 0, \
+		STRCAT_2(b0, _branch) = 1, \
+		STRCAT_2(b1, _branch) = 2, \
+		num_branches          = 2, \
+	}; \
+ \
+ 	class B0 : public Branch { \
+	public: \
+		B0(uint64_t b0c0, uint64_t b0c1); \
+		uint64_t b0c0; \
+		uint64_t b0c1; \
+	}; \
+ \
+ 	class B1 : public Branch { \
+	public: \
+		B1(uint64_t b1c0, uint64_t b1c1, uint64_t b1c2); \
+		uint64_t b1c0; \
+		uint64_t b1c1; \
+		uint64_t b1c2; \
+	}; \
 };
 
-class ConstantDecl : public NonterminalSymbol {
-public:
-	ConstantDecl(uint64_t const_keyword0, uint64_t constant_assignment, uint64_t constant_assignment_list);
-	uint64_t const_keyword0;
-	uint64_t constant_assignment;
-	uint64_t constant_assignment_list;
+#define DECLARE_SYMBOL_CLASS_8_8( \
+	S, s, B0, B1, b0, b1, b0c0, b0c1, b0c2, b0c3, b0c4, b0c5, b0c6, b0c7, b1c0, b1c1, b1c2, b1c3, b1c4, b1c5, b1c6, b1c7 \
+) \
+class S : public NonterminalSymbol { \
+public: \
+	S(uint64_t branch, uint64_t data); \
+	uint64_t branch; \
+	uint64_t data; \
+ \
+ 	enum branch_e { \
+		null_branch           = 0, \
+		STRCAT_2(b0, _branch) = 1, \
+		STRCAT_2(b1, _branch) = 2, \
+		num_branches          = 2, \
+	}; \
+ \
+ 	class B0 : public Branch { \
+	public: \
+		B0(uint64_t b0c0, uint64_t b0c1, uint64_t b0c2, uint64_t b0c3, uint64_t b0c4, uint64_t b0c5, uint64_t b0c6, uint64_t b0c7); \
+		uint64_t b0c0; \
+		uint64_t b0c1; \
+		uint64_t b0c2; \
+		uint64_t b0c3; \
+		uint64_t b0c4; \
+		uint64_t b0c5; \
+		uint64_t b0c6; \
+		uint64_t b0c7; \
+	}; \
+ \
+ 	class B1 : public Branch { \
+	public: \
+		B1(uint64_t b1c0, uint64_t b1c1, uint64_t b1c2, uint64_t b1c3, uint64_t b1c4, uint64_t b1c5, uint64_t b1c6, uint64_t b1c7); \
+		uint64_t b1c0; \
+		uint64_t b1c1; \
+		uint64_t b1c2; \
+		uint64_t b1c3; \
+		uint64_t b1c4; \
+		uint64_t b1c5; \
+		uint64_t b1c6; \
+		uint64_t b1c7; \
+	}; \
 };
 
-class ConstantAssignmentList : public NonterminalSymbol {
-public:
-	ConstantAssignmentList(uint64_t branch, uint64_t data);
-	uint64_t branch;
-	uint64_t data;
-
-	enum branch_e {
-		null_branch  = 0,
-		empty_branch = 1,
-		cons_branch  = 2,
-		num_branches = 2,
-	};
-	typedef enum branch_e branch_t;
-
-	class Empty : public Branch {
-	public:
-		Empty();
-	};
-
-	class Cons : public Branch {
-	public:
-		Cons(uint64_t constant_assignment_list, uint64_t constant_assignment);
-		uint64_t constant_assignment_list;
-		uint64_t constant_assignment;
-	};
+#define DECLARE_SYMBOL_CLASS_10_10( \
+	S, s, B0, B1, b0, b1, b0c0, b0c1, b0c2, b0c3, b0c4, b0c5, b0c6, b0c7, b0c8, b0c9, b1c0, b1c1, b1c2, b1c3, b1c4, b1c5, b1c6, b1c7, b1c8, b1c9 \
+) \
+class S : public NonterminalSymbol { \
+public: \
+	S(uint64_t branch, uint64_t data); \
+	uint64_t branch; \
+	uint64_t data; \
+ \
+ 	enum branch_e { \
+		null_branch           = 0, \
+		STRCAT_2(b0, _branch) = 1, \
+		STRCAT_2(b1, _branch) = 2, \
+		num_branches          = 2, \
+	}; \
+ \
+ 	class B0 : public Branch { \
+	public: \
+		B0(uint64_t b0c0, uint64_t b0c1, uint64_t b0c2, uint64_t b0c3, uint64_t b0c4, uint64_t b0c5, uint64_t b0c6, uint64_t b0c7, uint64_t b0c8, uint64_t b0c9); \
+		uint64_t b0c0; \
+		uint64_t b0c1; \
+		uint64_t b0c2; \
+		uint64_t b0c3; \
+		uint64_t b0c4; \
+		uint64_t b0c5; \
+		uint64_t b0c6; \
+		uint64_t b0c7; \
+		uint64_t b0c8; \
+		uint64_t b0c9; \
+	}; \
+ \
+ 	class B1 : public Branch { \
+	public: \
+		B1(uint64_t b1c0, uint64_t b1c1, uint64_t b1c2, uint64_t b1c3, uint64_t b1c4, uint64_t b1c5, uint64_t b1c6, uint64_t b1c7, uint64_t b1c8, uint64_t b1c9); \
+		uint64_t b1c0; \
+		uint64_t b1c1; \
+		uint64_t b1c2; \
+		uint64_t b1c3; \
+		uint64_t b1c4; \
+		uint64_t b1c5; \
+		uint64_t b1c6; \
+		uint64_t b1c7; \
+		uint64_t b1c8; \
+		uint64_t b1c9; \
+	}; \
 };
 
-class ConstantAssignment : public NonterminalSymbol {
-public:
-	ConstantAssignment(uint64_t identifier, uint64_t equals_operator0, uint64_t expression, uint64_t semicolon_operator0);
-	uint64_t identifier;
-	uint64_t equals_operator0;
-	uint64_t expression;
-	uint64_t semicolon_operator0;
-};
-
-class ProcedureDecl : public NonterminalSymbol {
-public:
-	ProcedureDecl(uint64_t branch, uint64_t data);
-	uint64_t branch;
-	uint64_t data;
-
-	enum branch_e {
-		null_branch       = 0,
-		forward_branch    = 1,
-		definition_branch = 2,
-		num_branches      = 2,
-	};
-	typedef enum branch_e branch_t;
-
-	class Forward : public Branch {
-	public:
-		Forward(uint64_t procedure_keyword0, uint64_t identifier, uint64_t leftparenthesis_operator0, uint64_t formal_parameters, uint64_t rightparenthesis_operator0, uint64_t semicolon_operator0, uint64_t forward_keyword0, uint64_t semicolon_operator1);
-		uint64_t procedure_keyword0;
-		uint64_t identifier;
-		uint64_t leftparenthesis_operator0;
-		uint64_t formal_parameters;
-		uint64_t rightparenthesis_operator0;
-		uint64_t semicolon_operator0;
-		uint64_t forward_keyword0;
-		uint64_t semicolon_operator1;
-	};
-
-	class Definition : public Branch {
-	public:
-		Definition(uint64_t procedure_keyword0, uint64_t identifier, uint64_t leftparenthesis_operator0, uint64_t formal_parameters, uint64_t rightparenthesis_operator0, uint64_t semicolon_operator0, uint64_t body, uint64_t semicolon_operator1);
-		uint64_t procedure_keyword0;
-		uint64_t identifier;
-		uint64_t leftparenthesis_operator0;
-		uint64_t formal_parameters;
-		uint64_t rightparenthesis_operator0;
-		uint64_t semicolon_operator0;
-		uint64_t body;
-		uint64_t semicolon_operator1;
-	};
-};
-
-class FunctionDecl : public NonterminalSymbol {
-public:
-	FunctionDecl(uint64_t branch, uint64_t data);
-	uint64_t branch;
-	uint64_t data;
-
-	enum branch_e {
-		null_branch       = 0,
-		forward_branch    = 1,
-		definition_branch = 2,
-		num_branches      = 2,
-	};
-	typedef enum branch_e branch_t;
-
-	class Forward : public Branch {
-	public:
-		Forward(uint64_t function_keyword0, uint64_t identifier, uint64_t leftparenthesis_operator0, uint64_t formal_parameters, uint64_t rightparenthesis_operator0, uint64_t colon_operator0, uint64_t type, uint64_t semicolon_operator0, uint64_t forward_keyword0, uint64_t semicolon_operator1);
-		uint64_t function_keyword0;
-		uint64_t identifier;
-		uint64_t leftparenthesis_operator0;
-		uint64_t formal_parameters;
-		uint64_t rightparenthesis_operator0;
-		uint64_t colon_operator0;
-		uint64_t type;
-		uint64_t semicolon_operator0;
-		uint64_t forward_keyword0;
-		uint64_t semicolon_operator1;
-	};
-
-	class Definition : public Branch {
-	public:
-		Definition(uint64_t function_keyword0, uint64_t identifier, uint64_t leftparenthesis_operator0, uint64_t formal_parameters, uint64_t rightparenthesis_operator0, uint64_t colon_operator0, uint64_t type, uint64_t semicolon_operator0, uint64_t body, uint64_t semicolon_operator1);
-		uint64_t function_keyword0;
-		uint64_t identifier;
-		uint64_t leftparenthesis_operator0;
-		uint64_t formal_parameters;
-		uint64_t rightparenthesis_operator0;
-		uint64_t colon_operator0;
-		uint64_t type;
-		uint64_t semicolon_operator0;
-		uint64_t body;
-		uint64_t semicolon_operator1;
-	};
-};
-
-class FormalParameters : public NonterminalSymbol {
-public:
-	FormalParameters(uint64_t branch, uint64_t data);
-	uint64_t branch;
-	uint64_t data;
-
-	enum branch_e {
-		null_branch  = 0,
-		empty_branch = 1,
-		first_branch = 2,
-		num_branches = 2,
-	};
-	typedef enum branch_e branch_t;
-
-	class Empty : public Branch {
-	public:
-		Empty();
-	};
-
-	class First : public Branch {
-	public:
-		First(uint64_t formal_parameter, uint64_t formal_parameter_prefixed_list);
-		uint64_t formal_parameter;
-		uint64_t formal_parameter_prefixed_list;
-	};
-};
-
-class FormalParameterPrefixedList : public NonterminalSymbol {
-public:
-	FormalParameterPrefixedList(uint64_t branch, uint64_t data);
-	uint64_t branch;
-	uint64_t data;
-
-	enum branch_e {
-		null_branch  = 0,
-		empty_branch = 1,
-		cons_branch  = 2,
-		num_branches = 2,
-	};
-	typedef enum branch_e branch_t;
-
-	class Empty : public Branch {
-	public:
-		Empty();
-	};
-
-	class Cons : public Branch {
-	public:
-		Cons(uint64_t formal_parameter_prefixed_list, uint64_t semicolon_operator0, uint64_t formal_parameter);
-		uint64_t formal_parameter_prefixed_list;
-		uint64_t semicolon_operator0;
-		uint64_t formal_parameter;
-	};
-};
-
+DECLARE_SYMBOL_CLASS_1(Keyword, keyword, lexeme)
+DECLARE_SYMBOL_CLASS_1(Operator, operator_, lexeme)
+DECLARE_SYMBOL_CLASS_1(Start, start, program)
+DECLARE_SYMBOL_CLASS_6(Program, program, constant_decl_opt, type_decl_opt, var_decl_opt, procedure_decl_or_function_decl_list, block, dot_operator0)
+DECLARE_SYMBOL_CLASS_0_1(ConstantDeclOpt, constant_decl_opt, Empty, Value, empty, value, constant_decl)
+DECLARE_SYMBOL_CLASS_0_1(TypeDeclOpt, type_decl_opt, Empty, Value, empty, value, type_decl)
+DECLARE_SYMBOL_CLASS_0_1(VarDeclOpt, var_decl_opt, Empty, Value, empty, value, var_decl)
+DECLARE_SYMBOL_CLASS_0_2(ProcedureDeclOrFunctionDeclList, procedure_decl_or_function_decl_list, Empty, Cons, empty, cons, procedure_decl_or_function_decl_list, procedure_decl_or_function_decl)
+DECLARE_SYMBOL_CLASS_1_1(ProcedureDeclOrFunctionDecl, procedure_decl_or_function_decl, Procedure, Function, procedure, function, procedure_decl, function_decl)
+DECLARE_SYMBOL_CLASS_3(ConstantDecl, constant_decl, const_keyword0, constant_assignment, constant_assignment_list)
+DECLARE_SYMBOL_CLASS_0_2(ConstantAssignmentList, constant_assignment_list, Empty, Cons, empty, cons, constant_assignment_list, constant_assignment)
+DECLARE_SYMBOL_CLASS_4(ConstantAssignment, constant_assignment, identifier, equals_operator0, expression, semicolon_operator0)
+DECLARE_SYMBOL_CLASS_8_8(
+	ProcedureDecl, procedure_decl, Forward, Definition, forward, definition,
+	procedure_keyword0, identifier, leftparenthesis_operator0, formal_parameters, rightparenthesis_operator0, semicolon_operator0, forward_keyword0, semicolon_operator1,
+	procedure_keyword0, identifier, leftparenthesis_operator0, formal_parameters, rightparenthesis_operator0, semicolon_operator0, body, semicolon_operator1
+)
+DECLARE_SYMBOL_CLASS_10_10(
+	FunctionDecl, function_decl, Forward, Definition, forward, definition,
+	function_keyword0, identifier, leftparenthesis_operator0, formal_parameters, rightparenthesis_operator0, colon_operator0, type, semicolon_operator0, forward_keyword0, semicolon_operator1,
+	function_keyword0, identifier, leftparenthesis_operator0, formal_parameters, rightparenthesis_operator0, colon_operator0, type, semicolon_operator0, body, semicolon_operator1
+)
+DECLARE_SYMBOL_CLASS_0_2(FormalParameters, formal_parameters, Empty, First, empty, first, formal_parameter, formal_parameter_prefixed_list)
+DECLARE_SYMBOL_CLASS_0_3(FormalParameterPrefixedList, formal_parameter_prefixed_list, Empty, Cons, empty, cons, formal_parameter_prefixed_list, semicolon_operator0, formal_parameter)
 // ... (TODO)
-
-class LvalueAccessorClause : public NonterminalSymbol {
-public:
-	LvalueAccessorClause(uint64_t branch, uint64_t data);
-	uint64_t branch;
-	uint64_t data;
-
-	enum branch_e {
-		null_branch  = 0,
-		index_branch = 1,
-		array_branch = 2,
-		num_branches = 2,
-	};
-	typedef enum branch_e branch_t;
-
-	class Index : public Branch {
-	public:
-		Index(uint64_t dot_operator0, uint64_t identifier);
-		uint64_t dot_operator0;
-		uint64_t identifier;
-	};
-
-	class Array : public Branch {
-	public:
-		Array(uint64_t leftbracket_operator0, uint64_t expression, uint64_t rightbracket_operator0);
-		uint64_t leftbracket_operator0;
-		uint64_t expression;
-		uint64_t rightbracket_operator0;
-	};
-};
+DECLARE_SYMBOL_CLASS_2_3(
+	LvalueAccessorClause, lvalue_accessor_clause, Index, Array, index, array,
+	dot_operator0, identifier,
+	leftbracket_operator0, expression, rightbracket_operator0
+)
 
 /*
  * Grammar class.
  */
+
+#define DECLARE_SYMBOL_FIELDS_1( \
+	S, s, c0 \
+) \
+std::vector<S> STRCAT_2(s, _storage); \
+uint64_t STRCAT_2(new_, s)(uint64_t c0);
+
+#define DECLARE_SYMBOL_FIELDS_3( \
+	S, s, c0, c1, c2 \
+) \
+std::vector<S> STRCAT_2(s, _storage); \
+uint64_t STRCAT_2(new_, s)(uint64_t c0, uint64_t c1, uint64_t c2);
+
+#define DECLARE_SYMBOL_FIELDS_4( \
+	S, s, c0, c1, c2, c3 \
+) \
+std::vector<S> STRCAT_2(s, _storage); \
+uint64_t STRCAT_2(new_, s)(uint64_t c0, uint64_t c1, uint64_t c2, uint64_t c3);
+
+#define DECLARE_SYMBOL_FIELDS_6( \
+	S, s, c0, c1, c2, c3, c4, c5 \
+) \
+std::vector<S> STRCAT_2(s, _storage); \
+uint64_t STRCAT_2(new_, s)(uint64_t c0, uint64_t c1, uint64_t c2, uint64_t c3, uint64_t c4, uint64_t c5);
+
+#define DECLARE_SYMBOL_FIELDS_0_1( \
+	S, s, B0, B1, b0, b1, b1c0 \
+) \
+std::vector<S> STRCAT_2(s, _storage); \
+std::vector<S::B0> STRCAT_4(s, _, b0, _storage); \
+std::vector<S::B1> STRCAT_4(s, _, b1, _storage); \
+uint64_t STRCAT_4(new_, s, _, b0)(); \
+uint64_t STRCAT_4(new_, s, _, b1)(uint64_t b1c0);
+
+#define DECLARE_SYMBOL_FIELDS_0_2( \
+	S, s, B0, B1, b0, b1, b1c0, b1c1 \
+) \
+std::vector<S> STRCAT_2(s, _storage); \
+std::vector<S::B0> STRCAT_4(s, _, b0, _storage); \
+std::vector<S::B1> STRCAT_4(s, _, b1, _storage); \
+uint64_t STRCAT_4(new_, s, _, b0)(); \
+uint64_t STRCAT_4(new_, s, _, b1)(uint64_t b1c0, uint64_t b1c1);
+
+#define DECLARE_SYMBOL_FIELDS_0_3( \
+	S, s, B0, B1, b0, b1, b1c0, b1c1, b1c2 \
+) \
+std::vector<S> STRCAT_2(s, _storage); \
+std::vector<S::B0> STRCAT_4(s, _, b0, _storage); \
+std::vector<S::B1> STRCAT_4(s, _, b1, _storage); \
+uint64_t STRCAT_4(new_, s, _, b0)(); \
+uint64_t STRCAT_4(new_, s, _, b1)(uint64_t b1c0, uint64_t b1c1, uint64_t b1c2);
+
+#define DECLARE_SYMBOL_FIELDS_1_1( \
+	S, s, B0, B1, b0, b1, b0c0, b1c0 \
+) \
+std::vector<S> STRCAT_2(s, _storage); \
+std::vector<S::B0> STRCAT_4(s, _, b0, _storage); \
+std::vector<S::B1> STRCAT_4(s, _, b1, _storage); \
+uint64_t STRCAT_4(new_, s, _, b0)(uint64_t b0c0); \
+uint64_t STRCAT_4(new_, s, _, b1)(uint64_t b1c0);
+
+#define DECLARE_SYMBOL_FIELDS_2_3( \
+	S, s, B0, B1, b0, b1, b0c0, b0c1, b1c0, b1c1, b1c2 \
+) \
+std::vector<S> STRCAT_2(s, _storage); \
+std::vector<S::B0> STRCAT_4(s, _, b0, _storage); \
+std::vector<S::B1> STRCAT_4(s, _, b1, _storage); \
+uint64_t STRCAT_4(new_, s, _, b0)(uint64_t b0c0, uint64_t b0c1); \
+uint64_t STRCAT_4(new_, s, _, b1)(uint64_t b1c0, uint64_t b1c1, uint64_t b1c2);
+
+#define DECLARE_SYMBOL_FIELDS_8_8( \
+	S, s, B0, B1, b0, b1, b0c0, b0c1, b0c2, b0c3, b0c4, b0c5, b0c6, b0c7, b1c0, b1c1, b1c2, b1c3, b1c4, b1c5, b1c6, b1c7 \
+) \
+std::vector<S> STRCAT_2(s, _storage); \
+std::vector<S::B0> STRCAT_4(s, _, b0, _storage); \
+std::vector<S::B1> STRCAT_4(s, _, b1, _storage); \
+uint64_t STRCAT_4(new_, s, _, b0)(uint64_t b0c0, uint64_t b0c1, uint64_t b0c2, uint64_t b0c3, uint64_t b0c4, uint64_t b0c5, uint64_t b0c6, uint64_t b0c7); \
+uint64_t STRCAT_4(new_, s, _, b1)(uint64_t b1c0, uint64_t b1c1, uint64_t b1c2, uint64_t b1c3, uint64_t b1c4, uint64_t b1c5, uint64_t b1c6, uint64_t b1c7);
+
+#define DECLARE_SYMBOL_FIELDS_10_10( \
+	S, s, B0, B1, b0, b1, b0c0, b0c1, b0c2, b0c3, b0c4, b0c5, b0c6, b0c7, b0c8, b0c9, b1c0, b1c1, b1c2, b1c3, b1c4, b1c5, b1c6, b1c7, b1c8, b1c9 \
+) \
+std::vector<S> STRCAT_2(s, _storage); \
+std::vector<S::B0> STRCAT_4(s, _, b0, _storage); \
+std::vector<S::B1> STRCAT_4(s, _, b1, _storage); \
+uint64_t STRCAT_4(new_, s, _, b0)(uint64_t b0c0, uint64_t b0c1, uint64_t b0c2, uint64_t b0c3, uint64_t b0c4, uint64_t b0c5, uint64_t b0c6, uint64_t b0c7, uint64_t b0c8, uint64_t b0c9); \
+uint64_t STRCAT_4(new_, s, _, b1)(uint64_t b1c0, uint64_t b1c1, uint64_t b1c2, uint64_t b1c3, uint64_t b1c4, uint64_t b1c5, uint64_t b1c6, uint64_t b1c7, uint64_t b1c8, uint64_t b1c9);
 
 // | A complete parse tree of a vector of lexemes.
 //
@@ -422,76 +456,36 @@ public:
 
 	std::vector<Lexeme> lexemes;
 
-	std::vector<Keyword>                                keywords;
-	std::vector<Operator>                               operators;
-	std::vector<Start>                                  starts;
-	std::vector<Program>                                programs;
-	std::vector<ConstantDeclOpt>                        constant_decl_opts;
-	std::vector<ConstantDeclOpt::Empty>                 constant_decl_opt_empties;
-	std::vector<ConstantDeclOpt::Value>                 constant_decl_opt_values;
-	std::vector<TypeDeclOpt>                            type_decl_opts;
-	std::vector<TypeDeclOpt::Empty>                     type_decl_opt_empties;
-	std::vector<TypeDeclOpt::Value>                     type_decl_opt_values;
-	std::vector<VarDeclOpt>                             var_decl_opts;
-	std::vector<VarDeclOpt::Empty>                      var_decl_opt_empties;
-	std::vector<VarDeclOpt::Value>                      var_decl_opt_values;
-	std::vector<ProcedureDeclOrFunctionDeclList>        procedure_decl_or_function_decl_lists;
-	std::vector<ProcedureDeclOrFunctionDeclList::Empty> procedure_decl_or_function_decl_list_empties;
-	std::vector<ProcedureDeclOrFunctionDeclList::Cons>  procedure_decl_or_function_decl_list_conses;
-	std::vector<ProcedureDeclOrFunctionDecl>            procedure_decl_or_function_decls;
-	std::vector<ProcedureDeclOrFunctionDecl::Procedure> procedure_decl_or_function_decl_procedures;
-	std::vector<ProcedureDeclOrFunctionDecl::Function>  procedure_decl_or_function_decl_functions;
-	std::vector<ConstantDecl>                           constant_decls;
-	std::vector<ConstantAssignmentList>                 constant_assignment_lists;
-	std::vector<ConstantAssignmentList::Empty>          constant_assignment_list_empties;
-	std::vector<ConstantAssignmentList::Cons>           constant_assignment_list_conses;
-	std::vector<ConstantAssignment>                     constant_assignments;
-	std::vector<ProcedureDecl>                          procedure_decls;
-	std::vector<ProcedureDecl::Forward>                 procedure_decl_forwards;
-	std::vector<ProcedureDecl::Definition>              procedure_decl_definitions;
-	std::vector<FunctionDecl>                           function_decls;
-	std::vector<FunctionDecl::Forward>                  function_decl_forwards;
-	std::vector<FunctionDecl::Definition>               function_decl_definitions;
-	std::vector<FormalParameters>                       formal_parameterses;
-	std::vector<FormalParameters::Empty>                formal_parameters_empties;
-	std::vector<FormalParameters::First>                formal_parameters_firsts;
-	std::vector<FormalParameterPrefixedList>            formal_parameter_prefixed_lists;
-	std::vector<FormalParameterPrefixedList::Empty>     formal_parameter_prefixed_list_empties;
-	std::vector<FormalParameterPrefixedList::Cons>      formal_parameter_prefixed_list_conses;
+	DECLARE_SYMBOL_FIELDS_1(Keyword, keyword, lexeme)
+	DECLARE_SYMBOL_FIELDS_1(Operator, operator_, lexeme)
+	DECLARE_SYMBOL_FIELDS_1(Start, start, program)
+	DECLARE_SYMBOL_FIELDS_6(Program, program, constant_decl_opt, type_decl_opt, var_decl_opt, procedure_decl_or_function_decl_list, block, dot_operator0)
+	DECLARE_SYMBOL_FIELDS_0_1(ConstantDeclOpt, constant_decl_opt, Empty, Value, empty, value, constant_decl)
+	DECLARE_SYMBOL_FIELDS_0_1(TypeDeclOpt, type_decl_opt, Empty, Value, empty, value, type_decl)
+	DECLARE_SYMBOL_FIELDS_0_1(VarDeclOpt, var_decl_opt, Empty, Value, empty, value, var_decl)
+	DECLARE_SYMBOL_FIELDS_0_2(ProcedureDeclOrFunctionDeclList, procedure_decl_or_function_decl_list, Empty, Cons, empty, cons, procedure_decl_or_function_decl_list, procedure_decl_or_function_decl)
+	DECLARE_SYMBOL_FIELDS_1_1(ProcedureDeclOrFunctionDecl, procedure_decl_or_function_decl, Procedure, Function, procedure, function, procedure_decl, function_decl)
+	DECLARE_SYMBOL_FIELDS_3(ConstantDecl, constant_decl, const_keyword0, constant_assignment, constant_assignment_list)
+	DECLARE_SYMBOL_FIELDS_0_2(ConstantAssignmentList, constant_assignment_list, Empty, Cons, empty, cons, constant_assignment_list, constant_assignment)
+	DECLARE_SYMBOL_FIELDS_4(ConstantAssignment, constant_assignment, identifier, equals_operator0, expression, semicolon_operator0)
+	DECLARE_SYMBOL_FIELDS_8_8(
+		ProcedureDecl, procedure_decl, Forward, Definition, forward, definition,
+		procedure_keyword0, identifier, leftparenthesis_operator0, formal_parameters, rightparenthesis_operator0, semicolon_operator0, forward_keyword0, semicolon_operator1,
+		procedure_keyword0, identifier, leftparenthesis_operator0, formal_parameters, rightparenthesis_operator0, semicolon_operator0, body, semicolon_operator1
+	)
+	DECLARE_SYMBOL_FIELDS_10_10(
+		FunctionDecl, function_decl, Forward, Definition, forward, definition,
+		function_keyword0, identifier, leftparenthesis_operator0, formal_parameters, rightparenthesis_operator0, colon_operator0, type, semicolon_operator0, forward_keyword0, semicolon_operator1,
+		function_keyword0, identifier, leftparenthesis_operator0, formal_parameters, rightparenthesis_operator0, colon_operator0, type, semicolon_operator0, body, semicolon_operator1
+	)
+	DECLARE_SYMBOL_FIELDS_0_2(FormalParameters, formal_parameters, Empty, First, empty, first, formal_parameter, formal_parameter_prefixed_list)
+	DECLARE_SYMBOL_FIELDS_0_3(FormalParameterPrefixedList, formal_parameter_prefixed_list, Empty, Cons, empty, cons, formal_parameter_prefixed_list, semicolon_operator0, formal_parameter)
 	// ... (TODO)
-	std::vector<LvalueAccessorClause>                   lvalue_accessor_clauses;
-	std::vector<LvalueAccessorClause::Index>            lvalue_accessor_clause_indexes;
-	std::vector<LvalueAccessorClause::Array>            lvalue_accessor_clause_arrays;
-
-	uint64_t new_keyword(uint64_t lexeme);
-	uint64_t new_operator(uint64_t lexeme);
-	uint64_t new_start(uint64_t program);
-	uint64_t new_program(uint64_t constant_decl_opt, uint64_t type_decl_opt, uint64_t var_decl_opt, uint64_t procedure_decl_or_function_decl_list, uint64_t block, uint64_t dot_operator0);
-	uint64_t new_constant_decl_opt_empty();
-	uint64_t new_constant_decl_opt_value(uint64_t constant_decl);
-	uint64_t new_type_decl_opt_empty();
-	uint64_t new_type_decl_opt_value(uint64_t type_decl);
-	uint64_t new_var_decl_opt_empty();
-	uint64_t new_var_decl_opt_value(uint64_t var_decl);
-	uint64_t new_procedure_decl_or_function_decl_list_empty();
-	uint64_t new_procedure_decl_or_function_decl_list_cons(uint64_t procedure_decl_or_function_decl_list, uint64_t procedure_decl_or_function_decl);
-	uint64_t new_procedure_decl_or_function_decl_procedure(uint64_t procedure_decl);
-	uint64_t new_procedure_decl_or_function_decl_function(uint64_t function_decl);
-	uint64_t new_constant_decl(uint64_t const_keyword0, uint64_t constant_assignment, uint64_t constant_assignment_list);
-	uint64_t new_constant_assignment_list_empty();
-	uint64_t new_constant_assignment_list_cons(uint64_t constant_assignment_list, uint64_t constant_assignment);
-	uint64_t new_constant_assignment(uint64_t identifier, uint64_t equals_operator0, uint64_t expression, uint64_t semicolon_operator0);
-	uint64_t new_procedure_decl_forward(uint64_t procedure_keyword0, uint64_t identifier, uint64_t leftparenthesis_operator0, uint64_t formal_parameters, uint64_t rightparenthesis_operator0, uint64_t semicolon_operator0, uint64_t forward_keyword0, uint64_t semicolon_operator1);
-	uint64_t new_procedure_decl_definition(uint64_t procedure_keyword0, uint64_t identifier, uint64_t leftparenthesis_operator0, uint64_t formal_parameters, uint64_t rightparenthesis_operator0, uint64_t semicolon_operator0, uint64_t body, uint64_t semicolon_operator1);
-	uint64_t new_function_decl_forward(uint64_t function_keyword0, uint64_t identifier, uint64_t leftparenthesis_operator0, uint64_t formal_parameters, uint64_t rightparenthesis_operator0, uint64_t colon_operator0, uint64_t type, uint64_t semicolon_operator0, uint64_t forward_keyword0, uint64_t semicolon_operator1);
-	uint64_t new_function_decl_definition(uint64_t function_keyword0, uint64_t identifier, uint64_t leftparenthesis_operator0, uint64_t formal_parameters, uint64_t rightparenthesis_operator0, uint64_t colon_operator0, uint64_t type, uint64_t semicolon_operator0, uint64_t body, uint64_t semicolon_operator1);
-	uint64_t new_formal_parameters_empty();
-	uint64_t new_formal_parameters_first(uint64_t formal_parameter, uint64_t formal_parameter_prefixed_list);
-	uint64_t new_formal_parameter_prefixed_list_empty();
-	uint64_t new_formal_parameter_prefixed_list_cons(uint64_t formal_parameter_prefixed_list, uint64_t semicolon_operator0, uint64_t formal_parameter);
-	// ... (TODO)
-	uint64_t new_lvalue_accessor_clause_index(uint64_t dot_operator0, uint64_t identifier);
-	uint64_t new_lvalue_accessor_clause_array(uint64_t leftbracket_operator0, uint64_t expression, uint64_t rightbracket_operator0);
+	DECLARE_SYMBOL_FIELDS_2_3(
+		LvalueAccessorClause, lvalue_accessor_clause, Index, Array, index, array,
+		dot_operator0, identifier,
+		leftbracket_operator0, expression, rightbracket_operator0
+	)
 };
 
 #endif /* #ifndef CPSL_CC_GRAMMAR_HH */

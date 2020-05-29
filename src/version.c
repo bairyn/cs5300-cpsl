@@ -9,4 +9,4 @@ const uint64_t  cpsl_cc_version_components[CPSL_CC_VERSION_NUM_COMPONENTS] = {
 	cpsl_cc_version_minor,
 	cpsl_cc_version_patch,
 };
-const char     *cpsl_cc_version_string = CPSL_CC_VERSION_STRING;
+const char     *cpsl_cc_version_string         = CPSL_CC_VERSION_QUOTED_STRING;

@@ -22,7 +22,7 @@
 
 extern "C" {
 #include "version.h"
-#include "util.h"        // assertm, STR
+#include "util.h"        // assertm, STR*
 }
 
 #include "cli.hh"
@@ -467,7 +467,7 @@ void cli::run(const std::vector<std::string> &argv) {
 	}
 }
 
-const std::string cli::default_prog(STR(CLI_DEFAULT_PROG));
+const std::string cli::default_prog(STRQUOTE(CLI_DEFAULT_PROG));
 
 void cli::usage(const std::optional<std::string> &prog, int exit_code, bool err) {
 	if (err) {
