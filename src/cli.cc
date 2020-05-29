@@ -826,7 +826,7 @@ std::vector<std::string> cli::get_parser_info(const ParsedArgs &parsed_args, con
 	// Since no exception was thrown, just indicate we successfully parsed the
 	// grammar of the input.
 	std::ostringstream soutput_line;
-	soutput_line << "Successfully parsed the grammar of the input." << std::endl;
+	soutput_line << "Successfully parsed the grammar of the input.";
 	output_lines.push_back(soutput_line.str());
 
 	// Return our output.
