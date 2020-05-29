@@ -30,6 +30,6 @@ int yy_cpsl_cc_parserlex(parser_yystype_t *lvalp, std::shared_ptr<ParserState> p
 
 void yy_cpsl_cc_parsererror(std::shared_ptr<ParserState> parser_state, const char *s);
 
-Grammar parse_lexemes(const std::vector<Lexeme> &lexemes);
+Grammar parse_lexemes(const std::vector<Lexeme> &lexemes, bool parser_trace = false);
 
 #endif /* #ifndef CPSL_CC_PARSER_HH */

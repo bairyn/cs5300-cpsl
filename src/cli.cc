@@ -175,19 +175,21 @@ bool cli::ArgsSpec::verify() const {
 const cli::ArgsSpec cli::ArgsSpec::default_args_spec {
 	// std::map<std::string, cli::ArgsSpec::OptionSpec> options
 	{
-		{"help",    {true}},
-		{"version", {true}},
-		{"verbose", {true}},
-		{"input",   {false}},
-		{"output",  {false}},
-		{"lexer",   {true}},
-		{"parser",  {true}},
+		{"help",         {true}},
+		{"version",      {true}},
+		{"verbose",      {true}},
+		{"input",        {false}},
+		{"output",       {false}},
+		{"lexer",        {true}},
+		{"parser",       {true}},
+		{"parser-trace", {true}},
 	},
 
 	// std::map<std::string, std::string> option_aliases
 	{
-		{"scanner", "lexer"},
-		{"grammar", "parser"},
+		{"scanner",       "lexer"},
+		{"grammar",       "parser"},
+		{"grammar-trace", "parser-trace"},
 	},
 
 	// std::map<char, std::string> short_aliases
@@ -487,15 +489,17 @@ std::string cli::get_usage(const std::optional<std::string> &prog) {
 		<< std::endl
 		<< "Options:" << std::endl
 		<< "  -H," << std::endl
-		<< "  -?, --help         print usage information and exit." << std::endl
-		<< "  -V, --version      print version information and exit." << std::endl
-		<< "  -v, --verbose      increase verbosity." << std::endl
-		<< "  -i, --input PATH   specify the path to the input file to process." << std::endl
-		<< "  -o, --output PATH  specify the path to the output file to write." << std::endl
+		<< "  -?, --help           print usage information and exit." << std::endl
+		<< "  -V, --version        print version information and exit." << std::endl
+		<< "  -v, --verbose        increase verbosity." << std::endl
+		<< "  -i, --input PATH     specify the path to the input file to process." << std::endl
+		<< "  -o, --output PATH    specify the path to the output file to write." << std::endl
 		<< "      --lexer," << std::endl
-		<< "      --scanner      write scanner information after each line and stop after the lexer stage." << std::endl
+		<< "      --scanner        write scanner information after each line and stop after the lexer stage." << std::endl
 		<< "      --parser," << std::endl
-		<< "      --grammar      indicate if parsing the grammar of the input succeeded and stop after the parsing stage." << std::endl
+		<< "      --grammar        indicate if parsing the grammar of the input succeeded and stop after the parsing stage." << std::endl
+		<< "      --parser-trace," << std::endl
+		<< "      --grammar-trace  print bison tracing information while parsing." << std::endl
 		;
 	return sstr.str();
 }
@@ -817,7 +821,7 @@ std::vector<std::string> cli::get_parser_info(const ParsedArgs &parsed_args, con
 	std::vector<Lexeme> lexemes = scanlines(input_lines);
 
 	// Parse the grammar.
-	Grammar grammar = parse_lexemes(lexemes);
+	Grammar grammar = parse_lexemes(lexemes, parsed_args.is("parser-trace"));
 
 	// Since no exception was thrown, just indicate we successfully parsed the
 	// grammar of the input.
