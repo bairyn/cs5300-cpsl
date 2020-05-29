@@ -18,6 +18,7 @@
 
 #include "lexer.hh"
 #include "grammar.hh"    // GrammarError
+#include "parser.hh"
 #include "scanner.hh"
 
 extern "C" {
@@ -494,7 +495,7 @@ std::string cli::get_usage(const std::optional<std::string> &prog) {
 		<< "      --lexer," << std::endl
 		<< "      --scanner      write scanner information after each line and stop after the lexer stage." << std::endl
 		<< "      --parser," << std::endl
-		<< "      --grammar      write grammar information after each line and stop after the parser stage." << std::endl
+		<< "      --grammar      indicate if parsing the grammar of the input succeeded and stop after the parsing stage." << std::endl
 		;
 	return sstr.str();
 }
@@ -775,6 +776,7 @@ std::vector<std::string> cli::get_lexer_info(const ParsedArgs &parsed_args, cons
 		output_lines.push_back(lexeme_line);
 	}
 
+	// Return our output.
 	return output_lines;
 }
 
@@ -808,9 +810,23 @@ std::vector<std::string> cli::get_parser_info(const ParsedArgs &parsed_args, con
 
 // | Write parser information before each line and exit.
 std::vector<std::string> cli::get_parser_info(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines, const ArgsSpec &args_spec, const std::vector<std::string> &args, const std::optional<std::string> &prog) {
-	std::cout << "To be implemented..." << std::endl;
+	// Create our vector of lines to output.
+	std::vector<std::string> output_lines;
 
-	return std::vector<std::string>();
+	// Scan all the lexemes.
+	std::vector<Lexeme> lexemes = scanlines(input_lines);
+
+	// Parse the grammar.
+	Grammar grammar = parse_lexemes(lexemes);
+
+	// Since no exception was thrown, just indicate we successfully parsed the
+	// grammar of the input.
+	std::ostringstream soutput_line;
+	soutput_line << "Successfully parsed the grammar of the input." << std::endl;
+	output_lines.push_back(soutput_line.str());
+
+	// Return our output.
+	return output_lines;
 }
 
 /*
