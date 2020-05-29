@@ -234,26 +234,26 @@ procedure_decl_or_function_decl:
 	/* Declarations. */
 
 constant_decl:
-	CONST_KEYWORD constant_assignment constant_assignment_list
+	CONST_KEYWORD constant_assignment constant_assignment_list {$$ = pg.new_constant_decl($1, $2, $3);}
 ;
 
 constant_assignment_list:
-	  %empty
-	| constant_assignment_list constant_assignment
+	  %empty                                       {$$ = pg.new_constant_assignment_list_empty();}
+	| constant_assignment_list constant_assignment {$$ = pg.new_constant_assignment_list_cons($1, $2);}
 ;
 
 constant_assignment:
-	IDENTIFIER EQUALS_OPERATOR expression SEMICOLON_OPERATOR
+	IDENTIFIER EQUALS_OPERATOR expression SEMICOLON_OPERATOR {$$ = pg.new_constant_assignment($1, $2, $3, $4);}
 ;
 
 procedure_decl:
-	  PROCEDURE_KEYWORD IDENTIFIER LEFTPARENTHESIS_OPERATOR formal_parameters RIGHTPARENTHESIS_OPERATOR SEMICOLON_OPERATOR FORWARD_KEYWORD SEMICOLON_OPERATOR
-	| PROCEDURE_KEYWORD IDENTIFIER LEFTPARENTHESIS_OPERATOR formal_parameters RIGHTPARENTHESIS_OPERATOR SEMICOLON_OPERATOR body SEMICOLON_OPERATOR
+	  PROCEDURE_KEYWORD IDENTIFIER LEFTPARENTHESIS_OPERATOR formal_parameters RIGHTPARENTHESIS_OPERATOR SEMICOLON_OPERATOR FORWARD_KEYWORD SEMICOLON_OPERATOR {$$ = pg.new_procedure_decl_forward($1, $2, $3, $4, $5, $6, $7, $8);}
+	| PROCEDURE_KEYWORD IDENTIFIER LEFTPARENTHESIS_OPERATOR formal_parameters RIGHTPARENTHESIS_OPERATOR SEMICOLON_OPERATOR body SEMICOLON_OPERATOR            {$$ = pg.new_procedure_decl_definition($1, $2, $3, $4, $5, $6, $7, $8);}
 ;
 
 function_decl:
-	  FUNCTION_KEYWORD IDENTIFIER LEFTPARENTHESIS_OPERATOR formal_parameters RIGHTPARENTHESIS_OPERATOR COLON_OPERATOR type SEMICOLON_OPERATOR FORWARD_KEYWORD SEMICOLON_OPERATOR
-	| FUNCTION_KEYWORD IDENTIFIER LEFTPARENTHESIS_OPERATOR formal_parameters RIGHTPARENTHESIS_OPERATOR COLON_OPERATOR type SEMICOLON_OPERATOR body SEMICOLON_OPERATOR
+	  FUNCTION_KEYWORD IDENTIFIER LEFTPARENTHESIS_OPERATOR formal_parameters RIGHTPARENTHESIS_OPERATOR COLON_OPERATOR type SEMICOLON_OPERATOR FORWARD_KEYWORD SEMICOLON_OPERATOR {$$ = pg.new_function_decl_forward($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);}
+	| FUNCTION_KEYWORD IDENTIFIER LEFTPARENTHESIS_OPERATOR formal_parameters RIGHTPARENTHESIS_OPERATOR COLON_OPERATOR type SEMICOLON_OPERATOR body SEMICOLON_OPERATOR            {$$ = pg.new_function_decl_definition($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);}
 ;
 
 	/*
@@ -261,17 +261,17 @@ function_decl:
 	* bit.
 	*/
 formal_parameters:
-	  %empty
-	| formal_parameter formal_parameter_prefixed_list
+	  %empty                                          {$$ = pg.new_formal_parameters_empty();}
+	| formal_parameter formal_parameter_prefixed_list {$$ = pg.new_formal_parameters_first($1, $2);}
+;
+
+formal_parameter_prefixed_list:
+	  %empty                                                             {$$ = pg.new_formal_parameter_prefixed_list_empty();}
+	| formal_parameter_prefixed_list SEMICOLON_OPERATOR formal_parameter {$$ = pg.new_formal_parameter_prefixed_list_cons($1, $2, $3);}
 ;
 
 formal_parameter:
 	var_or_ref ident_list COLON_OPERATOR type
-;
-
-formal_parameter_prefixed_list:
-	  %empty
-	| formal_parameter_prefixed_list SEMICOLON_OPERATOR formal_parameter
 ;
 
 var_or_ref:

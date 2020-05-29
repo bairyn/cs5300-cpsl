@@ -99,6 +99,117 @@ ProcedureDeclOrFunctionDecl::Function::Function(uint64_t function_decl)
 	: function_decl(function_decl)
 	{}
 
+ConstantDecl::ConstantDecl(uint64_t const_keyword0, uint64_t constant_assignment, uint64_t constant_assignment_list)
+	: const_keyword0(const_keyword0)
+	, constant_assignment(constant_assignment)
+	, constant_assignment_list(constant_assignment_list)
+	{}
+
+ConstantAssignmentList::ConstantAssignmentList(uint64_t branch, uint64_t data)
+	: branch(branch)
+	, data(data)
+	{}
+
+ConstantAssignmentList::Empty::Empty()
+	{}
+
+ConstantAssignmentList::Cons::Cons(uint64_t constant_assignment_list, uint64_t constant_assignment)
+	: constant_assignment_list(constant_assignment_list)
+	, constant_assignment(constant_assignment)
+	{}
+
+ConstantAssignment::ConstantAssignment(uint64_t identifier, uint64_t equals_operator0, uint64_t expression, uint64_t semicolon_operator0)
+	: identifier(identifier)
+	, equals_operator0(equals_operator0)
+	, expression(expression)
+	, semicolon_operator0(semicolon_operator0)
+	{}
+
+ProcedureDecl::ProcedureDecl(uint64_t branch, uint64_t data)
+	: branch(branch)
+	, data(data)
+	{}
+
+ProcedureDecl::Forward::Forward(uint64_t procedure_keyword0, uint64_t identifier, uint64_t leftparenthesis_operator0, uint64_t formal_parameters, uint64_t rightparenthesis_operator0, uint64_t semicolon_operator0, uint64_t forward_keyword0, uint64_t semicolon_operator1)
+	: procedure_keyword0(procedure_keyword0)
+	, identifier(identifier)
+	, leftparenthesis_operator0(leftparenthesis_operator0)
+	, formal_parameters(formal_parameters)
+	, rightparenthesis_operator0(rightparenthesis_operator0)
+	, semicolon_operator0(semicolon_operator0)
+	, forward_keyword0(forward_keyword0)
+	, semicolon_operator1(semicolon_operator1)
+	{}
+
+ProcedureDecl::Definition::Definition(uint64_t procedure_keyword0, uint64_t identifier, uint64_t leftparenthesis_operator0, uint64_t formal_parameters, uint64_t rightparenthesis_operator0, uint64_t semicolon_operator0, uint64_t body, uint64_t semicolon_operator1)
+	: procedure_keyword0(procedure_keyword0)
+	, identifier(identifier)
+	, leftparenthesis_operator0(leftparenthesis_operator0)
+	, formal_parameters(formal_parameters)
+	, rightparenthesis_operator0(rightparenthesis_operator0)
+	, semicolon_operator0(semicolon_operator0)
+	, body(body)
+	, semicolon_operator1(semicolon_operator1)
+	{}
+
+FunctionDecl::FunctionDecl(uint64_t branch, uint64_t data)
+	: branch(branch)
+	, data(data)
+	{}
+
+FunctionDecl::Forward::Forward(uint64_t function_keyword0, uint64_t identifier, uint64_t leftparenthesis_operator0, uint64_t formal_parameters, uint64_t rightparenthesis_operator0, uint64_t colon_operator0, uint64_t type, uint64_t semicolon_operator0, uint64_t forward_keyword0, uint64_t semicolon_operator1)
+	: function_keyword0(function_keyword0)
+	, identifier(identifier)
+	, leftparenthesis_operator0(leftparenthesis_operator0)
+	, formal_parameters(formal_parameters)
+	, rightparenthesis_operator0(rightparenthesis_operator0)
+	, colon_operator0(colon_operator0)
+	, type(type)
+	, semicolon_operator0(semicolon_operator0)
+	, forward_keyword0(forward_keyword0)
+	, semicolon_operator1(semicolon_operator1)
+	{}
+
+FunctionDecl::Definition::Definition(uint64_t function_keyword0, uint64_t identifier, uint64_t leftparenthesis_operator0, uint64_t formal_parameters, uint64_t rightparenthesis_operator0, uint64_t colon_operator0, uint64_t type, uint64_t semicolon_operator0, uint64_t body, uint64_t semicolon_operator1)
+	: function_keyword0(function_keyword0)
+	, identifier(identifier)
+	, leftparenthesis_operator0(leftparenthesis_operator0)
+	, formal_parameters(formal_parameters)
+	, rightparenthesis_operator0(rightparenthesis_operator0)
+	, colon_operator0(colon_operator0)
+	, type(type)
+	, semicolon_operator0(semicolon_operator0)
+	, body(body)
+	, semicolon_operator1(semicolon_operator1)
+	{}
+
+FormalParameters::FormalParameters(uint64_t branch, uint64_t data)
+	: branch(branch)
+	, data(data)
+	{}
+
+FormalParameters::Empty::Empty()
+	{}
+
+FormalParameters::First::First(uint64_t formal_parameter, uint64_t formal_parameter_prefixed_list)
+	: formal_parameter(formal_parameter)
+	, formal_parameter_prefixed_list(formal_parameter_prefixed_list)
+	{}
+
+FormalParameterPrefixedList::FormalParameterPrefixedList(uint64_t branch, uint64_t data)
+	: branch(branch)
+	, data(data)
+	{}
+
+FormalParameterPrefixedList::Empty::Empty()
+	{}
+
+FormalParameterPrefixedList::Cons::Cons(uint64_t formal_parameter_prefixed_list, uint64_t semicolon_operator0, uint64_t formal_parameter)
+	: formal_parameter_prefixed_list(formal_parameter_prefixed_list)
+	, semicolon_operator0(semicolon_operator0)
+	, formal_parameter(formal_parameter)
+	{}
+
 // ... (TODO)
 
 LvalueAccessorClause::LvalueAccessorClause(uint64_t branch, uint64_t data)
@@ -234,6 +345,98 @@ uint64_t Grammar::new_procedure_decl_or_function_decl_function(uint64_t function
 	uint64_t function_index = static_cast<uint64_t>(procedure_decl_or_function_decl_functions.size());
 	procedure_decl_or_function_decl_functions.emplace_back(function_decl);
 	procedure_decl_or_function_decls.emplace_back(ProcedureDeclOrFunctionDecl::function_branch, function_index);
+	return index;
+}
+
+uint64_t Grammar::new_constant_decl(uint64_t const_keyword0, uint64_t constant_assignment, uint64_t constant_assignment_list) {
+	uint64_t index = static_cast<uint64_t>(constant_decls.size());
+	constant_decls.emplace_back(const_keyword0, constant_assignment, constant_assignment_list);
+	return index;
+}
+
+uint64_t Grammar::new_constant_assignment_list_empty() {
+	uint64_t index = static_cast<uint64_t>(constant_assignment_lists.size());
+	uint64_t empty_index = static_cast<uint64_t>(constant_assignment_list_empties.size());
+	constant_assignment_list_empties.emplace_back();
+	constant_assignment_lists.emplace_back(ConstantAssignmentList::empty_branch, empty_index);
+	return index;
+}
+
+uint64_t Grammar::new_constant_assignment_list_cons(uint64_t constant_assignment_list, uint64_t constant_assignment) {
+	uint64_t index = static_cast<uint64_t>(constant_assignment_lists.size());
+	uint64_t cons_index = static_cast<uint64_t>(constant_assignment_list_conses.size());
+	constant_assignment_list_conses.emplace_back(constant_assignment_list, constant_assignment);
+	constant_assignment_lists.emplace_back(ConstantAssignmentList::cons_branch, cons_index);
+	return index;
+}
+
+uint64_t Grammar::new_constant_assignment(uint64_t identifier, uint64_t equals_operator0, uint64_t expression, uint64_t semicolon_operator0) {
+	uint64_t index = static_cast<uint64_t>(constant_assignments.size());
+	constant_assignments.emplace_back(identifier, equals_operator0, expression, semicolon_operator0);
+	return index;
+}
+
+uint64_t Grammar::new_procedure_decl_forward(uint64_t procedure_keyword0, uint64_t identifier, uint64_t leftparenthesis_operator0, uint64_t formal_parameters, uint64_t rightparenthesis_operator0, uint64_t semicolon_operator0, uint64_t forward_keyword0, uint64_t semicolon_operator1) {
+	uint64_t index = static_cast<uint64_t>(procedure_decls.size());
+	uint64_t forward_index = static_cast<uint64_t>(procedure_decl_forwards.size());
+	procedure_decl_forwards.emplace_back(procedure_keyword0, identifier, leftparenthesis_operator0, formal_parameters, rightparenthesis_operator0, semicolon_operator0, forward_keyword0, semicolon_operator1);
+	procedure_decls.emplace_back(ProcedureDecl::forward_branch, forward_index);
+	return index;
+}
+
+uint64_t Grammar::new_procedure_decl_definition(uint64_t procedure_keyword0, uint64_t identifier, uint64_t leftparenthesis_operator0, uint64_t formal_parameters, uint64_t rightparenthesis_operator0, uint64_t semicolon_operator0, uint64_t body, uint64_t semicolon_operator1) {
+	uint64_t index = static_cast<uint64_t>(procedure_decls.size());
+	uint64_t definition_index = static_cast<uint64_t>(procedure_decl_definitions.size());
+	procedure_decl_definitions.emplace_back(procedure_keyword0, identifier, leftparenthesis_operator0, formal_parameters, rightparenthesis_operator0, semicolon_operator0, body, semicolon_operator1);
+	procedure_decls.emplace_back(ProcedureDecl::definition_branch, definition_index);
+	return index;
+}
+
+uint64_t Grammar::new_function_decl_forward(uint64_t function_keyword0, uint64_t identifier, uint64_t leftparenthesis_operator0, uint64_t formal_parameters, uint64_t rightparenthesis_operator0, uint64_t colon_operator0, uint64_t type, uint64_t semicolon_operator0, uint64_t forward_keyword0, uint64_t semicolon_operator1) {
+	uint64_t index = static_cast<uint64_t>(function_decls.size());
+	uint64_t forward_index = static_cast<uint64_t>(function_decl_forwards.size());
+	function_decl_forwards.emplace_back(function_keyword0, identifier, leftparenthesis_operator0, formal_parameters, rightparenthesis_operator0, colon_operator0, type, semicolon_operator0, forward_keyword0, semicolon_operator1);
+	function_decls.emplace_back(FunctionDecl::forward_branch, forward_index);
+	return index;
+}
+
+uint64_t Grammar::new_function_decl_definition(uint64_t function_keyword0, uint64_t identifier, uint64_t leftparenthesis_operator0, uint64_t formal_parameters, uint64_t rightparenthesis_operator0, uint64_t colon_operator0, uint64_t type, uint64_t semicolon_operator0, uint64_t body, uint64_t semicolon_operator1) {
+	uint64_t index = static_cast<uint64_t>(function_decls.size());
+	uint64_t definition_index = static_cast<uint64_t>(function_decl_definitions.size());
+	function_decl_definitions.emplace_back(function_keyword0, identifier, leftparenthesis_operator0, formal_parameters, rightparenthesis_operator0, colon_operator0, type, semicolon_operator0, body, semicolon_operator1);
+	function_decls.emplace_back(FunctionDecl::definition_branch, definition_index);
+	return index;
+}
+
+uint64_t Grammar::new_formal_parameters_empty() {
+	uint64_t index = static_cast<uint64_t>(formal_parameterses.size());
+	uint64_t empty_index = static_cast<uint64_t>(formal_parameters_empties.size());
+	formal_parameters_empties.emplace_back();
+	formal_parameterses.emplace_back(FormalParameters::empty_branch, empty_index);
+	return index;
+}
+
+uint64_t Grammar::new_formal_parameters_first(uint64_t formal_parameter, uint64_t formal_parameter_prefixed_list) {
+	uint64_t index = static_cast<uint64_t>(formal_parameterses.size());
+	uint64_t first_index = static_cast<uint64_t>(formal_parameters_firsts.size());
+	formal_parameters_firsts.emplace_back(formal_parameter, formal_parameter_prefixed_list);
+	formal_parameterses.emplace_back(FormalParameters::first_branch, first_index);
+	return index;
+}
+
+uint64_t Grammar::new_formal_parameter_prefixed_list_empty() {
+	uint64_t index = static_cast<uint64_t>(formal_parameter_prefixed_lists.size());
+	uint64_t empty_index = static_cast<uint64_t>(formal_parameter_prefixed_list_empties.size());
+	formal_parameter_prefixed_list_empties.emplace_back();
+	formal_parameter_prefixed_lists.emplace_back(FormalParameterPrefixedList::empty_branch, empty_index);
+	return index;
+}
+
+uint64_t Grammar::new_formal_parameter_prefixed_list_cons(uint64_t formal_parameter_prefixed_list, uint64_t semicolon_operator0, uint64_t formal_parameter) {
+	uint64_t index = static_cast<uint64_t>(formal_parameter_prefixed_lists.size());
+	uint64_t cons_index = static_cast<uint64_t>(formal_parameter_prefixed_list_conses.size());
+	formal_parameter_prefixed_list_conses.emplace_back(formal_parameter_prefixed_list, semicolon_operator0, formal_parameter);
+	formal_parameter_prefixed_lists.emplace_back(FormalParameterPrefixedList::cons_branch, cons_index);
 	return index;
 }
 
