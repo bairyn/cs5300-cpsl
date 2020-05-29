@@ -88,29 +88,29 @@
 %token WHILE_KEYWORD     39
 %token WRITE_KEYWORD     40
 
-%token PLUS_OPERATOR             41
-%token MINUS_OPERATOR            42
-%token TIMES_OPERATOR            43
-%token SLASH_OPERATOR            44
-%token AMPERSAND_OPERATOR        45
-%token PIPE_OPERATOR             46
-%token TILDE_OPERATOR            47
-%token EQUALS_OPERATOR           48
-%token LT_OR_GT_OPERATOR         49
-%token LT_OPERATOR               50
-%token LE_OPERATOR               51
-%token GT_OPERATOR               52
-%token GE_OPERATOR               53
-%token DOT_OPERATOR              54
-%token COMMA_OPERATOR            55
-%token COLON_OPERATOR            56
-%token SEMICOLON_OPERATOR        57
-%token LEFTPARENTHESIS_OPERATOR  58
-%token RIGHTPARENTHESIS_OPERATOR 59
-%token LEFTBRACKET_OPERATOR      60
-%token RIGHTBRACKET_OPERATOR     61
-%token COLONEQUALS_OPERATOR      62
-%token PERCENT_OPERATOR          63
+%token PLUS_OPERATOR             42
+%token MINUS_OPERATOR            43
+%token TIMES_OPERATOR            44
+%token SLASH_OPERATOR            45
+%token AMPERSAND_OPERATOR        46
+%token PIPE_OPERATOR             47
+%token TILDE_OPERATOR            48
+%token EQUALS_OPERATOR           49
+%token LT_OR_GT_OPERATOR         50
+%token LT_OPERATOR               51
+%token LE_OPERATOR               52
+%token GT_OPERATOR               53
+%token GE_OPERATOR               54
+%token DOT_OPERATOR              55
+%token COMMA_OPERATOR            56
+%token COLON_OPERATOR            57
+%token SEMICOLON_OPERATOR        58
+%token LEFTPARENTHESIS_OPERATOR  59
+%token RIGHTPARENTHESIS_OPERATOR 60
+%token LEFTBRACKET_OPERATOR      61
+%token RIGHTBRACKET_OPERATOR     62
+%token COLONEQUALS_OPERATOR      63
+%token PERCENT_OPERATOR          64
 
 %{
 #include <memory>      // std::shared_ptr
