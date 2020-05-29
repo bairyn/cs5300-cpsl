@@ -14,9 +14,9 @@ using parser_yyltype_t = uint64_t;
 
 class ParserState {
 public:
-	ParserState(const std::vector<Lexeme> &lexemes);
+	ParserState(Grammar &grammar);
 
-	const std::vector<Lexeme> &lexemes;
+	Grammar &grammar;
 	uint64_t next_lexeme;
 };
 

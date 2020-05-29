@@ -129,103 +129,106 @@
 %left AMPERSAND_OPERATOR
 %left PIPE_OPERATOR
 
+/* Definitions and macros. */
+%{
+#define pg parser_state->grammar
+%}
+
 %%
 
 keyword:
-	  ARRAY_KEYWORD
-	| BEGIN_KEYWORD
-	| CHR_KEYWORD
-	| CONST_KEYWORD
-	| DO_KEYWORD
-	| DOWNTO_KEYWORD
-	| ELSE_KEYWORD
-	| ELSEIF_KEYWORD
-	| END_KEYWORD
-	| FOR_KEYWORD
-	| FORWARD_KEYWORD
-	| FUNCTION_KEYWORD
-	| IF_KEYWORD
-	| OF_KEYWORD
-	| ORD_KEYWORD
-	| PRED_KEYWORD
-	| PROCEDURE_KEYWORD
-	| READ_KEYWORD
-	| RECORD_KEYWORD
-	| REF_KEYWORD
-	| REPEAT_KEYWORD
-	| RETURN_KEYWORD
-	| STOP_KEYWORD
-	| SUCC_KEYWORD
-	| THEN_KEYWORD
-	| TO_KEYWORD
-	| TYPE_KEYWORD
-	| UNTIL_KEYWORD
-	| VAR_KEYWORD
-	| WHILE_KEYWORD
-	| WRITE_KEYWORD
+	  ARRAY_KEYWORD     {$$ = pg.new_keyword($1);}
+	| BEGIN_KEYWORD     {$$ = pg.new_keyword($1);}
+	| CHR_KEYWORD       {$$ = pg.new_keyword($1);}
+	| CONST_KEYWORD     {$$ = pg.new_keyword($1);}
+	| DO_KEYWORD        {$$ = pg.new_keyword($1);}
+	| DOWNTO_KEYWORD    {$$ = pg.new_keyword($1);}
+	| ELSE_KEYWORD      {$$ = pg.new_keyword($1);}
+	| ELSEIF_KEYWORD    {$$ = pg.new_keyword($1);}
+	| END_KEYWORD       {$$ = pg.new_keyword($1);}
+	| FOR_KEYWORD       {$$ = pg.new_keyword($1);}
+	| FORWARD_KEYWORD   {$$ = pg.new_keyword($1);}
+	| FUNCTION_KEYWORD  {$$ = pg.new_keyword($1);}
+	| IF_KEYWORD        {$$ = pg.new_keyword($1);}
+	| OF_KEYWORD        {$$ = pg.new_keyword($1);}
+	| ORD_KEYWORD       {$$ = pg.new_keyword($1);}
+	| PRED_KEYWORD      {$$ = pg.new_keyword($1);}
+	| PROCEDURE_KEYWORD {$$ = pg.new_keyword($1);}
+	| READ_KEYWORD      {$$ = pg.new_keyword($1);}
+	| RECORD_KEYWORD    {$$ = pg.new_keyword($1);}
+	| REF_KEYWORD       {$$ = pg.new_keyword($1);}
+	| REPEAT_KEYWORD    {$$ = pg.new_keyword($1);}
+	| RETURN_KEYWORD    {$$ = pg.new_keyword($1);}
+	| STOP_KEYWORD      {$$ = pg.new_keyword($1);}
+	| SUCC_KEYWORD      {$$ = pg.new_keyword($1);}
+	| THEN_KEYWORD      {$$ = pg.new_keyword($1);}
+	| TO_KEYWORD        {$$ = pg.new_keyword($1);}
+	| TYPE_KEYWORD      {$$ = pg.new_keyword($1);}
+	| UNTIL_KEYWORD     {$$ = pg.new_keyword($1);}
+	| VAR_KEYWORD       {$$ = pg.new_keyword($1);}
+	| WHILE_KEYWORD     {$$ = pg.new_keyword($1);}
+	| WRITE_KEYWORD     {$$ = pg.new_keyword($1);}
 ;
 
 operator:
-	  PLUS_OPERATOR
-	| MINUS_OPERATOR
-	| TIMES_OPERATOR
-	| SLASH_OPERATOR
-	| AMPERSAND_OPERATOR
-	| PIPE_OPERATOR
-	| TILDE_OPERATOR
-	| EQUALS_OPERATOR
-	| LT_OR_GT_OPERATOR
-	| LT_OPERATOR
-	| LE_OPERATOR
-	| GT_OPERATOR
-	| GE_OPERATOR
-	| DOT_OPERATOR
-	| COMMA_OPERATOR
-	| COLON_OPERATOR
-	| SEMICOLON_OPERATOR
-	| LEFTPARENTHESIS_OPERATOR
-	| RIGHTPARENTHESIS_OPERATOR
-	| LEFTBRACKET_OPERATOR
-	| RIGHTBRACKET_OPERATOR
-	| COLONEQUALS_OPERATOR
-	| PERCENT_OPERATOR
+	  PLUS_OPERATOR             {$$ = pg.new_operator($1);}
+	| MINUS_OPERATOR            {$$ = pg.new_operator($1);}
+	| TIMES_OPERATOR            {$$ = pg.new_operator($1);}
+	| SLASH_OPERATOR            {$$ = pg.new_operator($1);}
+	| AMPERSAND_OPERATOR        {$$ = pg.new_operator($1);}
+	| PIPE_OPERATOR             {$$ = pg.new_operator($1);}
+	| TILDE_OPERATOR            {$$ = pg.new_operator($1);}
+	| EQUALS_OPERATOR           {$$ = pg.new_operator($1);}
+	| LT_OR_GT_OPERATOR         {$$ = pg.new_operator($1);}
+	| LT_OPERATOR               {$$ = pg.new_operator($1);}
+	| LE_OPERATOR               {$$ = pg.new_operator($1);}
+	| GT_OPERATOR               {$$ = pg.new_operator($1);}
+	| GE_OPERATOR               {$$ = pg.new_operator($1);}
+	| DOT_OPERATOR              {$$ = pg.new_operator($1);}
+	| COMMA_OPERATOR            {$$ = pg.new_operator($1);}
+	| COLON_OPERATOR            {$$ = pg.new_operator($1);}
+	| SEMICOLON_OPERATOR        {$$ = pg.new_operator($1);}
+	| LEFTPARENTHESIS_OPERATOR  {$$ = pg.new_operator($1);}
+	| RIGHTPARENTHESIS_OPERATOR {$$ = pg.new_operator($1);}
+	| LEFTBRACKET_OPERATOR      {$$ = pg.new_operator($1);}
+	| RIGHTBRACKET_OPERATOR     {$$ = pg.new_operator($1);}
+	| COLONEQUALS_OPERATOR      {$$ = pg.new_operator($1);}
+	| PERCENT_OPERATOR          {$$ = pg.new_operator($1);}
 ;
 
-	/* TODO: actions */
-
 start:
-	program
+	program  {$$ = pg.new_start($1);}
 ;
 
 	/* Overall structure. */
 
 program:
-	constant_decl_opt type_decl_opt var_decl_opt procedure_decl_or_function_decl_list block DOT_OPERATOR
+	constant_decl_opt type_decl_opt var_decl_opt procedure_decl_or_function_decl_list block DOT_OPERATOR {$$ = pg.new_program($1, $2, $3, $4, $5, $6);}
 ;
 
 constant_decl_opt:
-	  %empty
-	| constant_decl
+	  %empty        {$$ = pg.new_constant_decl_opt_empty();}
+	| constant_decl {$$ = pg.new_constant_decl_opt_value($1);}
 ;
 
 type_decl_opt:
-	  %empty
-	| type_decl
+	  %empty    {$$ = pg.new_type_decl_opt_empty();}
+	| type_decl {$$ = pg.new_type_decl_opt_value($1);}
 ;
 
 var_decl_opt:
-	  %empty
-	| var_decl
+	  %empty   {$$ = pg.new_var_decl_opt_empty();}
+	| var_decl {$$ = pg.new_var_decl_opt_value($1);}
 ;
 
 procedure_decl_or_function_decl_list:
-	  %empty
-	| procedure_decl_or_function_decl_list procedure_decl_or_function_decl
+	  %empty                                                               {$$ = pg.new_procedure_decl_or_function_decl_list_empty();}
+	| procedure_decl_or_function_decl_list procedure_decl_or_function_decl {$$ = pg.new_procedure_decl_or_function_decl_list_cons($1, $2);}
 ;
 
 procedure_decl_or_function_decl:
-	  procedure_decl
-	| function_decl
+	  procedure_decl {$$ = pg.new_procedure_decl_or_function_decl_procedure($1);}
+	| function_decl  {$$ = pg.new_procedure_decl_or_function_decl_function($1);}
 ;
 
 	/* Declarations. */
@@ -483,7 +486,7 @@ expression:
 	| expression SLASH_OPERATOR     expression
 	| expression PERCENT_OPERATOR   expression
 	| TILDE_OPERATOR expression
-	| MINUS_OPERATOR expression %prec UNARY_MINUS
+	| MINUS_OPERATOR expression  %prec UNARY_MINUS
 	| LEFTPARENTHESIS_OPERATOR expression RIGHTPARENTHESIS_OPERATOR
 	| IDENTIFIER LEFTPARENTHESIS_OPERATOR expression_sequence_opt RIGHTPARENTHESIS_OPERATOR
 	| CHR_KEYWORD LEFTPARENTHESIS_OPERATOR expression RIGHTPARENTHESIS_OPERATOR
@@ -503,14 +506,14 @@ lvalue_accessor_clause_list:
 ;
 
 lvalue_accessor_clause:
-	  DOT_OPERATOR IDENTIFIER
-	| LEFTBRACKET_OPERATOR expression RIGHTBRACKET_OPERATOR
+	  DOT_OPERATOR IDENTIFIER                               {$$ = pg.new_lvalue_accessor_clause_index($1, $2);}
+	| LEFTBRACKET_OPERATOR expression RIGHTBRACKET_OPERATOR {$$ = pg.new_lvalue_accessor_clause_array($1, $2, $3);}
 ;
 
 %%
 
-ParserState::ParserState(const std::vector<Lexeme> &lexemes)
-	: lexemes(lexemes)
+ParserState::ParserState(Grammar &grammar)
+	: grammar(grammar)
 	, next_lexeme(0)
 	{}
 
@@ -518,8 +521,8 @@ ParserState::ParserState(const std::vector<Lexeme> &lexemes)
  * Feed in a lexeme: *lvalp = semantic value; return token type;
  */
 int yy_cpsl_cc_parserlex(parser_yystype_t *lvalp, std::shared_ptr<ParserState> parser_state) {
-	for (; parser_state->next_lexeme < parser_state->lexemes.size(); ++parser_state->next_lexeme) {
-		const Lexeme &lexeme = parser_state->lexemes[parser_state->next_lexeme];
+	for (; parser_state->next_lexeme < parser_state->grammar.lexemes.size(); ++parser_state->next_lexeme) {
+		const Lexeme &lexeme = parser_state->grammar.lexemes[parser_state->next_lexeme];
 
 		// Skip whitespace and comments when feeding the parser.
 		if (lexeme.tag == comment_tag || lexeme.tag == whitespace_tag) {
@@ -541,7 +544,10 @@ void yy_cpsl_cc_parsererror(std::shared_ptr<ParserState> parser_state, const cha
 }
 
 Grammar parse_lexemes(const std::vector<Lexeme> &lexemes) {
-	std::shared_ptr<ParserState> parser_state(new ParserState(lexemes));
+	// Create a new storage for an AST.
+	Grammar grammar;
+
+	std::shared_ptr<ParserState> parser_state(new ParserState(grammar));
 	int status = yy_cpsl_cc_parserparse(parser_state);
 	// status: c.f. https://www.gnu.org/software/bison/manual/html_node/Parser-Function.html
 	switch (status) {
@@ -566,6 +572,5 @@ Grammar parse_lexemes(const std::vector<Lexeme> &lexemes) {
 		}
 	}
 
-	// TODO
-	return Grammar();
+	return grammar;
 }
