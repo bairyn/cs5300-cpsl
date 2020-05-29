@@ -1,3 +1,12 @@
+/* Trace?  c.f. https://www.gnu.org/software/bison/manual/html_node/Enabling-Traces.html */
+/* Comment out these four trace define lines to disable tracing. */
+/*
+%define parse.trace
+%{
+#define PARSER_ENABLE_TRACE 1
+%}
+*/
+
 %define api.pure full
 /*
  * Use our own yylex variant to control feeding in of lexemes.
@@ -545,6 +554,10 @@ void yy_cpsl_cc_parsererror(std::shared_ptr<ParserState> parser_state, const cha
 Grammar parse_lexemes(const std::vector<Lexeme> &lexemes) {
 	// Create a new storage for an AST.
 	Grammar grammar;
+
+#if defined(PARSER_ENABLE_TRACE) && PARSER_ENABLE_TRACE
+	yy_cpsl_cc_parserdebug = 1;
+#endif /* #if defined(PARSER_ENABLE_TRACE) && PARSER_ENABLE_TRACE */
 
 	std::shared_ptr<ParserState> parser_state(new ParserState(grammar));
 	int status = yy_cpsl_cc_parserparse(parser_state);
