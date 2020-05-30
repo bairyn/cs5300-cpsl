@@ -519,7 +519,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const LexemeOperator   &pipe_operator0 = grammar.lexemes.at(pipe.pipe_operator0).get_operator();
 			const Expression       &expression1    = grammar.expression_storage.at(pipe.expression1); (void) expression1;
 
-			// Is either expression dynamic?  If so, this expression is also dynamic.
+			// Is either subexpression dynamic?  If so, this expression is also dynamic.
 			// (Normally we'd operate on the left side first, but since order
 			// of evaluation is referentially transparent and the parser tree
 			// is left-recursive, check the expression on the right first,
@@ -562,13 +562,13 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			}
 
 			// Apply bitwise OR depending on the integer type.
-			if       (left.is_integer()) {
+			if        (left.is_integer()) {
 				expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) | static_cast<int32_t>(right.get_integer())));
 				break;
-			} else if(left.is_char()) {
+			} else if (left.is_char()) {
 				expression_constant_value = ConstantValue(static_cast<char>(static_cast<char>(left.get_char()) | static_cast<char>(right.get_char())));
 				break;
-			} else if(left.is_boolean()) {
+			} else if (left.is_boolean()) {
 				expression_constant_value = ConstantValue(static_cast<bool>(static_cast<bool>(left.get_boolean()) | static_cast<bool>(right.get_boolean())));
 				break;
 			} else {
@@ -587,7 +587,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const LexemeOperator        &ampersand_operator0 = grammar.lexemes.at(ampersand.ampersand_operator0).get_operator();
 			const Expression            &expression1         = grammar.expression_storage.at(ampersand.expression1); (void) expression1;
 
-			// Is either expression dynamic?  If so, this expression is also dynamic.
+			// Is either subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue right = is_expression_constant(ampersand.expression1, expression_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
@@ -626,13 +626,13 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			}
 
 			// Apply bitwise AND depending on the integer type.
-			if       (left.is_integer()) {
+			if        (left.is_integer()) {
 				expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) & static_cast<int32_t>(right.get_integer())));
 				break;
-			} else if(left.is_char()) {
+			} else if (left.is_char()) {
 				expression_constant_value = ConstantValue(static_cast<char>(static_cast<char>(left.get_char()) & static_cast<char>(right.get_char())));
 				break;
-			} else if(left.is_boolean()) {
+			} else if (left.is_boolean()) {
 				expression_constant_value = ConstantValue(static_cast<bool>(static_cast<bool>(left.get_boolean()) & static_cast<bool>(right.get_boolean())));
 				break;
 			} else {
@@ -657,7 +657,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const LexemeOperator   &plus_operator0 = grammar.lexemes.at(plus.plus_operator0).get_operator();
 			const Expression       &expression1    = grammar.expression_storage.at(plus.expression1); (void) expression1;
 
-			// Is either expression dynamic?  If so, this expression is also dynamic.
+			// Is either subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue right = is_expression_constant(plus.expression1, expression_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
@@ -741,7 +741,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const LexemeOperator    &minus_operator0 = grammar.lexemes.at(minus.minus_operator0).get_operator();
 			const Expression        &expression1     = grammar.expression_storage.at(minus.expression1); (void) expression1;
 
-			// Is either expression dynamic?  If so, this expression is also dynamic.
+			// Is either subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue right = is_expression_constant(minus.expression1, expression_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
@@ -825,7 +825,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const LexemeOperator    &times_operator0 = grammar.lexemes.at(times.times_operator0).get_operator();
 			const Expression        &expression1     = grammar.expression_storage.at(times.expression1); (void) expression1;
 
-			// Is either expression dynamic?  If so, this expression is also dynamic.
+			// Is either subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue right = is_expression_constant(times.expression1, expression_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
@@ -909,7 +909,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const LexemeOperator    &slash_operator0 = grammar.lexemes.at(slash.slash_operator0).get_operator();
 			const Expression        &expression1     = grammar.expression_storage.at(slash.expression1); (void) expression1;
 
-			// Is either expression dynamic?  If so, this expression is also dynamic.
+			// Is either subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue right = is_expression_constant(slash.expression1, expression_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
@@ -1013,7 +1013,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const LexemeOperator      &percent_operator0 = grammar.lexemes.at(percent.percent_operator0).get_operator();
 			const Expression          &expression1       = grammar.expression_storage.at(percent.expression1); (void) expression1;
 
-			// Is either expression dynamic?  If so, this expression is also dynamic.
+			// Is either subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue right = is_expression_constant(percent.expression1, expression_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
@@ -1093,7 +1093,109 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 				throw SemanticsError(sstr.str());
 			}
 		} tilde_branch: {
+			const Expression::Tilde &tilde           = grammar.expression_tilde_storage.at(expression_symbol.data);
+			const Expression        &expression0     = grammar.expression_storage.at(tilde.expression); (void) expression0;
+			const LexemeOperator    &tilde_operator0 = grammar.lexemes.at(tilde.tilde_operator0).get_operator();
+
+			// Is the subexpression dynamic?  If so, this expression is also dynamic.
+			ConstantValue value = is_expression_constant(tilde.expression, expression_scope);
+			if (value.is_dynamic()) {
+				expression_constant_value = value;
+				break;
+			}
+
+			// Are we attempting to operate on a string?
+			if (value.is_string()) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< tilde_operator0.line << " col " << tilde_operator0.column
+					<< "): cannot apply bitwise NOT on a string expression."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Apply bitwise NOT depending on the integer type.
+			if        (value.is_integer()) {
+				expression_constant_value = ConstantValue(static_cast<int32_t>(~static_cast<int32_t>(value.get_integer())));
+				break;
+			} else if (value.is_char()) {
+				expression_constant_value = ConstantValue(static_cast<char>(~static_cast<char>(value.get_integer())));
+				break;
+			} else if (value.is_boolean()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(~static_cast<bool>(value.get_integer())));
+				break;
+			} else {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: internal error (line "
+					<< tilde_operator0.line << " col " << tilde_operator0.column
+					<< "): unhandled constant expression type for bitwise NOT: "
+					<< value.get_tag_repr()
+					;
+				throw SemanticsError(sstr.str());
+			}
 		} unary_minus_branch: {
+			const Expression::UnaryMinus &unary_minus     = grammar.expression_unary_minus_storage.at(expression_symbol.data);
+			const Expression             &expression0     = grammar.expression_storage.at(unary_minus.expression); (void) expression0;
+			const LexemeOperator         &minus_operator0 = grammar.lexemes.at(unary_minus.minus_operator0).get_operator();
+
+			// Is the subexpression dynamic?  If so, this expression is also dynamic.
+			ConstantValue value = is_expression_constant(unary_minus.expression, expression_scope);
+			if (value.is_dynamic()) {
+				expression_constant_value = value;
+				break;
+			}
+
+			// Are we attempting to operate on a string?
+			if (value.is_string()) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< minus_operator0.line << " col " << minus_operator0.column
+					<< "): cannot apply unary minus on a string expression."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Are we attempting to operate on a non-integer?
+			if (value.is_char() || value.is_boolean()) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< minus_operator0.line << " col " << minus_operator0.column
+					<< "): refusing to apply unary minus on a non-integer, for "
+					<< value.get_tag_repr() << "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Apply unary minus depending on the integer type.
+			if (value.is_integer()) {
+				// Detect overflow in constant expression.
+				if (would_multiplication_overflow(-1, value.get_integer())) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::is_expression_constant: error (line "
+						<< minus_operator0.line << " col " << minus_operator0.column
+						<< "): unary minus would result in an overflow, for "
+						<< value.get_integer() << "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				expression_constant_value = ConstantValue(static_cast<int32_t>(-static_cast<int32_t>(value.get_integer())));
+				break;
+			} else {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: internal error (line "
+					<< minus_operator0.line << " col " << minus_operator0.column
+					<< "): unhandled constant expression type for unary minus: "
+					<< value.get_tag_repr()
+					;
+				throw SemanticsError(sstr.str());
+			}
 		} parentheses_branch: {
 			// TODO
 			break;
