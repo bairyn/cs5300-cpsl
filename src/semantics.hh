@@ -90,6 +90,60 @@ public:
 		std::string get_tag_repr() const;
 	};
 
+	// | Objects represent a collection of identifiers in scope and what they refer to.
+	class IdentifierScope {
+	public:
+		class IdentifierBinding {
+		public:
+			enum tag_e {
+				null_tag    = 0,
+				static_tag  = 1,  // ^ A constant expression.
+				dynamic_tag = 2,  // ^ A dynamic expression.
+				type_tag    = 4,  // ^ The identifier refers to a type.
+				var_tag     = 4,  // ^ The identifier refers to a variable.
+				ref_tag     = 5,  // ^ The identifier refers to a reference (pointer) to a variable.
+				num_tags    = 5,
+			};
+			typedef enum tag_e tag_t;
+
+			class Static  {};
+			class Dynamic {};
+			class Type {
+			public:
+				// TODO
+			};
+			class Var {
+			public:
+				// TODO
+			};
+			class Ref {
+			public:
+				// TODO
+			};
+
+			using data_t = std::variant<
+				std::monostate,
+				Static,
+				Dynamic,
+				Type,
+				Var,
+				Ref
+			>;
+
+			IdentifierBinding();
+			IdentifierBinding(tag_t tag, const data_t &data);
+			IdentifierBinding(tag_t tag, data_t &&data);
+			tag_t  tag;
+			data_t data;
+		};
+
+		IdentifierScope();
+		IdentifierScope(const std::map<std::string, IdentifierBinding> &scope);
+		IdentifierScope(std::map<std::string, IdentifierBinding> &&scope);
+
+		std::map<std::string, IdentifierBinding> scope;
+	};
+
 	/*
 	class TypeDecl {
 	public:
@@ -119,7 +173,7 @@ public:
 		// | Reference to the expression in the grammar tree.
 		uint64_t expression,
 		// | A collection of identifiers of constants available to the scope of the expression.
-		const std::map<std::string, ConstantValue> &const_identifier_scope
+		const IdentifierScope &expression_scope
 	);
 
 	// | Force a re-analysis of the semantics data.

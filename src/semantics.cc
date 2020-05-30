@@ -462,7 +462,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 	// | Reference to the expression in the grammar tree.
 	uint64_t expression,
 	// | A collection of identifiers of constants available to the scope of the expression.
-	const std::map<std::string, ConstantValue> &const_identifier_scope
+	const IdentifierScope &expression_scope
 ) {
 	// TODO: assert() or assert(this->verify()) and configure macros to enable
 	// assertions only when debugging is enabled (DEBUG=1 is defined).
@@ -498,12 +498,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			// of evaluation is referentially transparent and the parser tree
 			// is left-recursive, check the expression on the right first,
 			// which is more efficient.)
-			ConstantValue right = is_expression_constant(pipe.expression1, const_identifier_scope);
+			ConstantValue right = is_expression_constant(pipe.expression1, expression_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(pipe.expression0, const_identifier_scope);
+			ConstantValue left  = is_expression_constant(pipe.expression0, expression_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -566,12 +566,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			// of evaluation is referentially transparent and the parser tree
 			// is left-recursive, check the expression on the right first,
 			// which is more efficient.)
-			ConstantValue right = is_expression_constant(ampersand.expression1, const_identifier_scope);
+			ConstantValue right = is_expression_constant(ampersand.expression1, expression_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(ampersand.expression0, const_identifier_scope);
+			ConstantValue left  = is_expression_constant(ampersand.expression0, expression_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
