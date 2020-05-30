@@ -1,7 +1,7 @@
 #ifndef CPSL_CC_SEMANTICS_HH
 #define CPSL_CC_SEMANTICS_HH
 
-#include <cstdint>    // uint32_t, uint64_t
+#include <cstdint>    // int32_t, uint64_t
 #include <map>        // std::map
 #include <optional>   // std::optional
 #include <string>     // std::string
@@ -48,7 +48,7 @@ public:
 		using data_t = std::variant<
 			std::monostate,
 			Dynamic,
-			uint32_t,
+			int32_t,
 			char,
 			bool,
 			std::string
@@ -61,7 +61,7 @@ public:
 		data_t data;
 
 		static const ConstantValue dynamic;
-		explicit ConstantValue(uint32_t integer);
+		explicit ConstantValue(int32_t integer);
 		explicit ConstantValue(char char_);
 		explicit ConstantValue(bool integer);
 		ConstantValue(const std::string &string);
@@ -76,12 +76,12 @@ public:
 		bool is_string() const;
 
 		// | The tags must be correct, or else an exception will be thrown, including for set_*.
-		uint32_t get_integer() const;
+		int32_t get_integer() const;
 		char get_char() const;
 		bool get_boolean() const;
 		const std::string &get_string() const;
 		std::string &&get_string();
-		void set_integer(uint32_t integer);
+		void set_integer(int32_t integer);
 		void set_char(char char_);
 		void set_boolean(bool boolean);
 		void set_string(const std::string &string);
@@ -225,6 +225,8 @@ public:
 		// | A collection of identifiers of constants available to the scope of the expression.
 		const IdentifierScope &expression_scope
 	);
+
+	static bool would_addition_overflow(int32_t a, int32_t b);
 
 	// | Force a re-analysis of the semantics data.
 	void analyze();

@@ -42,7 +42,7 @@ Semantics::ConstantValue::ConstantValue(tag_t tag, data_t &&data)
 
 const Semantics::ConstantValue Semantics::ConstantValue::dynamic(Semantics::ConstantValue::dynamic_tag, Semantics::ConstantValue::Dynamic());
 
-Semantics::ConstantValue::ConstantValue(uint32_t integer)
+Semantics::ConstantValue::ConstantValue(int32_t integer)
 	: tag(integer_tag)
 	, data(integer)
 	{}
@@ -178,7 +178,7 @@ bool Semantics::ConstantValue::is_string() const {
 	}
 }
 
-uint32_t Semantics::ConstantValue::get_integer() const {
+int32_t Semantics::ConstantValue::get_integer() const {
 	switch(tag) {
 		case dynamic_tag:
 		case integer_tag:
@@ -200,7 +200,7 @@ uint32_t Semantics::ConstantValue::get_integer() const {
 		throw SemanticsError(sstr.str());
 	}
 
-	return std::get<uint32_t>(data);
+	return std::get<int32_t>(data);
 }
 
 char Semantics::ConstantValue::get_char() const {
@@ -278,7 +278,7 @@ std::string &&Semantics::ConstantValue::get_string() {
 	return std::move(std::get<std::string>(data));
 }
 
-void Semantics::ConstantValue::set_integer(uint32_t integer) {
+void Semantics::ConstantValue::set_integer(int32_t integer) {
 	switch(tag) {
 		case dynamic_tag:
 		case integer_tag:
@@ -563,7 +563,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 
 			// Apply bitwise OR depending on the integer type.
 			if       (left.is_integer()) {
-				expression_constant_value = ConstantValue(static_cast<uint32_t>(static_cast<uint32_t>(left.get_integer()) | static_cast<uint32_t>(right.get_integer())));
+				expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) | static_cast<int32_t>(right.get_integer())));
 				break;
 			} else if(left.is_char()) {
 				expression_constant_value = ConstantValue(static_cast<char>(static_cast<char>(left.get_char()) | static_cast<char>(right.get_char())));
@@ -588,10 +588,6 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const Expression            &expression1         = grammar.expression_storage.at(ampersand.expression1); (void) expression1;
 
 			// Is either expression dynamic?  If so, this expression is also dynamic.
-			// (Normally we'd operate on the left side first, but since order
-			// of evaluation is referentially transparent and the parser tree
-			// is left-recursive, check the expression on the right first,
-			// which is more efficient.)
 			ConstantValue right = is_expression_constant(ampersand.expression1, expression_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
@@ -631,7 +627,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 
 			// Apply bitwise AND depending on the integer type.
 			if       (left.is_integer()) {
-				expression_constant_value = ConstantValue(static_cast<uint32_t>(static_cast<uint32_t>(left.get_integer()) & static_cast<uint32_t>(right.get_integer())));
+				expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) & static_cast<int32_t>(right.get_integer())));
 				break;
 			} else if(left.is_char()) {
 				expression_constant_value = ConstantValue(static_cast<char>(static_cast<char>(left.get_char()) & static_cast<char>(right.get_char())));
@@ -649,22 +645,106 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} equals_branch:
-		lt_or_gt_branch:
-		le_branch:
-		ge_branch:
-		lt_branch:
-		gt_branch:
-		plus_branch:
-		minus_branch:
-		times_branch:
-		slash_branch:
-		percent_branch:
-		tilde_branch:
-		unary_minus_branch:
-		parentheses_branch:
+		} equals_branch: {
+		} lt_or_gt_branch: {
+		} le_branch: {
+		} ge_branch: {
+		} lt_branch: {
+		} gt_branch: {
+		} plus_branch: {
+			const Expression::Plus &plus           = grammar.expression_plus_storage.at(expression_symbol.data);
+			const Expression       &expression0    = grammar.expression_storage.at(plus.expression0); (void) expression0;
+			const LexemeOperator   &plus_operator0 = grammar.lexemes.at(plus.plus_operator0).get_operator();
+			const Expression       &expression1    = grammar.expression_storage.at(plus.expression1); (void) expression1;
+
+			// Is either expression dynamic?  If so, this expression is also dynamic.
+			ConstantValue right = is_expression_constant(plus.expression1, expression_scope);
+			if (right.is_dynamic()) {
+				expression_constant_value = right;
+				break;
+			}
+			ConstantValue left  = is_expression_constant(plus.expression0, expression_scope);
+			if (left.is_dynamic()) {
+				expression_constant_value = left;
+				break;
+			}
+
+			// Are the expressions of the same type?
+			if (left.tag != right.tag) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< plus_operator0.line << " col " << plus_operator0.column
+					<< "): refusing to add different types, "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Are we attempting to operate on a string?
+			if (left.is_string() || right.is_string()) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< plus_operator0.line << " col " << plus_operator0.column
+					<< "): cannot apply addition on a string expression, for "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Are we attempting to operate on a non-integer?
+			if (left.is_char() || left.is_boolean() || right.is_char() || right.is_boolean()) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< plus_operator0.line << " col " << plus_operator0.column
+					<< "): refusing to apply addition on a non-integer, for "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Apply addition depending on the integer type.
+			if (left.is_integer()) {
+				// Detect overflow in constant expression.
+				if (would_addition_overflow(left.get_integer(), right.get_integer())) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::is_expression_constant: error (line "
+						<< plus_operator0.line << " col " << plus_operator0.column
+						<< "): addition would result in an overflow, for "
+						<< left.get_integer() << " + " << right.get_integer()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) + static_cast<int32_t>(right.get_integer())));
+				break;
+			} else {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: internal error (line "
+					<< plus_operator0.line << " col " << plus_operator0.column
+					<< "): unhandled constant expression type for addition: "
+					<< left.get_tag_repr()
+					;
+				throw SemanticsError(sstr.str());
+			}
+		} minus_branch: {
+		} times_branch: {
+		} slash_branch: {
+		} percent_branch: {
+		} tilde_branch: {
+		} unary_minus_branch: {
+		} parentheses_branch: {
 			// TODO
 			break;
+		}
 
 		// These 5 branches are dynamic.
 		call_branch:
@@ -719,12 +799,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const Expression::Integer &integer        = grammar.expression_integer_storage.at(expression_symbol.data);
 			// TODO: why doesn't get_integer() cause a linker error now?
 			const LexemeInteger       &lexeme_integer = grammar.lexemes.at(integer.integer).get_integer();
-			if (lexeme_integer.first_digits > std::numeric_limits<uint32_t>::max() || lexeme_integer.remaining_digits.size() > 0) {
+			if (lexeme_integer.first_digits > std::numeric_limits<int32_t>::max() || lexeme_integer.remaining_digits.size() > 0) {
 				std::ostringstream sstr;
 				sstr << "Semantics::is_expression_constant: error (line " << lexeme_integer.line << " col " << lexeme_integer.column << "): integer is too large to encode in 32 bits: " << lexeme_integer.text;
 				throw SemanticsError(sstr.str());
 			}
-			expression_constant_value = ConstantValue(static_cast<uint32_t>(lexeme_integer.first_digits));
+			expression_constant_value = ConstantValue(static_cast<int32_t>(lexeme_integer.first_digits));
 			break;
 		} char__branch: {
 			const Expression::Char_ &char_       = grammar.expression_char__storage.at(expression_symbol.data);
@@ -749,6 +829,28 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 	// Cache and return the calculated constant value.
 	is_expression_constant_calculations.insert({expression, ConstantValue(expression_constant_value)});
 	return expression_constant_value;
+}
+
+bool Semantics::would_addition_overflow(int32_t a, int32_t b) {
+	int32_t smaller, larger;
+	if (a <= b) {
+		smaller = a;
+		larger  = b;
+	} else {
+		smaller = b;
+		larger  = a;
+	}
+
+	if (smaller >= 0) {
+		// positive + positive
+		return std::numeric_limits<int32_t>::max() - smaller > larger;
+	} else if (larger < 0) {
+		// negative + negative
+		return std::numeric_limits<int32_t>::min() - larger < smaller;
+	} else {
+		// positive + negative or negative + positive
+		return false;
+	}
 }
 
 // | Force a re-analysis of the semantics data.
