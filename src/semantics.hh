@@ -77,6 +77,10 @@ public:
 		void set_char(char char_);
 		void set_string(const std::string &string);
 		void set_string(std::string &&string);
+
+		// | Return "dynamic", "integer", "char", or "string".
+		static std::string get_tag_repr(tag_t tag);
+		std::string get_tag_repr() const;
 	};
 
 	/*

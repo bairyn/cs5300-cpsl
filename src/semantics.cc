@@ -316,6 +316,29 @@ void Semantics::ConstantValue::set_string(std::string &&string) {
 	data = std::string(string);
 }
 
+std::string Semantics::ConstantValue::get_tag_repr(tag_t tag) {
+	switch(tag) {
+		case dynamic_tag:
+			return "dynamic";
+		case integer_tag:
+			return "integer";
+		case char_tag:
+			return "char";
+		case string_tag:
+			return "string";
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::get_tag_repr: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+std::string Semantics::ConstantValue::get_tag_repr() const {
+	return get_tag_repr(tag);
+}
+
 Semantics::Semantics()
 	: auto_analyze(true)
 {
@@ -401,9 +424,137 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 	// Branch according to the expression type.
 	switch (expression_symbol.branch) {
 		// These 16 branches are static iff all subexpressions are static.
-		pipe_branch:
-		ampersand_branch:
-		equals_branch:
+		pipe_branch: {
+			const Expression::Pipe &pipe           = grammar.expression_pipe_storage.at(expression_symbol.data);
+			const Expression       &expression0    = grammar.expression_storage.at(pipe.expression0); (void) expression0;
+			const LexemeOperator   &pipe_operator0 = grammar.lexemes.at(pipe.pipe_operator0).get_operator();
+			const Expression       &expression1    = grammar.expression_storage.at(pipe.expression1); (void) expression1;
+
+			// Is either expression dynamic?  If so, this expression is also dynamic.
+			// (Normally we'd operate on the left side first, but since order
+			// of evaluation is referentially transparent and the parser tree
+			// is left-recursive, check the expression on the right first,
+			// which is more efficient.)
+			ConstantValue right = is_expression_constant(pipe.expression1, const_identifier_scope);
+			if (right.is_dynamic()) {
+				expression_constant_value = right;
+				break;
+			}
+			ConstantValue left  = is_expression_constant(pipe.expression0, const_identifier_scope);
+			if (left.is_dynamic()) {
+				expression_constant_value = left;
+				break;
+			}
+
+			// Are the expressions of the same type?
+			if (left.tag != right.tag) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< pipe_operator0.line << " col " << pipe_operator0.column
+					<< "): refusing to OR different types, "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Are we attempting to operate on a string?
+			if (left.is_string() || right.is_string()) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< pipe_operator0.line << " col " << pipe_operator0.column
+					<< "): cannot apply bitwise OR on a string expression, for "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Apply bitwise OR depending on the integer type.
+			if       (left.is_integer()) {
+				expression_constant_value = ConstantValue(static_cast<uint32_t>(static_cast<uint32_t>(left.get_integer()) | static_cast<uint32_t>(right.get_integer())));
+				break;
+			} else if(left.is_char()) {
+				expression_constant_value = ConstantValue(static_cast<char>(static_cast<char>(left.get_char()) | static_cast<char>(right.get_char())));
+				break;
+			} else {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: internal error (line "
+					<< pipe_operator0.line << " col " << pipe_operator0.column
+					<< "): unhandled constant expression type for bitwise OR: "
+					<< left.get_tag_repr()
+					;
+				throw SemanticsError(sstr.str());
+			}
+		} ampersand_branch: {
+			const Expression::Ampersand &ampersand           = grammar.expression_ampersand_storage.at(expression_symbol.data);
+			const Expression            &expression0         = grammar.expression_storage.at(ampersand.expression0); (void) expression0;
+			const LexemeOperator        &ampersand_operator0 = grammar.lexemes.at(ampersand.ampersand_operator0).get_operator();
+			const Expression            &expression1         = grammar.expression_storage.at(ampersand.expression1); (void) expression1;
+
+			// Is either expression dynamic?  If so, this expression is also dynamic.
+			// (Normally we'd operate on the left side first, but since order
+			// of evaluation is referentially transparent and the parser tree
+			// is left-recursive, check the expression on the right first,
+			// which is more efficient.)
+			ConstantValue right = is_expression_constant(ampersand.expression1, const_identifier_scope);
+			if (right.is_dynamic()) {
+				expression_constant_value = right;
+				break;
+			}
+			ConstantValue left  = is_expression_constant(ampersand.expression0, const_identifier_scope);
+			if (left.is_dynamic()) {
+				expression_constant_value = left;
+				break;
+			}
+
+			// Are the expressions of the same type?
+			if (left.tag != right.tag) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< ampersand_operator0.line << " col " << ampersand_operator0.column
+					<< "): refusing to AND different types, "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Are we attempting to operate on a string?
+			if (left.is_string() || right.is_string()) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< ampersand_operator0.line << " col " << ampersand_operator0.column
+					<< "): cannot apply bitwise AND on a string expression, for "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Apply bitwise AND depending on the integer type.
+			if       (left.is_integer()) {
+				expression_constant_value = ConstantValue(static_cast<uint32_t>(static_cast<uint32_t>(left.get_integer()) & static_cast<uint32_t>(right.get_integer())));
+				break;
+			} else if(left.is_char()) {
+				expression_constant_value = ConstantValue(static_cast<char>(static_cast<char>(left.get_char()) & static_cast<char>(right.get_char())));
+				break;
+			} else {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: internal error (line "
+					<< ampersand_operator0.line << " col " << ampersand_operator0.column
+					<< "): unhandled constant expression type for bitwise AND: "
+					<< left.get_tag_repr()
+					;
+				throw SemanticsError(sstr.str());
+			}
+		} equals_branch:
 		lt_or_gt_branch:
 		le_branch:
 		ge_branch:
