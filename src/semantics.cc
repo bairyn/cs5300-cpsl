@@ -51,6 +51,11 @@ Semantics::ConstantValue::ConstantValue(char char_)
 	, data(char_)
 	{}
 
+Semantics::ConstantValue::ConstantValue(bool boolean)
+	: tag(integer_tag)
+	, data(boolean)
+	{}
+
 Semantics::ConstantValue::ConstantValue(const std::string &string)
 	: tag(string_tag)
 	, data(string)
@@ -67,6 +72,7 @@ bool Semantics::ConstantValue::is_static() const {
 			return false;
 		case integer_tag:
 		case char_tag:
+		case boolean_tag:
 		case string_tag:
 			return true;
 
@@ -84,6 +90,7 @@ bool Semantics::ConstantValue::is_dynamic() const {
 			return true;
 		case integer_tag:
 		case char_tag:
+		case boolean_tag:
 		case string_tag:
 			return false;
 
@@ -102,6 +109,7 @@ bool Semantics::ConstantValue::is_integer() const {
 		case integer_tag:
 			return true;
 		case char_tag:
+		case boolean_tag:
 		case string_tag:
 			return false;
 
@@ -120,6 +128,7 @@ bool Semantics::ConstantValue::is_char() const {
 			return false;
 		case char_tag:
 			return true;
+		case boolean_tag:
 		case string_tag:
 			return false;
 
@@ -131,11 +140,31 @@ bool Semantics::ConstantValue::is_char() const {
 	}
 }
 
+bool Semantics::ConstantValue::is_boolean() const {
+	switch(tag) {
+		case dynamic_tag:
+		case integer_tag:
+		case char_tag:
+			return false;
+		case boolean_tag:
+			return true;
+		case string_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::is_boolean: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
 bool Semantics::ConstantValue::is_string() const {
 	switch(tag) {
 		case dynamic_tag:
 		case integer_tag:
 		case char_tag:
+		case boolean_tag:
 			return false;
 		case string_tag:
 			return true;
@@ -153,6 +182,7 @@ uint32_t Semantics::ConstantValue::get_integer() const {
 		case dynamic_tag:
 		case integer_tag:
 		case char_tag:
+		case boolean_tag:
 		case string_tag:
 			break;
 
@@ -177,6 +207,7 @@ char Semantics::ConstantValue::get_char() const {
 		case dynamic_tag:
 		case integer_tag:
 		case char_tag:
+		case boolean_tag:
 		case string_tag:
 			break;
 
@@ -201,6 +232,7 @@ std::string Semantics::ConstantValue::get_string() const {
 		case dynamic_tag:
 		case integer_tag:
 		case char_tag:
+		case boolean_tag:
 		case string_tag:
 			break;
 
@@ -225,6 +257,7 @@ void Semantics::ConstantValue::set_integer(uint32_t integer) {
 		case dynamic_tag:
 		case integer_tag:
 		case char_tag:
+		case boolean_tag:
 		case string_tag:
 			break;
 
@@ -249,6 +282,7 @@ void Semantics::ConstantValue::set_char(char char_) {
 		case dynamic_tag:
 		case integer_tag:
 		case char_tag:
+		case boolean_tag:
 		case string_tag:
 			break;
 
@@ -268,11 +302,37 @@ void Semantics::ConstantValue::set_char(char char_) {
 	data = char_;
 }
 
+void Semantics::ConstantValue::set_boolean(bool boolean) {
+	switch(tag) {
+		case dynamic_tag:
+		case integer_tag:
+		case char_tag:
+		case boolean_tag:
+		case string_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::set_boolean: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_boolean()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::ConstantValue::set_boolean: constant value has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	data = boolean;
+}
+
 void Semantics::ConstantValue::set_string(const std::string &string) {
 	switch(tag) {
 		case dynamic_tag:
 		case integer_tag:
 		case char_tag:
+		case boolean_tag:
 		case string_tag:
 			break;
 
@@ -297,6 +357,7 @@ void Semantics::ConstantValue::set_string(std::string &&string) {
 		case dynamic_tag:
 		case integer_tag:
 		case char_tag:
+		case boolean_tag:
 		case string_tag:
 			break;
 
@@ -324,6 +385,8 @@ std::string Semantics::ConstantValue::get_tag_repr(tag_t tag) {
 			return "integer";
 		case char_tag:
 			return "char";
+		case boolean_tag:
+			return "boolean";
 		case string_tag:
 			return "string";
 
@@ -479,6 +542,9 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			} else if(left.is_char()) {
 				expression_constant_value = ConstantValue(static_cast<char>(static_cast<char>(left.get_char()) | static_cast<char>(right.get_char())));
 				break;
+			} else if(left.is_boolean()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(static_cast<bool>(left.get_boolean()) | static_cast<bool>(right.get_boolean())));
+				break;
 			} else {
 				std::ostringstream sstr;
 				sstr
@@ -543,6 +609,9 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 				break;
 			} else if(left.is_char()) {
 				expression_constant_value = ConstantValue(static_cast<char>(static_cast<char>(left.get_char()) & static_cast<char>(right.get_char())));
+				break;
+			} else if(left.is_boolean()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(static_cast<bool>(left.get_boolean()) & static_cast<bool>(right.get_boolean())));
 				break;
 			} else {
 				std::ostringstream sstr;

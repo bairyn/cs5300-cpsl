@@ -25,6 +25,7 @@ public:
 
 class Semantics {
 public:
+	// | The result of a constant expression.
 	class ConstantValue {
 	public:
 		// | Is this value considered to be a constant calculable at compile-time?
@@ -35,8 +36,9 @@ public:
 			dynamic_tag = 1,
 			integer_tag = 2,
 			char_tag    = 3,
-			string_tag  = 4,
-			num_tags    = 4,
+			boolean_tag = 4,
+			string_tag  = 5,
+			num_tags    = 5,
 		};
 		typedef enum tag_e tag_t;
 
@@ -47,6 +49,7 @@ public:
 			Dynamic,
 			uint32_t,
 			char,
+			bool,
 			std::string
 		>;
 
@@ -59,6 +62,7 @@ public:
 		static const ConstantValue dynamic;
 		explicit ConstantValue(uint32_t integer);
 		explicit ConstantValue(char char_);
+		explicit ConstantValue(bool integer);
 		ConstantValue(const std::string &string);
 		ConstantValue(std::string &&string);
 
@@ -67,18 +71,21 @@ public:
 		bool is_dynamic() const;
 		bool is_integer() const;
 		bool is_char() const;
+		bool is_boolean() const;
 		bool is_string() const;
 
 		// | The tags must be correct, or else an exception will be thrown, including for set_*.
 		uint32_t get_integer() const;
 		char get_char() const;
+		bool get_boolean() const;
 		std::string get_string() const;
 		void set_integer(uint32_t integer);
 		void set_char(char char_);
+		void set_boolean(bool boolean);
 		void set_string(const std::string &string);
 		void set_string(std::string &&string);
 
-		// | Return "dynamic", "integer", "char", or "string".
+		// | Return "dynamic", "integer", "char", "boolean", or "string".
 		static std::string get_tag_repr(tag_t tag);
 		std::string get_tag_repr() const;
 	};
