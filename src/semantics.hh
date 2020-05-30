@@ -223,6 +223,8 @@ public:
 		// | Reference to the expression in the grammar tree.
 		uint64_t expression,
 		// | A collection of identifiers of constants available to the scope of the expression.
+		// Note: We don't record the identifier scope here.  There is only one
+		// identifier scope for each expression.
 		const IdentifierScope &expression_scope
 	);
 
@@ -231,6 +233,9 @@ public:
 	static bool would_division_overflow(int32_t a, int32_t b);
 	static int32_t euclidian_div(int32_t a, int32_t b);
 	static int32_t euclidian_mod(int32_t a, int32_t b);
+
+	// | Clear memoization caches and calculated output values.
+	void clear_output();
 
 	// | Force a re-analysis of the semantics data.
 	void analyze();

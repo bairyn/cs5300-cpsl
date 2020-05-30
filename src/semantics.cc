@@ -513,7 +513,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 	// Branch according to the expression type.
 	switch (expression_symbol.branch) {
 		// These 16 branches are static iff all subexpressions are static.
-		pipe_branch: {
+		case Expression::pipe_branch: {
 			const Expression::Pipe &pipe           = grammar.expression_pipe_storage.at(expression_symbol.data);
 			const Expression       &expression0    = grammar.expression_storage.at(pipe.expression0); (void) expression0;
 			const LexemeOperator   &pipe_operator0 = grammar.lexemes.at(pipe.pipe_operator0).get_operator();
@@ -581,7 +581,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} ampersand_branch: {
+		} case Expression::ampersand_branch: {
 			const Expression::Ampersand &ampersand           = grammar.expression_ampersand_storage.at(expression_symbol.data);
 			const Expression            &expression0         = grammar.expression_storage.at(ampersand.expression0); (void) expression0;
 			const LexemeOperator        &ampersand_operator0 = grammar.lexemes.at(ampersand.ampersand_operator0).get_operator();
@@ -645,7 +645,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} equals_branch: {
+		} case Expression::equals_branch: {
 			const Expression::Equals &equals           = grammar.expression_equals_storage.at(expression_symbol.data);
 			const Expression         &expression0      = grammar.expression_storage.at(equals.expression0); (void) expression0;
 			const LexemeOperator     &equals_operator0 = grammar.lexemes.at(equals.equals_operator0).get_operator();
@@ -699,7 +699,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} lt_or_gt_branch: {
+		} case Expression::lt_or_gt_branch: {
 			const Expression::LtOrGt &lt_or_gt           = grammar.expression_lt_or_gt_storage.at(expression_symbol.data);
 			const Expression         &expression0        = grammar.expression_storage.at(lt_or_gt.expression0); (void) expression0;
 			const LexemeOperator     &lt_or_gt_operator0 = grammar.lexemes.at(lt_or_gt.lt_or_gt_operator0).get_operator();
@@ -753,7 +753,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} le_branch: {
+		} case Expression::le_branch: {
 			const Expression::Le &le           = grammar.expression_le_storage.at(expression_symbol.data);
 			const Expression     &expression0  = grammar.expression_storage.at(le.expression0); (void) expression0;
 			const LexemeOperator &le_operator0 = grammar.lexemes.at(le.le_operator0).get_operator();
@@ -807,7 +807,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} ge_branch: {
+		} case Expression::ge_branch: {
 			const Expression::Ge &ge           = grammar.expression_ge_storage.at(expression_symbol.data);
 			const Expression     &expression0  = grammar.expression_storage.at(ge.expression0); (void) expression0;
 			const LexemeOperator &ge_operator0 = grammar.lexemes.at(ge.ge_operator0).get_operator();
@@ -861,7 +861,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} lt_branch: {
+		} case Expression::lt_branch: {
 			const Expression::Lt &lt           = grammar.expression_lt_storage.at(expression_symbol.data);
 			const Expression     &expression0  = grammar.expression_storage.at(lt.expression0); (void) expression0;
 			const LexemeOperator &lt_operator0 = grammar.lexemes.at(lt.lt_operator0).get_operator();
@@ -915,7 +915,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} gt_branch: {
+		} case Expression::gt_branch: {
 			const Expression::Gt &gt           = grammar.expression_gt_storage.at(expression_symbol.data);
 			const Expression     &expression0  = grammar.expression_storage.at(gt.expression0); (void) expression0;
 			const LexemeOperator &gt_operator0 = grammar.lexemes.at(gt.gt_operator0).get_operator();
@@ -969,7 +969,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} plus_branch: {
+		} case Expression::plus_branch: {
 			const Expression::Plus &plus           = grammar.expression_plus_storage.at(expression_symbol.data);
 			const Expression       &expression0    = grammar.expression_storage.at(plus.expression0); (void) expression0;
 			const LexemeOperator   &plus_operator0 = grammar.lexemes.at(plus.plus_operator0).get_operator();
@@ -1053,7 +1053,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} minus_branch: {
+		} case Expression::minus_branch: {
 			const Expression::Minus &minus           = grammar.expression_minus_storage.at(expression_symbol.data);
 			const Expression        &expression0     = grammar.expression_storage.at(minus.expression0); (void) expression0;
 			const LexemeOperator    &minus_operator0 = grammar.lexemes.at(minus.minus_operator0).get_operator();
@@ -1137,7 +1137,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} times_branch: {
+		} case Expression::times_branch: {
 			const Expression::Times &times           = grammar.expression_times_storage.at(expression_symbol.data);
 			const Expression        &expression0     = grammar.expression_storage.at(times.expression0); (void) expression0;
 			const LexemeOperator    &times_operator0 = grammar.lexemes.at(times.times_operator0).get_operator();
@@ -1221,7 +1221,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} slash_branch: {
+		} case Expression::slash_branch: {
 			const Expression::Slash &slash           = grammar.expression_slash_storage.at(expression_symbol.data);
 			const Expression        &expression0     = grammar.expression_storage.at(slash.expression0); (void) expression0;
 			const LexemeOperator    &slash_operator0 = grammar.lexemes.at(slash.slash_operator0).get_operator();
@@ -1325,7 +1325,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} percent_branch: {
+		} case Expression::percent_branch: {
 			const Expression::Percent &percent           = grammar.expression_percent_storage.at(expression_symbol.data);
 			const Expression          &expression0       = grammar.expression_storage.at(percent.expression0); (void) expression0;
 			const LexemeOperator      &percent_operator0 = grammar.lexemes.at(percent.percent_operator0).get_operator();
@@ -1410,7 +1410,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} tilde_branch: {
+		} case Expression::tilde_branch: {
 			const Expression::Tilde &tilde           = grammar.expression_tilde_storage.at(expression_symbol.data);
 			const Expression        &expression0     = grammar.expression_storage.at(tilde.expression); (void) expression0;
 			const LexemeOperator    &tilde_operator0 = grammar.lexemes.at(tilde.tilde_operator0).get_operator();
@@ -1453,7 +1453,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} unary_minus_branch: {
+		} case Expression::unary_minus_branch: {
 			const Expression::UnaryMinus &unary_minus     = grammar.expression_unary_minus_storage.at(expression_symbol.data);
 			const Expression             &expression0     = grammar.expression_storage.at(unary_minus.expression); (void) expression0;
 			const LexemeOperator         &minus_operator0 = grammar.lexemes.at(unary_minus.minus_operator0).get_operator();
@@ -1514,7 +1514,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} parentheses_branch: {
+		} case Expression::parentheses_branch: {
 			const Expression::Parentheses &parentheses                = grammar.expression_parentheses_storage.at(expression_symbol.data);
 			const LexemeOperator          &leftparenthesis_operator0  = grammar.lexemes.at(parentheses.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
 			const Expression              &expression0                = grammar.expression_storage.at(parentheses.expression); (void) expression0;
@@ -1535,18 +1535,18 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 		}
 
 		// These 5 branches are dynamic.
-		call_branch:
-		chr_branch:
-		ord_branch:
-		pred_branch:
-		succ_branch:
+		case Expression::call_branch:
+		case Expression::chr_branch:
+		case Expression::ord_branch:
+		case Expression::pred_branch:
+		case Expression::succ_branch:
 			expression_constant_value = ConstantValue::dynamic;
 			break;
 
 		// lvalue_branch may or may not be dynamic, depending on whether it is
 		// a simple identifier (without .foo or [bar]) that refers to a known
 		// constant value in the scope of the expression.
-		lvalue_branch: {
+		case Expression::lvalue_branch: {
 			const Expression::Lvalue       &lvalue                      = grammar.expression_lvalue_storage.at(expression_symbol.data);
 			const Lvalue                   &lvalue_symbol               = grammar.lvalue_storage.at(lvalue.lvalue);
 			const LexemeIdentifier         &lexeme_identifier           = grammar.lexemes.at(lvalue_symbol.identifier).get_identifier();
@@ -1583,7 +1583,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 		}
 
 		// These 3 branches are static.
-		integer_branch: {
+		case Expression::integer_branch: {
 			const Expression::Integer &integer        = grammar.expression_integer_storage.at(expression_symbol.data);
 			const LexemeInteger       &lexeme_integer = grammar.lexemes.at(integer.integer).get_integer();
 			if (lexeme_integer.first_digits > std::numeric_limits<int32_t>::max() || lexeme_integer.remaining_digits.size() > 0) {
@@ -1593,12 +1593,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			}
 			expression_constant_value = ConstantValue(static_cast<int32_t>(lexeme_integer.first_digits));
 			break;
-		} char__branch: {
+		} case Expression::char__branch: {
 			const Expression::Char_ &char_       = grammar.expression_char__storage.at(expression_symbol.data);
 			const LexemeChar        &lexeme_char = grammar.lexemes.at(char_.char_).get_char();
 			expression_constant_value = ConstantValue(static_cast<char>(lexeme_char.char_));
 			break;
-		} string_branch: {
+		} case Expression::string_branch: {
 			const Expression::String &string        = grammar.expression_string_storage.at(expression_symbol.data);
 			const LexemeString       &lexeme_string = grammar.lexemes.at(string.string).get_string();
 			expression_constant_value = ConstantValue(std::move(std::string(lexeme_string.expanded)));
@@ -1640,7 +1640,61 @@ bool Semantics::would_addition_overflow(int32_t a, int32_t b) {
 	}
 }
 
+// | Clear memoization caches and calculated output values.
+void Semantics::clear_output() {
+	is_expression_constant_calculations.clear();
+}
+
 // | Force a re-analysis of the semantics data.
 void Semantics::analyze() {
+	// It's possible the grammar was reset.  Clear caches and outputs just in
+	// case.
+	clear_output();
+
+	// If there are no parsed start symbols, then the grammar probably has not
+	// yet been set up.  Just return, in this case.  The Semantics value might
+	// remain null.
+	if (grammar.start_storage.size() <= 0) {
+		return;
+	}
+
+	// Make sure there is a single start symbol.  Get it.
+	if (grammar.start_storage.size() != 1) {
+		std::ostringstream sstr;
+		sstr << "Semantics::analyze: internal error: the number of parsed start symbols should be exactly 1 but isn't: " << grammar.start_storage.size() << ".";
+		throw SemanticsError(sstr.str());
+	}
+	const Start &start = grammar.start_storage[0];
+
+	// Unpack the program symbol.
+	const Program                         &program                              = grammar.program_storage.at(start.program);
+	const ConstantDeclOpt                 &constant_decl_opt                    = grammar.constant_decl_opt_storage.at(program.constant_decl_opt);
+	const TypeDeclOpt                     &type_decl_opt                        = grammar.type_decl_opt_storage.at(program.type_decl_opt);
+	const VarDeclOpt                      &var_decl_opt                         = grammar.var_decl_opt_storage.at(program.var_decl_opt);
+	const ProcedureDeclOrFunctionDeclList &procedure_decl_or_function_decl_list = grammar.procedure_decl_or_function_decl_list_storage.at(program.procedure_decl_or_function_decl_list);
+	const Block                           &block                                = grammar.block_storage.at(program.block);
+	const LexemeOperator                  &dot_operator0                        = grammar.lexemes.at(program.dot_operator0).get_operator(); (void) dot_operator0;
+
+	// First, parse top-level constants.  These are at the beginning of the
+	// parsed program grammar tree.
+	switch (constant_decl_opt.branch) {
+		case ConstantDeclOpt::empty_branch: {
+			// No constant declarations.  Nothing to do here.
+			break;
+		}
+
+		case ConstantDeclOpt::value_branch: {
+			// TODO
+			break;
+		}
+
+		// Unrecognized branch.
+		default: {
+			std::ostringstream sstr;
+			sstr << "Semantics::analyze: internal error: invalid constant_decl_opt branch at index " << program.constant_decl_opt << ": " << constant_decl_opt.branch;
+			throw SemanticsError(sstr.str());
+		}
+	}
+
 	// TODO
 }
