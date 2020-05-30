@@ -1515,7 +1515,22 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 				throw SemanticsError(sstr.str());
 			}
 		} parentheses_branch: {
-			// TODO
+			const Expression::Parentheses &parentheses                = grammar.expression_parentheses_storage.at(expression_symbol.data);
+			const LexemeOperator          &leftparenthesis_operator0  = grammar.lexemes.at(parentheses.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
+			const Expression              &expression0                = grammar.expression_storage.at(parentheses.expression); (void) expression0;
+			const LexemeOperator          &rightparenthesis_operator0 = grammar.lexemes.at(parentheses.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+
+			// Is the subexpression dynamic?  If so, this expression is also dynamic.
+			ConstantValue value = is_expression_constant(parentheses.expression, expression_scope);
+			if (value.is_dynamic()) {
+				expression_constant_value = value;
+				break;
+			}
+
+			// The constant value of this expression is equivalent to the
+			// constant value of the subexpression.  Copy the subexpression's
+			// constant value.
+			expression_constant_value = std::move(ConstantValue(value));
 			break;
 		}
 
