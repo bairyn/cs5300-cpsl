@@ -736,9 +736,362 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 				throw SemanticsError(sstr.str());
 			}
 		} minus_branch: {
+			const Expression::Minus &minus           = grammar.expression_minus_storage.at(expression_symbol.data);
+			const Expression        &expression0     = grammar.expression_storage.at(minus.expression0); (void) expression0;
+			const LexemeOperator    &minus_operator0 = grammar.lexemes.at(minus.minus_operator0).get_operator();
+			const Expression        &expression1     = grammar.expression_storage.at(minus.expression1); (void) expression1;
+
+			// Is either expression dynamic?  If so, this expression is also dynamic.
+			ConstantValue right = is_expression_constant(minus.expression1, expression_scope);
+			if (right.is_dynamic()) {
+				expression_constant_value = right;
+				break;
+			}
+			ConstantValue left  = is_expression_constant(minus.expression0, expression_scope);
+			if (left.is_dynamic()) {
+				expression_constant_value = left;
+				break;
+			}
+
+			// Are the expressions of the same type?
+			if (left.tag != right.tag) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< minus_operator0.line << " col " << minus_operator0.column
+					<< "): refusing to substract different types, "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Are we attempting to operate on a string?
+			if (left.is_string() || right.is_string()) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< minus_operator0.line << " col " << minus_operator0.column
+					<< "): cannot apply subtraction on a string expression, for "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Are we attempting to operate on a non-integer?
+			if (left.is_char() || left.is_boolean() || right.is_char() || right.is_boolean()) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< minus_operator0.line << " col " << minus_operator0.column
+					<< "): refusing to apply subtraction on a non-integer, for "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Apply subtraction depending on the integer type.
+			if (left.is_integer()) {
+				// Detect overflow in constant expression.
+				if (would_addition_overflow(left.get_integer(), -right.get_integer())) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::is_expression_constant: error (line "
+						<< minus_operator0.line << " col " << minus_operator0.column
+						<< "): subtraction would result in an overflow, for "
+						<< left.get_integer() << " - " << right.get_integer()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) - static_cast<int32_t>(right.get_integer())));
+				break;
+			} else {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: internal error (line "
+					<< minus_operator0.line << " col " << minus_operator0.column
+					<< "): unhandled constant expression type for subtraction: "
+					<< left.get_tag_repr()
+					;
+				throw SemanticsError(sstr.str());
+			}
 		} times_branch: {
+			const Expression::Times &times           = grammar.expression_times_storage.at(expression_symbol.data);
+			const Expression        &expression0     = grammar.expression_storage.at(times.expression0); (void) expression0;
+			const LexemeOperator    &times_operator0 = grammar.lexemes.at(times.times_operator0).get_operator();
+			const Expression        &expression1     = grammar.expression_storage.at(times.expression1); (void) expression1;
+
+			// Is either expression dynamic?  If so, this expression is also dynamic.
+			ConstantValue right = is_expression_constant(times.expression1, expression_scope);
+			if (right.is_dynamic()) {
+				expression_constant_value = right;
+				break;
+			}
+			ConstantValue left  = is_expression_constant(times.expression0, expression_scope);
+			if (left.is_dynamic()) {
+				expression_constant_value = left;
+				break;
+			}
+
+			// Are the expressions of the same type?
+			if (left.tag != right.tag) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< times_operator0.line << " col " << times_operator0.column
+					<< "): refusing to multiply different types, "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Are we attempting to operate on a string?
+			if (left.is_string() || right.is_string()) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< times_operator0.line << " col " << times_operator0.column
+					<< "): cannot apply multiplication on a string expression, for "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Are we attempting to operate on a non-integer?
+			if (left.is_char() || left.is_boolean() || right.is_char() || right.is_boolean()) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< times_operator0.line << " col " << times_operator0.column
+					<< "): refusing to apply multiplication on a non-integer, for "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Apply multiplication depending on the integer type.
+			if (left.is_integer()) {
+				// Detect overflow in constant expression.
+				if (would_multiplication_overflow(left.get_integer(), right.get_integer())) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::is_expression_constant: error (line "
+						<< times_operator0.line << " col " << times_operator0.column
+						<< "): multiplication would result in an overflow, for "
+						<< left.get_integer() << " * " << right.get_integer()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) * static_cast<int32_t>(right.get_integer())));
+				break;
+			} else {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: internal error (line "
+					<< times_operator0.line << " col " << times_operator0.column
+					<< "): unhandled constant expression type for multiplication: "
+					<< left.get_tag_repr()
+					;
+				throw SemanticsError(sstr.str());
+			}
 		} slash_branch: {
+			const Expression::Slash &slash           = grammar.expression_slash_storage.at(expression_symbol.data);
+			const Expression        &expression0     = grammar.expression_storage.at(slash.expression0); (void) expression0;
+			const LexemeOperator    &slash_operator0 = grammar.lexemes.at(slash.slash_operator0).get_operator();
+			const Expression        &expression1     = grammar.expression_storage.at(slash.expression1); (void) expression1;
+
+			// Is either expression dynamic?  If so, this expression is also dynamic.
+			ConstantValue right = is_expression_constant(slash.expression1, expression_scope);
+			if (right.is_dynamic()) {
+				expression_constant_value = right;
+				break;
+			}
+			ConstantValue left  = is_expression_constant(slash.expression0, expression_scope);
+			if (left.is_dynamic()) {
+				expression_constant_value = left;
+				break;
+			}
+
+			// Are the expressions of the same type?
+			if (left.tag != right.tag) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< slash_operator0.line << " col " << slash_operator0.column
+					<< "): refusing to divide different types, "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Are we attempting to operate on a string?
+			if (left.is_string() || right.is_string()) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< slash_operator0.line << " col " << slash_operator0.column
+					<< "): cannot apply division on a string expression, for "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Are we attempting to operate on a non-integer?
+			if (left.is_char() || left.is_boolean() || right.is_char() || right.is_boolean()) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< slash_operator0.line << " col " << slash_operator0.column
+					<< "): refusing to apply division on a non-integer, for "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Apply division depending on the integer type.
+			if (left.is_integer()) {
+				// Detect overflow in constant expression.
+				if (would_division_overflow(left.get_integer(), right.get_integer())) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::is_expression_constant: error (line "
+						<< slash_operator0.line << " col " << slash_operator0.column
+						<< "): division would result in an overflow, for "
+						<< left.get_integer() << " / " << right.get_integer()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Detect division by zero in constant expression.
+				if (right.get_integer() == 0) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::is_expression_constant: error (line "
+						<< slash_operator0.line << " col " << slash_operator0.column
+						<< "): division by zero, for "
+						<< left.get_integer() << " / " << right.get_integer()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Of three standard division/mod algorithms:
+				// - QuotRem: C-style division and mod that truncates toward 0.
+				// - DivMod: Division truncates toward negative infinite.
+				// - Euclidian division: the remainder is non-negative.
+				// I prefer Euclidian division, even though this deviates from
+				// traditional division and modding in C.  So I'll use it.
+				//expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) / static_cast<int32_t>(right.get_integer())));
+				expression_constant_value = ConstantValue(static_cast<int32_t>(euclidian_div(static_cast<int32_t>(left.get_integer()), static_cast<int32_t>(right.get_integer()))));
+				break;
+			} else {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: internal error (line "
+					<< slash_operator0.line << " col " << slash_operator0.column
+					<< "): unhandled constant expression type for division: "
+					<< left.get_tag_repr()
+					;
+				throw SemanticsError(sstr.str());
+			}
 		} percent_branch: {
+			const Expression::Percent &percent           = grammar.expression_percent_storage.at(expression_symbol.data);
+			const Expression          &expression0       = grammar.expression_storage.at(percent.expression0); (void) expression0;
+			const LexemeOperator      &percent_operator0 = grammar.lexemes.at(percent.percent_operator0).get_operator();
+			const Expression          &expression1       = grammar.expression_storage.at(percent.expression1); (void) expression1;
+
+			// Is either expression dynamic?  If so, this expression is also dynamic.
+			ConstantValue right = is_expression_constant(percent.expression1, expression_scope);
+			if (right.is_dynamic()) {
+				expression_constant_value = right;
+				break;
+			}
+			ConstantValue left  = is_expression_constant(percent.expression0, expression_scope);
+			if (left.is_dynamic()) {
+				expression_constant_value = left;
+				break;
+			}
+
+			// Are the expressions of the same type?
+			if (left.tag != right.tag) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< percent_operator0.line << " col " << percent_operator0.column
+					<< "): refusing to mod different types, "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Are we attempting to operate on a string?
+			if (left.is_string() || right.is_string()) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< percent_operator0.line << " col " << percent_operator0.column
+					<< "): cannot apply mod on a string expression, for "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Are we attempting to operate on a non-integer?
+			if (left.is_char() || left.is_boolean() || right.is_char() || right.is_boolean()) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< percent_operator0.line << " col " << percent_operator0.column
+					<< "): refusing to apply mod on a non-integer, for "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Apply mod depending on the integer type.
+			if (left.is_integer()) {
+				// Detect division by zero in constant expression.
+				if (right.get_integer() == 0) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::is_expression_constant: error (line "
+						<< percent_operator0.line << " col " << percent_operator0.column
+						<< "): division by zero, for "
+						<< left.get_integer() << " % " << right.get_integer()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				//expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) % static_cast<int32_t>(right.get_integer())));
+				expression_constant_value = ConstantValue(static_cast<int32_t>(euclidian_mod(static_cast<int32_t>(left.get_integer()), static_cast<int32_t>(right.get_integer()))));
+				break;
+			} else {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: internal error (line "
+					<< percent_operator0.line << " col " << percent_operator0.column
+					<< "): unhandled constant expression type for mod: "
+					<< left.get_tag_repr()
+					;
+				throw SemanticsError(sstr.str());
+			}
 		} tilde_branch: {
 		} unary_minus_branch: {
 		} parentheses_branch: {
@@ -797,7 +1150,6 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 		// These 3 branches are static.
 		integer_branch: {
 			const Expression::Integer &integer        = grammar.expression_integer_storage.at(expression_symbol.data);
-			// TODO: why doesn't get_integer() cause a linker error now?
 			const LexemeInteger       &lexeme_integer = grammar.lexemes.at(integer.integer).get_integer();
 			if (lexeme_integer.first_digits > std::numeric_limits<int32_t>::max() || lexeme_integer.remaining_digits.size() > 0) {
 				std::ostringstream sstr;

@@ -227,6 +227,10 @@ public:
 	);
 
 	static bool would_addition_overflow(int32_t a, int32_t b);
+	static bool would_multiplication_overflow(int32_t a, int32_t b);
+	static bool would_division_overflow(int32_t a, int32_t b);
+	static int32_t euclidian_div(int32_t a, int32_t b);
+	static int32_t euclidian_mod(int32_t a, int32_t b);
 
 	// | Force a re-analysis of the semantics data.
 	void analyze();
