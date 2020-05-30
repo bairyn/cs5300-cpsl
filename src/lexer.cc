@@ -714,7 +714,7 @@ Lexeme::Lexeme(lexeme_tag_t tag, const lexeme_data_t &data)
 
 		default:
 			std::ostringstream sstr;
-			sstr << "Lexeme::Lexeme: invalid tag: " << tag << ".";
+			sstr << "Lexeme::Lexeme: invalid lexeme tag: " << tag << ".";
 			throw LexerError(sstr.str());
 			break;
 	}
@@ -817,7 +817,7 @@ Lexeme::Lexeme(lexeme_tag_t tag, lexeme_data_t &&data)
 
 		default:
 			std::ostringstream sstr;
-			sstr << "Lexeme::Lexeme: invalid tag: " << tag << ".";
+			sstr << "Lexeme::Lexeme: invalid lexeme tag: " << tag << ".";
 			throw LexerError(sstr.str());
 			break;
 	}
@@ -864,7 +864,7 @@ uint64_t Lexeme::get_enumerated_token_kind() const {
 		case null_lexeme_tag:
 		default:
 			std::ostringstream sstr;
-			sstr << "Lexeme::tag_repr: invalid tag: " << tag << ".";
+			sstr << "Lexeme::tag_repr: invalid lexeme tag: " << tag << ".";
 			throw LexerError(sstr.str());
 			break;
 	}
@@ -899,7 +899,7 @@ std::string Lexeme::tag_repr() const {
 		case null_lexeme_tag:
 		default:
 			std::ostringstream sstr;
-			sstr << "Lexeme::tag_repr: invalid tag: " << tag << ".";
+			sstr << "Lexeme::tag_repr: invalid lexeme tag: " << tag << ".";
 			throw LexerError(sstr.str());
 			break;
 	}
@@ -1003,7 +1003,7 @@ LexemeBase Lexeme::get_base() const {
 
 		default:
 			std::ostringstream sstr;
-			sstr << "Lexeme::Lexeme: invalid tag: " << tag << ".";
+			sstr << "Lexeme::Lexeme: invalid lexeme tag: " << tag << ".";
 			throw LexerError(sstr.str());
 			break;
 	}
@@ -1022,4 +1022,379 @@ uint64_t Lexeme::get_column() const {
 // | Get a copy of the text of the lexeme.
 std::string Lexeme::get_text() const {
 	return std::string(get_base().text);
+}
+
+bool Lexeme::is_keyword() const {
+	// Ensure the tag corresponds to the data.
+	get_base();
+
+	// Check the tag.
+	switch (tag) {
+		case keyword_tag:
+			return true;
+		case identifier_tag:
+		case operator_tag:
+		case integer_tag:
+		case char_tag:
+		case string_tag:
+		case comment_tag:
+		case whitespace_tag:
+			return false;
+
+		case null_lexeme_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Lexeme::is_keyword: invalid lexeme tag: " << tag << ".";
+			throw LexerError(sstr.str());
+			break;
+	}
+}
+
+bool Lexeme::is_identifier() const {
+	// Ensure the tag corresponds to the data.
+	get_base();
+
+	// Check the tag.
+	switch (tag) {
+		case keyword_tag:
+			return false;
+		case identifier_tag:
+			return true;
+		case operator_tag:
+		case integer_tag:
+		case char_tag:
+		case string_tag:
+		case comment_tag:
+		case whitespace_tag:
+			return false;
+
+		case null_lexeme_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Lexeme::is_identifier: invalid lexeme tag: " << tag << ".";
+			throw LexerError(sstr.str());
+			break;
+	}
+}
+
+bool Lexeme::is_operator() const {
+	// Ensure the tag corresponds to the data.
+	get_base();
+
+	// Check the tag.
+	switch (tag) {
+		case keyword_tag:
+		case identifier_tag:
+			return false;
+		case operator_tag:
+			return true;
+		case integer_tag:
+		case char_tag:
+		case string_tag:
+		case comment_tag:
+		case whitespace_tag:
+			return false;
+
+		case null_lexeme_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Lexeme::is_operator: invalid lexeme tag: " << tag << ".";
+			throw LexerError(sstr.str());
+			break;
+	}
+}
+
+bool Lexeme::is_integer() const {
+	// Ensure the tag corresponds to the data.
+	get_base();
+
+	// Check the tag.
+	switch (tag) {
+		case keyword_tag:
+		case identifier_tag:
+		case operator_tag:
+			return false;
+		case integer_tag:
+			return true;
+		case char_tag:
+		case string_tag:
+		case comment_tag:
+		case whitespace_tag:
+			return false;
+
+		case null_lexeme_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Lexeme::is_integer: invalid lexeme tag: " << tag << ".";
+			throw LexerError(sstr.str());
+			break;
+	}
+}
+
+bool Lexeme::is_char() const {
+	// Ensure the tag corresponds to the data.
+	get_base();
+
+	// Check the tag.
+	switch (tag) {
+		case keyword_tag:
+		case identifier_tag:
+		case operator_tag:
+		case integer_tag:
+			return false;
+		case char_tag:
+			return true;
+		case string_tag:
+		case comment_tag:
+		case whitespace_tag:
+			return false;
+
+		case null_lexeme_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Lexeme::is_char: invalid lexeme tag: " << tag << ".";
+			throw LexerError(sstr.str());
+			break;
+	}
+}
+
+bool Lexeme::is_string() const {
+	// Ensure the tag corresponds to the data.
+	get_base();
+
+	// Check the tag.
+	switch (tag) {
+		case keyword_tag:
+		case identifier_tag:
+		case operator_tag:
+		case integer_tag:
+		case char_tag:
+			return false;
+		case string_tag:
+			return true;
+		case comment_tag:
+		case whitespace_tag:
+			return false;
+
+		case null_lexeme_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Lexeme::is_string: invalid lexeme tag: " << tag << ".";
+			throw LexerError(sstr.str());
+			break;
+	}
+}
+
+bool Lexeme::is_comment() const {
+	// Ensure the tag corresponds to the data.
+	get_base();
+
+	// Check the tag.
+	switch (tag) {
+		case keyword_tag:
+		case identifier_tag:
+		case operator_tag:
+		case integer_tag:
+		case char_tag:
+		case string_tag:
+			return false;
+		case comment_tag:
+			return true;
+		case whitespace_tag:
+			return false;
+
+		case null_lexeme_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Lexeme::is_comment: invalid lexeme tag: " << tag << ".";
+			throw LexerError(sstr.str());
+			break;
+	}
+}
+
+bool Lexeme::is_whitespace() const {
+	// Ensure the tag corresponds to the data.
+	get_base();
+
+	// Check the tag.
+	switch (tag) {
+		case keyword_tag:
+		case identifier_tag:
+		case operator_tag:
+		case integer_tag:
+		case char_tag:
+		case string_tag:
+		case comment_tag:
+			return false;
+		case whitespace_tag:
+			return true;
+
+		case null_lexeme_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Lexeme::is_whitespace: invalid lexeme tag: " << tag << ".";
+			throw LexerError(sstr.str());
+			break;
+	}
+}
+
+// | The tag and data must be of the correct type when these are called.
+LexemeKeyword &Lexeme::get_keyword() {
+	if (!is_keyword()) {
+		std::ostringstream sstr;
+		sstr << "Lexeme::get_keyword: keyword accessor called on a lexeme with the wrong tag: " << tag << ".";
+		throw LexerError(sstr.str());
+	}
+
+	return std::get<LexemeKeyword>(data);
+}
+
+LexemeIdentifier &Lexeme::get_identifier() {
+	if (!is_identifier()) {
+		std::ostringstream sstr;
+		sstr << "Lexeme::get_identifier: identifier accessor called on a lexeme with the wrong tag: " << tag << ".";
+		throw LexerError(sstr.str());
+	}
+
+	return std::get<LexemeIdentifier>(data);
+}
+
+LexemeOperator &Lexeme::get_operator() {
+	if (!is_operator()) {
+		std::ostringstream sstr;
+		sstr << "Lexeme::get_operator: operator accessor called on a lexeme with the wrong tag: " << tag << ".";
+		throw LexerError(sstr.str());
+	}
+
+	return std::get<LexemeOperator>(data);
+}
+
+LexemeInteger &Lexeme::get_integer() {
+	if (!is_integer()) {
+		std::ostringstream sstr;
+		sstr << "Lexeme::get_integer: integer accessor called on a lexeme with the wrong tag: " << tag << ".";
+		throw LexerError(sstr.str());
+	}
+
+	return std::get<LexemeInteger>(data);
+}
+
+LexemeChar &Lexeme::get_char() {
+	if (!is_char()) {
+		std::ostringstream sstr;
+		sstr << "Lexeme::get_char: char accessor called on a lexeme with the wrong tag: " << tag << ".";
+		throw LexerError(sstr.str());
+	}
+
+	return std::get<LexemeChar>(data);
+}
+
+LexemeString &Lexeme::get_string() {
+	if (!is_string()) {
+		std::ostringstream sstr;
+		sstr << "Lexeme::get_string: string accessor called on a lexeme with the wrong tag: " << tag << ".";
+		throw LexerError(sstr.str());
+	}
+
+	return std::get<LexemeString>(data);
+}
+
+LexemeComment &Lexeme::get_comment() {
+	if (!is_comment()) {
+		std::ostringstream sstr;
+		sstr << "Lexeme::get_comment: comment accessor called on a lexeme with the wrong tag: " << tag << ".";
+		throw LexerError(sstr.str());
+	}
+
+	return std::get<LexemeComment>(data);
+}
+
+LexemeWhitespace &Lexeme::get_whitespace() {
+	if (!is_whitespace()) {
+		std::ostringstream sstr;
+		sstr << "Lexeme::get_whitespace: whitespace accessor called on a lexeme with the wrong tag: " << tag << ".";
+		throw LexerError(sstr.str());
+	}
+
+	return std::get<LexemeWhitespace>(data);
+}
+
+const LexemeKeyword &Lexeme::get_keyword() const {
+	if (!is_keyword()) {
+		std::ostringstream sstr;
+		sstr << "Lexeme::get_keyword: keyword accessor called on a lexeme with the wrong tag: " << tag << ".";
+		throw LexerError(sstr.str());
+	}
+
+	return std::get<LexemeKeyword>(data);
+}
+
+const LexemeIdentifier &Lexeme::get_identifier() const {
+	if (!is_identifier()) {
+		std::ostringstream sstr;
+		sstr << "Lexeme::get_identifier: identifier accessor called on a lexeme with the wrong tag: " << tag << ".";
+		throw LexerError(sstr.str());
+	}
+
+	return std::get<LexemeIdentifier>(data);
+}
+
+const LexemeOperator &Lexeme::get_operator() const {
+	if (!is_operator()) {
+		std::ostringstream sstr;
+		sstr << "Lexeme::get_operator: operator accessor called on a lexeme with the wrong tag: " << tag << ".";
+		throw LexerError(sstr.str());
+	}
+
+	return std::get<LexemeOperator>(data);
+}
+
+const LexemeInteger &Lexeme::get_integer() const {
+	if (!is_integer()) {
+		std::ostringstream sstr;
+		sstr << "Lexeme::get_integer: integer accessor called on a lexeme with the wrong tag: " << tag << ".";
+		throw LexerError(sstr.str());
+	}
+
+	return std::get<LexemeInteger>(data);
+}
+
+const LexemeChar &Lexeme::get_char() const {
+	if (!is_char()) {
+		std::ostringstream sstr;
+		sstr << "Lexeme::get_char: char accessor called on a lexeme with the wrong tag: " << tag << ".";
+		throw LexerError(sstr.str());
+	}
+
+	return std::get<LexemeChar>(data);
+}
+
+const LexemeString &Lexeme::get_string() const {
+	if (!is_string()) {
+		std::ostringstream sstr;
+		sstr << "Lexeme::get_string: string accessor called on a lexeme with the wrong tag: " << tag << ".";
+		throw LexerError(sstr.str());
+	}
+
+	return std::get<LexemeString>(data);
+}
+
+const LexemeComment &Lexeme::get_comment() const {
+	if (!is_comment()) {
+		std::ostringstream sstr;
+		sstr << "Lexeme::get_comment: comment accessor called on a lexeme with the wrong tag: " << tag << ".";
+		throw LexerError(sstr.str());
+	}
+
+	return std::get<LexemeComment>(data);
+}
+
+const LexemeWhitespace &Lexeme::get_whitespace() const {
+	if (!is_whitespace()) {
+		std::ostringstream sstr;
+		sstr << "Lexeme::get_whitespace: whitespace accessor called on a lexeme with the wrong tag: " << tag << ".";
+		throw LexerError(sstr.str());
+	}
+
+	return std::get<LexemeWhitespace>(data);
 }

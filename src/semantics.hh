@@ -101,7 +101,7 @@ public:
 				null_tag    = 0,
 				static_tag  = 1,  // ^ A constant expression.
 				dynamic_tag = 2,  // ^ A dynamic expression.
-				type_tag    = 4,  // ^ The identifier refers to a type.
+				type_tag    = 3,  // ^ The identifier refers to a type.
 				var_tag     = 4,  // ^ The identifier refers to a variable.
 				ref_tag     = 5,  // ^ The identifier refers to a reference (pointer) to a variable.
 				num_tags    = 5,
@@ -168,18 +168,6 @@ public:
 			Var     &get_var();
 			Ref     &get_ref();
 
-			void set_static (const Static  &static_);
-			void set_dynamic(const Dynamic &dynamic);
-			void set_type   (const Type    &type);
-			void set_var    (const Var     &var);
-			void set_ref    (const Ref     &ref);
-
-			void set_static (Static  &&static_);
-			void set_dynamic(Dynamic &&dynamic);
-			void set_type   (Type    &&type);
-			void set_var    (Var     &&var);
-			void set_ref    (Ref     &&ref);
-
 			// | Return "static", "dynamic", "type", "var", or "ref".
 			static std::string get_tag_repr(tag_t tag);
 			std::string get_tag_repr() const;
@@ -191,7 +179,15 @@ public:
 
 		std::map<std::string, IdentifierBinding> scope;
 
-		std::optional<IdentifierBinding> lookup(std::string identifier) const;
+		bool has(std::string identifier) const;
+
+		const IdentifierBinding  &get(std::string identifier) const;
+		IdentifierBinding       &&get(std::string identifier);
+
+		const IdentifierBinding  &operator[](std::string identifier) const;
+		IdentifierBinding       &&operator[](std::string identifier);
+
+		std::optional<IdentifierBinding> lookup_copy(std::string identifier) const;
 	};
 
 	/*

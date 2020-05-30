@@ -1,8 +1,9 @@
+#include <cassert>       // assert
 #include <limits>        // std::numeric_limits
 #include <optional>      // std::optional
 #include <sstream>       // std::ostringstream
 #include <string>        // std::string
-#include <utility>       // std::move
+#include <utility>       // std::as_const, std::move
 #include <variant>       // std::get, std::monostate
 
 #include "grammar.hh"
@@ -228,6 +229,31 @@ char Semantics::ConstantValue::get_char() const {
 	return std::get<char>(data);
 }
 
+bool Semantics::ConstantValue::get_boolean() const {
+	switch(tag) {
+		case dynamic_tag:
+		case integer_tag:
+		case char_tag:
+		case boolean_tag:
+		case string_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::get_boolean: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_boolean()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::ConstantValue::get_boolean: constant value has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<bool>(data);
+}
+
 const std::string &Semantics::ConstantValue::get_string() const {
 	switch(tag) {
 		case dynamic_tag:
@@ -426,6 +452,459 @@ std::string Semantics::ConstantValue::get_tag_repr(tag_t tag) {
 
 std::string Semantics::ConstantValue::get_tag_repr() const {
 	return get_tag_repr(tag);
+}
+
+Semantics::IdentifierScope::IdentifierBinding::Static::Static()
+	{}
+
+Semantics::IdentifierScope::IdentifierBinding::Static::Static(const ConstantValue &constant_value)
+	: constant_value(constant_value)
+	{}
+
+Semantics::IdentifierScope::IdentifierBinding::Static::Static(ConstantValue &&constant_value)
+	: constant_value(std::move(constant_value))
+	{}
+
+Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding()
+	{}
+
+Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(tag_t tag, const data_t &data)
+	: tag(tag)
+	, data(data)
+	{}
+
+Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(tag_t tag, data_t &&data)
+	: tag(tag)
+	, data(std::move(data))
+	{}
+
+bool Semantics::IdentifierScope::IdentifierBinding::is_static() const {
+	switch(tag) {
+		case static_tag:
+			return true;
+		case dynamic_tag:
+		case type_tag:
+		case var_tag:
+		case ref_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::is_static: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::IdentifierScope::IdentifierBinding::is_dynamic() const {
+	switch(tag) {
+		case static_tag:
+			return false;
+		case dynamic_tag:
+			return true;
+		case type_tag:
+		case var_tag:
+		case ref_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::is_dynamic: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::IdentifierScope::IdentifierBinding::is_type() const {
+	switch(tag) {
+		case static_tag:
+		case dynamic_tag:
+			return false;
+		case type_tag:
+			return true;
+		case var_tag:
+		case ref_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::is_type: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::IdentifierScope::IdentifierBinding::is_var() const {
+	switch(tag) {
+		case static_tag:
+		case dynamic_tag:
+		case type_tag:
+			return false;
+		case var_tag:
+			return true;
+		case ref_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::is_var: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::IdentifierScope::IdentifierBinding::is_ref() const {
+	switch(tag) {
+		case static_tag:
+		case dynamic_tag:
+		case type_tag:
+		case var_tag:
+			return false;
+		case ref_tag:
+			return true;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::is_ref: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+// | The tags must be correct, or else an exception will be thrown, including for set_*.
+const Semantics::IdentifierScope::IdentifierBinding::Static &Semantics::IdentifierScope::IdentifierBinding::get_static() const {
+	switch(tag) {
+		case static_tag:
+		case dynamic_tag:
+		case type_tag:
+		case var_tag:
+		case ref_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::get_static: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_static()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::IdentifierScope::IdentifierBinding::get_static: binding has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<Static>(data);
+}
+
+const Semantics::IdentifierScope::IdentifierBinding::Dynamic &Semantics::IdentifierScope::IdentifierBinding::get_dynamic() const {
+	switch(tag) {
+		case static_tag:
+		case dynamic_tag:
+		case type_tag:
+		case var_tag:
+		case ref_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::get_dynamic: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_dynamic()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::IdentifierScope::IdentifierBinding::get_dynamic: binding has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<Dynamic>(data);
+}
+
+const Semantics::IdentifierScope::IdentifierBinding::Type &Semantics::IdentifierScope::IdentifierBinding::get_type() const {
+	switch(tag) {
+		case static_tag:
+		case dynamic_tag:
+		case type_tag:
+		case var_tag:
+		case ref_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::get_type: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_type()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::IdentifierScope::IdentifierBinding::get_type: binding has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<Type>(data);
+}
+
+const Semantics::IdentifierScope::IdentifierBinding::Var &Semantics::IdentifierScope::IdentifierBinding::get_var() const {
+	switch(tag) {
+		case static_tag:
+		case dynamic_tag:
+		case type_tag:
+		case var_tag:
+		case ref_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::get_var: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_var()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::IdentifierScope::IdentifierBinding::get_var: binding has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<Var>(data);
+}
+
+const Semantics::IdentifierScope::IdentifierBinding::Ref &Semantics::IdentifierScope::IdentifierBinding::get_ref() const {
+	switch(tag) {
+		case static_tag:
+		case dynamic_tag:
+		case type_tag:
+		case var_tag:
+		case ref_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::get_ref: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_ref()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::IdentifierScope::IdentifierBinding::get_ref: binding has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<Ref>(data);
+}
+
+Semantics::IdentifierScope::IdentifierBinding::Static &Semantics::IdentifierScope::IdentifierBinding::get_static() {
+	switch(tag) {
+		case static_tag:
+		case dynamic_tag:
+		case type_tag:
+		case var_tag:
+		case ref_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::get_static: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_static()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::IdentifierScope::IdentifierBinding::get_static: binding has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<Static>(data);
+}
+
+Semantics::IdentifierScope::IdentifierBinding::Dynamic &Semantics::IdentifierScope::IdentifierBinding::get_dynamic() {
+	switch(tag) {
+		case static_tag:
+		case dynamic_tag:
+		case type_tag:
+		case var_tag:
+		case ref_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::get_dynamic: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_dynamic()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::IdentifierScope::IdentifierBinding::get_dynamic: binding has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<Dynamic>(data);
+}
+
+Semantics::IdentifierScope::IdentifierBinding::Type &Semantics::IdentifierScope::IdentifierBinding::get_type() {
+	switch(tag) {
+		case static_tag:
+		case dynamic_tag:
+		case type_tag:
+		case var_tag:
+		case ref_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::get_type: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_type()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::IdentifierScope::IdentifierBinding::get_type: binding has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<Type>(data);
+}
+
+Semantics::IdentifierScope::IdentifierBinding::Var &Semantics::IdentifierScope::IdentifierBinding::get_var() {
+	switch(tag) {
+		case static_tag:
+		case dynamic_tag:
+		case type_tag:
+		case var_tag:
+		case ref_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::get_var: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_var()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::IdentifierScope::IdentifierBinding::get_var: binding has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<Var>(data);
+}
+
+Semantics::IdentifierScope::IdentifierBinding::Ref &Semantics::IdentifierScope::IdentifierBinding::get_ref() {
+	switch(tag) {
+		case static_tag:
+		case dynamic_tag:
+		case type_tag:
+		case var_tag:
+		case ref_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::get_ref: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_ref()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::IdentifierScope::IdentifierBinding::get_ref: binding has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<Ref>(data);
+}
+
+// | Return "static", "dynamic", "type", "var", or "ref".
+std::string Semantics::IdentifierScope::IdentifierBinding::get_tag_repr(tag_t tag) {
+	switch(tag) {
+		case static_tag:
+			return "static";
+		case dynamic_tag:
+			return "dynamic";
+		case type_tag:
+			return "type";
+		case var_tag:
+			return "var";
+		case ref_tag:
+			return "ref";
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::get_tag_repr: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+std::string Semantics::IdentifierScope::IdentifierBinding::get_tag_repr() const {
+	return get_tag_repr(tag);
+}
+
+Semantics::IdentifierScope::IdentifierScope()
+	{}
+
+Semantics::IdentifierScope::IdentifierScope(const std::map<std::string, IdentifierBinding> &scope)
+	: scope(scope)
+	{}
+
+Semantics::IdentifierScope::IdentifierScope(std::map<std::string, IdentifierBinding> &&scope)
+	: scope(std::move(scope))
+	{}
+
+bool Semantics::IdentifierScope::has(std::string identifier) const {
+	std::map<std::string, IdentifierBinding>::const_iterator identifier_binding_search = scope.find(identifier);
+	if (identifier_binding_search == scope.cend()) {
+		return false;
+	} else {
+		return true;
+	}
+}
+
+const Semantics::IdentifierScope::IdentifierBinding &Semantics::IdentifierScope::get(std::string identifier) const {
+	std::map<std::string, IdentifierBinding>::const_iterator identifier_binding_search = scope.find(identifier);
+	if (identifier_binding_search == scope.cend()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::IdentifierScope::get: the identifier is missing from scope: " << identifier;
+		throw SemanticsError(sstr.str());
+	} else {
+		return identifier_binding_search->second;
+	}
+}
+
+Semantics::IdentifierScope::IdentifierBinding &&Semantics::IdentifierScope::get(std::string identifier) {
+	std::map<std::string, IdentifierBinding>::iterator identifier_binding_search = scope.find(identifier);
+	if (identifier_binding_search == scope.end()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::IdentifierScope::get: the identifier is missing from scope: " << identifier;
+		throw SemanticsError(sstr.str());
+	} else {
+		return std::move(identifier_binding_search->second);
+	}
+}
+
+const Semantics::IdentifierScope::IdentifierBinding &Semantics::IdentifierScope::operator[](std::string identifier) const {
+	return get(identifier);
+}
+
+Semantics::IdentifierScope::IdentifierBinding &&Semantics::IdentifierScope::operator[](std::string identifier) {
+	return std::move(get(identifier));
+}
+
+std::optional<Semantics::IdentifierScope::IdentifierBinding> Semantics::IdentifierScope::lookup_copy(std::string identifier) const {
+	std::map<std::string, IdentifierBinding>::const_iterator identifier_binding_search = scope.find(identifier);
+	if (identifier_binding_search == scope.cend()) {
+		return std::optional<IdentifierBinding>();
+	} else {
+		return std::optional<IdentifierBinding>(std::move(IdentifierBinding(std::as_const(identifier_binding_search->second))));
+	}
 }
 
 Semantics::Semantics()
@@ -1563,7 +2042,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			}
 
 			// Lookup the identifier binding.
-			std::optional<IdentifierScope::IdentifierBinding> identifier_binding_search = expression_scope.lookup(lexeme_identifier.text);
+			std::optional<IdentifierScope::IdentifierBinding> identifier_binding_search = expression_scope.lookup_copy(lexeme_identifier.text);
 			if (!identifier_binding_search) {
 				std::ostringstream sstr;
 				sstr << "Semantics::is_expression_constant: error (line " << lexeme_identifier.line << " col " << lexeme_identifier.column << "): identifier out of scope when checking for constant lvalue: " << lexeme_identifier.text;
@@ -1637,6 +2116,71 @@ bool Semantics::would_addition_overflow(int32_t a, int32_t b) {
 	} else {
 		// positive + negative or negative + positive
 		return false;
+	}
+}
+
+bool Semantics::would_multiplication_overflow(int32_t a, int32_t b) {
+	// Handle cases where the result does not increase in magnitude, while
+	// preventing division by zero and enabling the next check's validity.
+	if (a == 0 || b == 0) {
+		return false;
+	}
+	if (a == 1 || b == 1) {
+		return false;
+	}
+	if (a == -1 || b == -1) {
+		return a != std::numeric_limits<int32_t>::min() && b != std::numeric_limits<int32_t>::min();
+	}
+
+	// Since the result is increasing in magnitude, fail at the greatest
+	// possible magnitude, while also protecting us from overflows occurring
+	// during our checks themselves.
+	if (a == std::numeric_limits<int32_t>::min() || b == std::numeric_limits<int32_t>::min()) {
+		return true;
+	}
+
+	// Get sign of result and absolute values of inputs.
+	bool result_nat = (a >= 0) == (b >= 0);
+	int32_t a_abs = a >= 0 ? a : -a;
+	int32_t b_abs = b >= 0 ? b : -b;
+
+	// Check.
+	if (result_nat) {
+		// Result is zero or positive (by now, only positive).
+		return (std::numeric_limits<int32_t>::max()-1)/a_abs >= b_abs;
+	} else {
+		// Result is zero or negative (by now, only negative).
+		assert(-(std::numeric_limits<int32_t>::min()+1) == std::numeric_limits<int32_t>::max());
+		return std::numeric_limits<int32_t>::max()/a_abs >= b_abs;
+	}
+}
+
+bool Semantics::would_division_overflow(int32_t a, int32_t b) {
+	if        (a == -1 && b == std::numeric_limits<int32_t>::min()) {
+		return true;
+	} else if (b == -1 && a == std::numeric_limits<int32_t>::min()) {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+int32_t Semantics::euclidian_div(int32_t a, int32_t b) {
+	int32_t quotient  = a / b;
+	int32_t remainder = a % b;
+	if (remainder < 0) {
+		return quotient + 1;
+	} else {
+		return quotient;
+	}
+}
+
+int32_t Semantics::euclidian_mod(int32_t a, int32_t b) {
+	int32_t remainder = a % b;
+	if (remainder < 0) {
+		return remainder + b;
+	} else {
+		return remainder;
 	}
 }
 

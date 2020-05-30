@@ -250,6 +250,15 @@ public:
 	// | Get a copy of the text of the lexeme.
 	std::string get_text() const;
 
+	bool is_keyword() const;
+	bool is_identifier() const;
+	bool is_operator() const;
+	bool is_integer() const;
+	bool is_char() const;
+	bool is_string() const;
+	bool is_comment() const;
+	bool is_whitespace() const;
+
 	// | The tag and data must be of the correct type when these are called.
 	LexemeKeyword          &get_keyword();
 	LexemeIdentifier       &get_identifier();
