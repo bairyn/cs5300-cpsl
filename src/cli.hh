@@ -27,6 +27,12 @@ namespace cli {
 		RunError(const std::string &message);
 	};
 
+	class AssembleError : public std::runtime_error {
+	public:
+		AssembleError();
+		AssembleError(const std::string &message);
+	};
+
 	/*
 	 * CLI.
 	 */
@@ -188,8 +194,15 @@ namespace cli {
 	std::vector<std::string> get_parser_info(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines, const ArgsSpec &args_spec);
 	std::vector<std::string> get_parser_info(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines);
 
-	// | Assemble a CPSL file.
-	//void assemble(const std::string &in_path, const std::string &out_path);
+	// | Assemble a CPSL file to MARS MIPS.
+	void assemble_write(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path, const ArgsSpec &args_spec, const std::vector<std::string> &args, const std::optional<std::string> &prog);
+	void assemble_write(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path, const ArgsSpec &args_spec);
+	void assemble_write(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path);
+
+	// | Given lines of input, produce lines of output.
+	std::vector<std::string> assemble(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines, const ArgsSpec &args_spec, const std::vector<std::string> &args, const std::optional<std::string> &prog);
+	std::vector<std::string> assemble(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines, const ArgsSpec &args_spec);
+	std::vector<std::string> assemble(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines);
 }
 
 #endif /* #ifndef CPSL_CC_CLI_HH */

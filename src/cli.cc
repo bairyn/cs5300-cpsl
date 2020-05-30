@@ -20,6 +20,7 @@
 #include "grammar.hh"    // GrammarError
 #include "parser.hh"
 #include "scanner.hh"
+#include "semantics.hh"
 
 extern "C" {
 #include "version.h"
@@ -45,6 +46,14 @@ cli::RunError::RunError()
 	{}
 
 cli::RunError::RunError(const std::string &message)
+	: runtime_error(message)
+	{}
+
+cli::AssembleError::AssembleError()
+	: runtime_error("An assemble error occurred.")
+	{}
+
+cli::AssembleError::AssembleError(const std::string &message)
 	: runtime_error(message)
 	{}
 
@@ -707,11 +716,7 @@ void cli::run_with_paths(const ParsedArgs &parsed_args, const std::string &input
 		return cli::parser_info(parsed_args, input_path, output_path, args_spec, args, prog);
 	}
 
-	std::cout << "To be implemented..." << std::endl;
-	std::cout << "Input path: " << input_path << std::endl;
-	std::cout << "Output path: " << output_path << std::endl;
-
-	return;
+	return cli::assemble_write(parsed_args, input_path, output_path, args_spec, args, prog);
 }
 
 void cli::lexer_info(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path) {
@@ -833,9 +838,60 @@ std::vector<std::string> cli::get_parser_info(const ParsedArgs &parsed_args, con
 	return output_lines;
 }
 
-/*
-	// | Assemble a CPSL file.
-void cli::assemble(const std::string &in_path, const std::string &out_path) {
-	std::cout << "To be implemented..." << std::endl;
+void cli::assemble_write(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path) {
+	return cli::assemble_write(parsed_args, input_path, output_path, cli::ArgsSpec::default_args_spec);
 }
-*/
+
+void cli::assemble_write(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path, const ArgsSpec &args_spec) {
+	return cli::assemble_write(parsed_args, input_path, output_path, args_spec, parsed_args.normalized_args(), std::optional<std::string>());
+}
+
+// | Assemble a CPSL file to MARS MIPS.
+void cli::assemble_write(const ParsedArgs &parsed_args, const std::string &input_path, const std::string &output_path, const ArgsSpec &args_spec, const std::vector<std::string> &args, const std::optional<std::string> &prog) {
+	// Collect the lines in the input file.
+	std::vector<std::string> input_lines = cli::readlines(parsed_args, input_path);
+
+	// Get the lines of output.
+	std::vector<std::string> output_lines = cli::assemble(parsed_args, input_lines, args_spec, args, prog);
+
+	// Write the output.
+	return cli::writelines(parsed_args, output_path, output_lines);
+}
+
+std::vector<std::string> cli::assemble(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines) {
+	return cli::assemble(parsed_args, input_lines, cli::ArgsSpec::default_args_spec);
+}
+
+std::vector<std::string> cli::assemble(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines, const ArgsSpec &args_spec) {
+	return cli::assemble(parsed_args, input_lines, args_spec, parsed_args.normalized_args(), std::optional<std::string>());
+}
+
+// | Assemble a CPSL file to MARS MIPS.
+//
+// MARS MIPS documentation:
+// - https://inst.eecs.berkeley.edu/~cs61c/resources/MIPS_Green_Sheet.pdf
+// - https://courses.missouristate.edu/KenVollmar/MARS/Help/SyscallHelp.html
+std::vector<std::string> cli::assemble(const ParsedArgs &parsed_args, const std::vector<std::string> &input_lines, const ArgsSpec &args_spec, const std::vector<std::string> &args, const std::optional<std::string> &prog) {
+	// Create our vector of lines to output.
+	std::vector<std::string> output_lines;
+
+	// Scan all the lexemes.
+	std::vector<Lexeme> lexemes = scanlines(input_lines);
+
+	// Parse the grammar.
+	Grammar grammar = parse_lexemes(lexemes, parsed_args.is("parser-trace"));
+
+	// Analyze the semantics.
+	Semantics semantics(std::move(Grammar(grammar)));
+
+	// Assemble the code.
+
+	// Collections we will populate as we traverse the program tree.
+	//std::vector<std::string> string_literals;
+
+	// TODO
+	std::cout << "To be implemented..." << std::endl;
+
+	// Return our output.
+	return output_lines;
+}

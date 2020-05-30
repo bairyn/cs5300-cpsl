@@ -143,6 +143,7 @@ CXX_OBJS = \
 	$(BUILD_DIR)/grammar.o \
 	$(BUILD_DIR)/lexer.o \
 	$(BUILD_DIR)/main.o \
+	$(BUILD_DIR)/semantics.o \
 	#
 
 CXX_GEN_OBJS = \
