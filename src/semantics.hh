@@ -108,7 +108,7 @@ public:
 		// | Reference to the expression in the grammar tree.
 		uint64_t expression,
 		// | A collection of identifiers of constants available to the scope of the expression.
-		const std::map<std::string, ConstantValue> &const_identifiers
+		const std::map<std::string, ConstantValue> &const_identifier_scope
 	);
 
 	// | Force a re-analysis of the semantics data.

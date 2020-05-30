@@ -249,6 +249,24 @@ public:
 	uint64_t get_column() const;
 	// | Get a copy of the text of the lexeme.
 	std::string get_text() const;
+
+	// | The tag and data must be of the correct type when these are called.
+	LexemeKeyword          &get_keyword();
+	LexemeIdentifier       &get_identifier();
+	LexemeOperator         &get_operator();
+	LexemeInteger          &get_integer();
+	LexemeChar             &get_char();
+	LexemeString           &get_string();
+	LexemeComment          &get_comment();
+	LexemeWhitespace       &get_whitespace();
+	const LexemeKeyword    &get_keyword() const;
+	const LexemeIdentifier &get_identifier() const;
+	const LexemeOperator   &get_operator() const;
+	const LexemeInteger    &get_integer() const;
+	const LexemeChar       &get_char() const;
+	const LexemeString     &get_string() const;
+	const LexemeComment    &get_comment() const;
+	const LexemeWhitespace &get_whitespace() const;
 };
 
 #endif /* #ifndef CPSL_CC_LEXER_HH */
