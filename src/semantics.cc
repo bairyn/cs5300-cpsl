@@ -541,7 +541,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 				sstr
 					<< "Semantics::is_expression_constant: error (line "
 					<< pipe_operator0.line << " col " << pipe_operator0.column
-					<< "): refusing to OR different types, "
+					<< "): refusing to OR values of different types, for "
 					<< left.get_tag_repr() << " with " << right.get_tag_repr()
 					<< "."
 					;
@@ -605,7 +605,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 				sstr
 					<< "Semantics::is_expression_constant: error (line "
 					<< ampersand_operator0.line << " col " << ampersand_operator0.column
-					<< "): refusing to AND different types, "
+					<< "): refusing to AND values of different types, for "
 					<< left.get_tag_repr() << " with " << right.get_tag_repr()
 					<< "."
 					;
@@ -646,11 +646,329 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 				throw SemanticsError(sstr.str());
 			}
 		} equals_branch: {
+			const Expression::Equals &equals           = grammar.expression_equals_storage.at(expression_symbol.data);
+			const Expression         &expression0      = grammar.expression_storage.at(equals.expression0); (void) expression0;
+			const LexemeOperator     &equals_operator0 = grammar.lexemes.at(equals.equals_operator0).get_operator();
+			const Expression         &expression1      = grammar.expression_storage.at(equals.expression1); (void) expression1;
+
+			// Is either subexpression dynamic?  If so, this expression is also dynamic.
+			ConstantValue right = is_expression_constant(equals.expression1, expression_scope);
+			if (right.is_dynamic()) {
+				expression_constant_value = right;
+				break;
+			}
+			ConstantValue left  = is_expression_constant(equals.expression0, expression_scope);
+			if (left.is_dynamic()) {
+				expression_constant_value = left;
+				break;
+			}
+
+			// Are the expressions of the same type?
+			if (left.tag != right.tag) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< equals_operator0.line << " col " << equals_operator0.column
+					<< "): refusing to compare values of different types for =, for "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Apply = comparison depending on the type.
+			if        (left.is_integer()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() == right.get_integer()));
+				break;
+			} else if (left.is_char()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() == right.get_char()));
+				break;
+			} else if (left.is_boolean()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() == right.get_boolean()));
+				break;
+			} else if (left.is_string()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() == right.get_string()));
+				break;
+			} else {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: internal error (line "
+					<< equals_operator0.line << " col " << equals_operator0.column
+					<< "): unhandled constant expression type for = comparison: "
+					<< left.get_tag_repr()
+					;
+				throw SemanticsError(sstr.str());
+			}
 		} lt_or_gt_branch: {
+			const Expression::LtOrGt &lt_or_gt           = grammar.expression_lt_or_gt_storage.at(expression_symbol.data);
+			const Expression         &expression0        = grammar.expression_storage.at(lt_or_gt.expression0); (void) expression0;
+			const LexemeOperator     &lt_or_gt_operator0 = grammar.lexemes.at(lt_or_gt.lt_or_gt_operator0).get_operator();
+			const Expression         &expression1        = grammar.expression_storage.at(lt_or_gt.expression1); (void) expression1;
+
+			// Is either subexpression dynamic?  If so, this expression is also dynamic.
+			ConstantValue right = is_expression_constant(lt_or_gt.expression1, expression_scope);
+			if (right.is_dynamic()) {
+				expression_constant_value = right;
+				break;
+			}
+			ConstantValue left  = is_expression_constant(lt_or_gt.expression0, expression_scope);
+			if (left.is_dynamic()) {
+				expression_constant_value = left;
+				break;
+			}
+
+			// Are the expressions of the same type?
+			if (left.tag != right.tag) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< lt_or_gt_operator0.line << " col " << lt_or_gt_operator0.column
+					<< "): refusing to compare values of different types for <>, for "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Apply <> comparison depending on the type.
+			if        (left.is_integer()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() != right.get_integer()));
+				break;
+			} else if (left.is_char()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() != right.get_char()));
+				break;
+			} else if (left.is_boolean()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() != right.get_boolean()));
+				break;
+			} else if (left.is_string()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() != right.get_string()));
+				break;
+			} else {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: internal error (line "
+					<< lt_or_gt_operator0.line << " col " << lt_or_gt_operator0.column
+					<< "): unhandled constant expression type for <> comparison: "
+					<< left.get_tag_repr()
+					;
+				throw SemanticsError(sstr.str());
+			}
 		} le_branch: {
+			const Expression::Le &le           = grammar.expression_le_storage.at(expression_symbol.data);
+			const Expression     &expression0  = grammar.expression_storage.at(le.expression0); (void) expression0;
+			const LexemeOperator &le_operator0 = grammar.lexemes.at(le.le_operator0).get_operator();
+			const Expression     &expression1  = grammar.expression_storage.at(le.expression1); (void) expression1;
+
+			// Is either subexpression dynamic?  If so, this expression is also dynamic.
+			ConstantValue right = is_expression_constant(le.expression1, expression_scope);
+			if (right.is_dynamic()) {
+				expression_constant_value = right;
+				break;
+			}
+			ConstantValue left  = is_expression_constant(le.expression0, expression_scope);
+			if (left.is_dynamic()) {
+				expression_constant_value = left;
+				break;
+			}
+
+			// Are the expressions of the same type?
+			if (left.tag != right.tag) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< le_operator0.line << " col " << le_operator0.column
+					<< "): refusing to compare values of different types for <=, for "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Apply <= comparison depending on the type.
+			if        (left.is_integer()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() <= right.get_integer()));
+				break;
+			} else if (left.is_char()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() <= right.get_char()));
+				break;
+			} else if (left.is_boolean()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() <= right.get_boolean()));
+				break;
+			} else if (left.is_string()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() <= right.get_string()));
+				break;
+			} else {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: internal error (line "
+					<< le_operator0.line << " col " << le_operator0.column
+					<< "): unhandled constant expression type for <= comparison: "
+					<< left.get_tag_repr()
+					;
+				throw SemanticsError(sstr.str());
+			}
 		} ge_branch: {
+			const Expression::Ge &ge           = grammar.expression_ge_storage.at(expression_symbol.data);
+			const Expression     &expression0  = grammar.expression_storage.at(ge.expression0); (void) expression0;
+			const LexemeOperator &ge_operator0 = grammar.lexemes.at(ge.ge_operator0).get_operator();
+			const Expression     &expression1  = grammar.expression_storage.at(ge.expression1); (void) expression1;
+
+			// Is either subexpression dynamic?  If so, this expression is also dynamic.
+			ConstantValue right = is_expression_constant(ge.expression1, expression_scope);
+			if (right.is_dynamic()) {
+				expression_constant_value = right;
+				break;
+			}
+			ConstantValue left  = is_expression_constant(ge.expression0, expression_scope);
+			if (left.is_dynamic()) {
+				expression_constant_value = left;
+				break;
+			}
+
+			// Are the expressions of the same type?
+			if (left.tag != right.tag) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< ge_operator0.line << " col " << ge_operator0.column
+					<< "): refusing to compare values of different types for >=, for "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Apply >= comparison depending on the type.
+			if        (left.is_integer()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() >= right.get_integer()));
+				break;
+			} else if (left.is_char()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() >= right.get_char()));
+				break;
+			} else if (left.is_boolean()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() >= right.get_boolean()));
+				break;
+			} else if (left.is_string()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() >= right.get_string()));
+				break;
+			} else {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: internal error (line "
+					<< ge_operator0.line << " col " << ge_operator0.column
+					<< "): unhandled constant expression type for >= comparison: "
+					<< left.get_tag_repr()
+					;
+				throw SemanticsError(sstr.str());
+			}
 		} lt_branch: {
+			const Expression::Lt &lt           = grammar.expression_lt_storage.at(expression_symbol.data);
+			const Expression     &expression0  = grammar.expression_storage.at(lt.expression0); (void) expression0;
+			const LexemeOperator &lt_operator0 = grammar.lexemes.at(lt.lt_operator0).get_operator();
+			const Expression     &expression1  = grammar.expression_storage.at(lt.expression1); (void) expression1;
+
+			// Is either subexpression dynamic?  If so, this expression is also dynamic.
+			ConstantValue right = is_expression_constant(lt.expression1, expression_scope);
+			if (right.is_dynamic()) {
+				expression_constant_value = right;
+				break;
+			}
+			ConstantValue left  = is_expression_constant(lt.expression0, expression_scope);
+			if (left.is_dynamic()) {
+				expression_constant_value = left;
+				break;
+			}
+
+			// Are the expressions of the same type?
+			if (left.tag != right.tag) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< lt_operator0.line << " col " << lt_operator0.column
+					<< "): refusing to compare values of different types for <, for "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Apply < comparison depending on the type.
+			if        (left.is_integer()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() < right.get_integer()));
+				break;
+			} else if (left.is_char()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() < right.get_char()));
+				break;
+			} else if (left.is_boolean()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() < right.get_boolean()));
+				break;
+			} else if (left.is_string()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() < right.get_string()));
+				break;
+			} else {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: internal error (line "
+					<< lt_operator0.line << " col " << lt_operator0.column
+					<< "): unhandled constant expression type for < comparison: "
+					<< left.get_tag_repr()
+					;
+				throw SemanticsError(sstr.str());
+			}
 		} gt_branch: {
+			const Expression::Gt &gt           = grammar.expression_gt_storage.at(expression_symbol.data);
+			const Expression     &expression0  = grammar.expression_storage.at(gt.expression0); (void) expression0;
+			const LexemeOperator &gt_operator0 = grammar.lexemes.at(gt.gt_operator0).get_operator();
+			const Expression     &expression1  = grammar.expression_storage.at(gt.expression1); (void) expression1;
+
+			// Is either subexpression dynamic?  If so, this expression is also dynamic.
+			ConstantValue right = is_expression_constant(gt.expression1, expression_scope);
+			if (right.is_dynamic()) {
+				expression_constant_value = right;
+				break;
+			}
+			ConstantValue left  = is_expression_constant(gt.expression0, expression_scope);
+			if (left.is_dynamic()) {
+				expression_constant_value = left;
+				break;
+			}
+
+			// Are the expressions of the same type?
+			if (left.tag != right.tag) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: error (line "
+					<< gt_operator0.line << " col " << gt_operator0.column
+					<< "): refusing to compare values of different types for >, for "
+					<< left.get_tag_repr() << " with " << right.get_tag_repr()
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Apply > comparison depending on the type.
+			if        (left.is_integer()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() > right.get_integer()));
+				break;
+			} else if (left.is_char()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() > right.get_char()));
+				break;
+			} else if (left.is_boolean()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() > right.get_boolean()));
+				break;
+			} else if (left.is_string()) {
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() > right.get_string()));
+				break;
+			} else {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::is_expression_constant: internal error (line "
+					<< gt_operator0.line << " col " << gt_operator0.column
+					<< "): unhandled constant expression type for > comparison: "
+					<< left.get_tag_repr()
+					;
+				throw SemanticsError(sstr.str());
+			}
 		} plus_branch: {
 			const Expression::Plus &plus           = grammar.expression_plus_storage.at(expression_symbol.data);
 			const Expression       &expression0    = grammar.expression_storage.at(plus.expression0); (void) expression0;
@@ -675,7 +993,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 				sstr
 					<< "Semantics::is_expression_constant: error (line "
 					<< plus_operator0.line << " col " << plus_operator0.column
-					<< "): refusing to add different types, "
+					<< "): refusing to add different types, for "
 					<< left.get_tag_repr() << " with " << right.get_tag_repr()
 					<< "."
 					;
@@ -759,7 +1077,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 				sstr
 					<< "Semantics::is_expression_constant: error (line "
 					<< minus_operator0.line << " col " << minus_operator0.column
-					<< "): refusing to substract different types, "
+					<< "): refusing to substract values of different types, for "
 					<< left.get_tag_repr() << " with " << right.get_tag_repr()
 					<< "."
 					;
@@ -843,7 +1161,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 				sstr
 					<< "Semantics::is_expression_constant: error (line "
 					<< times_operator0.line << " col " << times_operator0.column
-					<< "): refusing to multiply different types, "
+					<< "): refusing to multiply values of different types, for "
 					<< left.get_tag_repr() << " with " << right.get_tag_repr()
 					<< "."
 					;
@@ -927,7 +1245,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 				sstr
 					<< "Semantics::is_expression_constant: error (line "
 					<< slash_operator0.line << " col " << slash_operator0.column
-					<< "): refusing to divide different types, "
+					<< "): refusing to divide values of different types, for "
 					<< left.get_tag_repr() << " with " << right.get_tag_repr()
 					<< "."
 					;
@@ -1031,7 +1349,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 				sstr
 					<< "Semantics::is_expression_constant: error (line "
 					<< percent_operator0.line << " col " << percent_operator0.column
-					<< "): refusing to mod different types, "
+					<< "): refusing to mod values of different types, for "
 					<< left.get_tag_repr() << " with " << right.get_tag_repr()
 					<< "."
 					;
