@@ -1,4 +1,5 @@
 #include <limits>        // std::numeric_limits
+#include <optional>      // std::optional
 #include <sstream>       // std::ostringstream
 #include <string>        // std::string
 #include <utility>       // std::move
@@ -227,7 +228,7 @@ char Semantics::ConstantValue::get_char() const {
 	return std::get<char>(data);
 }
 
-std::string Semantics::ConstantValue::get_string() const {
+const std::string &Semantics::ConstantValue::get_string() const {
 	switch(tag) {
 		case dynamic_tag:
 		case integer_tag:
@@ -250,6 +251,31 @@ std::string Semantics::ConstantValue::get_string() const {
 	}
 
 	return std::get<std::string>(data);
+}
+
+std::string &&Semantics::ConstantValue::get_string() {
+	switch(tag) {
+		case dynamic_tag:
+		case integer_tag:
+		case char_tag:
+		case boolean_tag:
+		case string_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::get_string: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_string()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::ConstantValue::get_string: constant value has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::move(std::get<std::string>(data));
 }
 
 void Semantics::ConstantValue::set_integer(uint32_t integer) {
@@ -652,9 +678,41 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 		// lvalue_branch may or may not be dynamic, depending on whether it is
 		// a simple identifier (without .foo or [bar]) that refers to a known
 		// constant value in the scope of the expression.
-		lvalue_branch:
-			// TODO
-			break;
+		lvalue_branch: {
+			const Expression::Lvalue       &lvalue                      = grammar.expression_lvalue_storage.at(expression_symbol.data);
+			const Lvalue                   &lvalue_symbol               = grammar.lvalue_storage.at(lvalue.lvalue);
+			const LexemeIdentifier         &lexeme_identifier           = grammar.lexemes.at(lvalue_symbol.identifier).get_identifier();
+			const LvalueAccessorClauseList &lvalue_accessor_clause_list = grammar.lvalue_accessor_clause_list_storage.at(lvalue_symbol.lvalue_accessor_clause_list);
+
+			// According to the documentation, only lvalues without
+			// accessors can be constant (static) expressions.  So check the
+			// lvalue type, to see if it's just an identifier.
+			if (lvalue_accessor_clause_list.branch != LvalueAccessorClauseList::empty_branch) {
+				// It's not just an identifier.  This lvalue expression is not
+				// a constant expression.
+				expression_constant_value = ConstantValue::dynamic;
+				break;
+			}
+
+			// Lookup the identifier binding.
+			std::optional<IdentifierScope::IdentifierBinding> identifier_binding_search = expression_scope.lookup(lexeme_identifier.text);
+			if (!identifier_binding_search) {
+				std::ostringstream sstr;
+				sstr << "Semantics::is_expression_constant: error (line " << lexeme_identifier.line << " col " << lexeme_identifier.column << "): identifier out of scope when checking for constant lvalue: " << lexeme_identifier.text;
+				throw SemanticsError(sstr.str());
+			}
+
+			if (!identifier_binding_search->is_static()) {
+				// The identifier does not refer to a constant expression.
+				expression_constant_value = ConstantValue::dynamic;
+				break;
+			} else {  // identifier_binding_search->is_static()
+				const IdentifierScope::IdentifierBinding::Static &static_ = identifier_binding_search->get_static();
+				// Copy the constant value.
+				expression_constant_value = std::move(ConstantValue(static_.constant_value));
+				break;
+			}
+		}
 
 		// These 3 branches are static.
 		integer_branch: {

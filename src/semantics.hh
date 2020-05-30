@@ -3,6 +3,7 @@
 
 #include <cstdint>    // uint32_t, uint64_t
 #include <map>        // std::map
+#include <optional>   // std::optional
 #include <string>     // std::string
 #include <vector>     // std::vector
 #include <variant>    // std::monostate, std::variant
@@ -78,7 +79,8 @@ public:
 		uint32_t get_integer() const;
 		char get_char() const;
 		bool get_boolean() const;
-		std::string get_string() const;
+		const std::string &get_string() const;
+		std::string &&get_string();
 		void set_integer(uint32_t integer);
 		void set_char(char char_);
 		void set_boolean(bool boolean);
@@ -106,8 +108,19 @@ public:
 			};
 			typedef enum tag_e tag_t;
 
-			class Static  {};
-			class Dynamic {};
+			class Static {
+			public:
+				Static();
+				Static(const ConstantValue &constant_value);
+				Static(ConstantValue &&constant_value);
+
+				// Keep a copy of the constant value.
+				ConstantValue constant_value;
+			};
+			class Dynamic {
+			public:
+				// TODO
+			};
 			class Type {
 			public:
 				// TODO
@@ -135,6 +148,41 @@ public:
 			IdentifierBinding(tag_t tag, data_t &&data);
 			tag_t  tag;
 			data_t data;
+
+			bool is_static() const;
+			bool is_dynamic() const;
+			bool is_type() const;
+			bool is_var() const;
+			bool is_ref() const;
+
+			// | The tags must be correct, or else an exception will be thrown, including for set_*.
+			const Static  &get_static()  const;
+			const Dynamic &get_dynamic() const;
+			const Type    &get_type()    const;
+			const Var     &get_var()     const;
+			const Ref     &get_ref()     const;
+
+			Static  &get_static();
+			Dynamic &get_dynamic();
+			Type    &get_type();
+			Var     &get_var();
+			Ref     &get_ref();
+
+			void set_static (const Static  &static_);
+			void set_dynamic(const Dynamic &dynamic);
+			void set_type   (const Type    &type);
+			void set_var    (const Var     &var);
+			void set_ref    (const Ref     &ref);
+
+			void set_static (Static  &&static_);
+			void set_dynamic(Dynamic &&dynamic);
+			void set_type   (Type    &&type);
+			void set_var    (Var     &&var);
+			void set_ref    (Ref     &&ref);
+
+			// | Return "static", "dynamic", "type", "var", or "ref".
+			static std::string get_tag_repr(tag_t tag);
+			std::string get_tag_repr() const;
 		};
 
 		IdentifierScope();
@@ -142,6 +190,8 @@ public:
 		IdentifierScope(std::map<std::string, IdentifierBinding> &&scope);
 
 		std::map<std::string, IdentifierBinding> scope;
+
+		std::optional<IdentifierBinding> lookup(std::string identifier) const;
 	};
 
 	/*
