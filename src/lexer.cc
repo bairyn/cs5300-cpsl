@@ -289,6 +289,11 @@ LexemeInteger::LexemeInteger(const LexemeBase &lexeme_base)
 			// We can now parse the additional digit into "this_group".
 			this_group = 10 * this_group + digit;
 		}
+
+		// Have we written the first digit group yet?
+		if (!parsed_first_group) {
+			first_digits = this_group;
+		}
 	} else if (text.size() >= 2 && text[1] == 'x') {
 		// This is a hex value.
 		integer_base = lexeme_integer_base_16;
@@ -339,6 +344,11 @@ LexemeInteger::LexemeInteger(const LexemeBase &lexeme_base)
 			// We can now parse the additional digit into "this_group".
 			this_group = 16 * this_group + digit;
 		}
+
+		// Have we written the first digit group yet?
+		if (!parsed_first_group) {
+			first_digits = this_group;
+		}
 	} else if(text.size() <= 1) {
 		// It's just 0.
 		integer_base = lexeme_integer_base_10;
@@ -387,6 +397,11 @@ LexemeInteger::LexemeInteger(const LexemeBase &lexeme_base)
 
 			// We can now parse the additional digit into "this_group".
 			this_group = 8 * this_group + digit;
+		}
+
+		// Have we written the first digit group yet?
+		if (!parsed_first_group) {
+			first_digits = this_group;
 		}
 	}
 }

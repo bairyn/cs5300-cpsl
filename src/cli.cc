@@ -476,6 +476,18 @@ void cli::run(const std::vector<std::string> &argv) {
 
 		std::cerr << err_msg_noprefix << std::endl;
 		std::exit(6);
+	} catch (const ::SemanticsError &ex) {
+		const std::string err_msg = ex.what();
+		std::string err_msg_noprefix;
+		const std::string::size_type separator_pos = err_msg.find(": ");
+		if (separator_pos == std::string::npos) {
+			err_msg_noprefix = std::string(err_msg);
+		} else {
+			err_msg_noprefix = err_msg.substr(separator_pos + 2);
+		}
+
+		std::cerr << err_msg_noprefix << std::endl;
+		std::exit(7);
 	}
 }
 

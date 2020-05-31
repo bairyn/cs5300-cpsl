@@ -4,6 +4,7 @@
 #include <cstdint>    // int32_t, uint64_t
 #include <map>        // std::map
 #include <optional>   // std::optional
+#include <set>        // std::set
 #include <string>     // std::string
 #include <utility>    // std::pair
 #include <vector>     // std::vector
@@ -80,6 +81,7 @@ public:
 		int32_t get_integer() const;
 		char get_char() const;
 		bool get_boolean() const;
+		std::string get_string_copy() const;
 		const std::string &get_string() const;
 		std::string &&get_string();
 		void set_integer(int32_t integer);
@@ -298,6 +300,18 @@ public:
 			tag_t  tag;
 			data_t data;
 
+			explicit IdentifierBinding(const Static &static_);
+			explicit IdentifierBinding(const Dynamic &dynamic);
+			explicit IdentifierBinding(const Type &type);
+			explicit IdentifierBinding(const Var &var);
+			explicit IdentifierBinding(const Ref &ref);
+
+			explicit IdentifierBinding(Static &&static_);
+			explicit IdentifierBinding(Dynamic &&dynamic);
+			explicit IdentifierBinding(Type &&type);
+			explicit IdentifierBinding(Var &&var);
+			explicit IdentifierBinding(Ref &&ref);
+
 			bool is_static() const;
 			bool is_dynamic() const;
 			bool is_type() const;
@@ -375,6 +389,10 @@ public:
 
 	// | Force a re-analysis of the semantics data.
 	void analyze();
+
+	// TODO: visibility
+	IdentifierScope top_level_scope;
+	std::set<std::string> string_constants;
 
 protected:
 	// | The grammar tree used for the semantics data.

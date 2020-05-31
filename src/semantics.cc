@@ -1,9 +1,11 @@
+#include <algorithm>     // std::reverse
 #include <cassert>       // assert
 #include <limits>        // std::numeric_limits
 #include <optional>      // std::optional
 #include <sstream>       // std::ostringstream
 #include <string>        // std::string
 #include <utility>       // std::as_const, std::move, std::pair
+#include <vector>        // std::vector
 #include <variant>       // std::get, std::monostate
 
 #include "grammar.hh"
@@ -252,6 +254,31 @@ bool Semantics::ConstantValue::get_boolean() const {
 	}
 
 	return std::get<bool>(data);
+}
+
+std::string Semantics::ConstantValue::get_string_copy() const {
+	switch(tag) {
+		case dynamic_tag:
+		case integer_tag:
+		case char_tag:
+		case boolean_tag:
+		case string_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::get_string_copy: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_string()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::ConstantValue::get_string_copy: constant value has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::string(std::as_const(std::get<std::string>(data)));
 }
 
 const std::string &Semantics::ConstantValue::get_string() const {
@@ -1118,6 +1145,46 @@ Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(tag_t tag, cons
 Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(tag_t tag, data_t &&data)
 	: tag(tag)
 	, data(std::move(data))
+	{}
+
+Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(const Static &static_)
+	: IdentifierBinding(static_tag, static_)
+	{}
+
+Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(const Dynamic &dynamic)
+	: IdentifierBinding(dynamic_tag, dynamic)
+	{}
+
+Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(const Type &type)
+	: IdentifierBinding(type_tag, type)
+	{}
+
+Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(const Var &var)
+	: IdentifierBinding(var_tag, var)
+	{}
+
+Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(const Ref &ref)
+	: IdentifierBinding(ref_tag, ref)
+	{}
+
+Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(Static &&static_)
+	: IdentifierBinding(static_tag, std::move(static_))
+	{}
+
+Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(Dynamic &&dynamic)
+	: IdentifierBinding(dynamic_tag, std::move(dynamic))
+	{}
+
+Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(Type &&type)
+	: IdentifierBinding(type_tag, std::move(type))
+	{}
+
+Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(Var &&var)
+	: IdentifierBinding(var_tag, std::move(var))
+	{}
+
+Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(Ref &&ref)
+	: IdentifierBinding(ref_tag, std::move(ref))
 	{}
 
 bool Semantics::IdentifierScope::IdentifierBinding::is_static() const {
@@ -2789,11 +2856,21 @@ bool Semantics::would_multiplication_overflow(int32_t a, int32_t b) {
 	// Check.
 	if (result_nat) {
 		// Result is zero or positive (by now, only positive).
-		return (std::numeric_limits<int32_t>::max()-1)/a_abs >= b_abs;
+		// ab >= max <=> a >= max/b.
+		return a_abs >= std::numeric_limits<int32_t>::max()/b_abs;
 	} else {
 		// Result is zero or negative (by now, only negative).
+		// mag(min)-1 == mag(max)
 		assert(-(std::numeric_limits<int32_t>::min()+1) == std::numeric_limits<int32_t>::max());
-		return std::numeric_limits<int32_t>::max()/a_abs >= b_abs;
+		//return a_abs >= (std::numeric_limits<int32_t>::max()+1)/b_abs;
+		// Avoid an overflow.
+		if        (a_abs > (std::numeric_limits<int32_t>::max())/b_abs) {
+			return true;
+		} else if (a_abs == (std::numeric_limits<int32_t>::max())/b_abs) {
+			return ((std::numeric_limits<int32_t>::max())%b_abs) >= (b_abs - 1);
+		} else {
+			return false;
+		}
 	}
 }
 
@@ -2829,6 +2906,8 @@ int32_t Semantics::euclidian_mod(int32_t a, int32_t b) {
 // | Clear memoization caches and calculated output values.
 void Semantics::clear_output() {
 	is_expression_constant_calculations.clear();
+	top_level_scope = IdentifierScope();
+	string_constants.clear();
 }
 
 // | Force a re-analysis of the semantics data.
@@ -2870,9 +2949,93 @@ void Semantics::analyze() {
 		}
 
 		case ConstantDeclOpt::value_branch: {
-			// TODO
-			//CONST_KEYWORD constant_assignment constant_assignment_list {$$ = pg.new_constant_decl($1, $2, $3);}
-			// Unpack the constant declarations.
+			// Unpack the constant_decl.
+			const ConstantDeclOpt::Value &constant_decl_opt_value  = grammar.constant_decl_opt_value_storage.at(constant_decl_opt.data);
+			const ConstantDecl           &constant_decl            = grammar.constant_decl_storage.at(constant_decl_opt_value.constant_decl);
+			const LexemeKeyword          &const_keyword0           = grammar.lexemes.at(constant_decl.const_keyword0).get_keyword(); (void) const_keyword0;
+			const ConstantAssignment     &constant_assignment      = grammar.constant_assignment_storage.at(constant_decl.constant_assignment);
+			const ConstantAssignmentList &constant_assignment_list = grammar.constant_assignment_list_storage.at(constant_decl.constant_assignment_list);
+
+			// Collect the constant assignments in the list.
+			std::vector<const ConstantAssignment *> constant_assignments;
+			constant_assignments.push_back(&constant_assignment);
+			bool reached_end = false;
+			for (const ConstantAssignmentList *last_list = &constant_assignment_list; !reached_end; ) {
+				// Unpack the last list encountered.
+				switch(last_list->branch) {
+					case ConstantAssignmentList::empty_branch: {
+						// We're done.
+						// (No need to unpack the empty branch.)
+						reached_end = true;
+						break;
+					}
+
+					case ConstantAssignmentList::cons_branch: {
+						// Unpack the list.
+						const ConstantAssignmentList::Cons &last_constant_assignment_list_cons = grammar.constant_assignment_list_cons_storage.at(last_list->data);
+						const ConstantAssignmentList       &last_constant_assignment_list      = grammar.constant_assignment_list_storage.at(last_constant_assignment_list_cons.constant_assignment_list);
+						const ConstantAssignment           &last_constant_assignment           = grammar.constant_assignment_storage.at(last_constant_assignment_list_cons.constant_assignment);
+
+						// Add the constant assignment.
+						constant_assignments.push_back(&last_constant_assignment);
+						last_list = &last_constant_assignment_list;
+
+						// Loop.
+						break;
+					}
+
+					// Unrecognized branch.
+					default: {
+						std::ostringstream sstr;
+						sstr << "Semantics::analyze: internal error: invalid constant_assignment_list branch at index " << last_list - &grammar.constant_assignment_list_storage[0] << ": " << constant_decl_opt.branch;
+						throw SemanticsError(sstr.str());
+					}
+				}
+			}
+
+			// Correct the order of the list.
+			std::reverse(constant_assignments.begin() + 1, constant_assignments.end());
+
+			// Handle the constant assignments.
+			for (const ConstantAssignment *next_constant_assignment : constant_assignments) {
+				const LexemeIdentifier &identifier          = grammar.lexemes.at(next_constant_assignment->identifier).get_identifier(); (void) identifier;
+				const LexemeOperator   &equals_operator0    = grammar.lexemes.at(next_constant_assignment->equals_operator0).get_operator(); (void) equals_operator0;
+				const Expression       &expression          = grammar.expression_storage.at(next_constant_assignment->expression); (void) expression;
+				const LexemeOperator   &semicolon_operator0 = grammar.lexemes.at(next_constant_assignment->semicolon_operator0).get_operator(); (void) semicolon_operator0;
+
+				// Calculate the constant value.
+				ConstantValue constant_value = is_expression_constant(next_constant_assignment->expression, top_level_scope);
+
+				// Fail if this is not a static value.
+				if (!constant_value.is_static()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze: error (line "
+						<< identifier.line << " col " << identifier.column
+						<< "): a non-constant expression was found where a constant expression was expected."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// If this is a string, add it to our collection of strings constants.
+				if (constant_value.is_string()) {
+					string_constants.insert(constant_value.get_string_copy());
+				}
+
+				// Add this constant to the top-level scope.
+				if (top_level_scope.has(identifier.text)) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze: error (line "
+						<< identifier.line << " col " << identifier.column
+						<< "): redefinition of constant ``" << identifier.text << "\""
+						;
+					throw SemanticsError(sstr.str());
+				}
+				top_level_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Static(constant_value))});
+			}
+
+			// Done handling constant part.
 			break;
 		}
 
