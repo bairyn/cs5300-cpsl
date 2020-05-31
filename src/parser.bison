@@ -288,7 +288,7 @@ var_or_ref:
 ;
 
 body:
-	constant_decl_opt type_decl_opt block {$$ = pg.new_body($1, $2, $3);}
+	constant_decl_opt type_decl_opt var_decl_opt block {$$ = pg.new_body($1, $2, $3, $4);}
 ;
 
 block:
