@@ -3,7 +3,7 @@
 #include <optional>      // std::optional
 #include <sstream>       // std::ostringstream
 #include <string>        // std::string
-#include <utility>       // std::as_const, std::move
+#include <utility>       // std::as_const, std::move, std::pair
 #include <variant>       // std::get, std::monostate
 
 #include "grammar.hh"
@@ -451,6 +451,648 @@ std::string Semantics::ConstantValue::get_tag_repr(tag_t tag) {
 }
 
 std::string Semantics::ConstantValue::get_tag_repr() const {
+	return get_tag_repr(tag);
+}
+
+Semantics::Type::Base::Base()
+	{}
+
+Semantics::Type::Base::Base(const std::string &identifier, bool fixed_width, uint32_t size)
+	: identifier(identifier)
+	, fixed_width(fixed_width)
+	, size(size)
+	{}
+
+Semantics::Type::Base::Base(std::string &&identifier, bool fixed_width, uint32_t size)
+	: identifier(std::move(identifier))
+	, fixed_width(fixed_width)
+	, size(size)
+	{}
+
+Semantics::Type::Primitive::Primitive()
+	{}
+
+Semantics::Type::Primitive::Primitive(const Base &base, tag_t tag)
+	: Base(base)
+	, tag(tag)
+	{}
+
+Semantics::Type::Primitive::Primitive(Base &&base, tag_t tag)
+	: Base(std::move(base))
+	, tag(tag)
+	{}
+
+Semantics::Type::Primitive::Primitive(tag_t tag)
+	: tag(tag)
+	{}
+
+bool Semantics::Type::Primitive::is_integer() const {
+	switch(tag) {
+		case integer_tag:
+			return true;
+		case char_tag:
+		case boolean_tag:
+		case string_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::Primitive::is_integer: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::Type::Primitive::is_char() const {
+	switch(tag) {
+		case integer_tag:
+			return false;
+		case char_tag:
+			return true;
+		case boolean_tag:
+		case string_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::Primitive::is_char: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::Type::Primitive::is_boolean() const {
+	switch(tag) {
+		case integer_tag:
+		case char_tag:
+			return false;
+		case boolean_tag:
+			return true;
+		case string_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::Primitive::is_boolean: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::Type::Primitive::is_string() const {
+	switch(tag) {
+		case integer_tag:
+		case char_tag:
+		case boolean_tag:
+			return false;
+		case string_tag:
+			return true;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::Primitive::is_string: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+// | Return "integer", "char", "boolean", or "string".
+std::string Semantics::Type::Primitive::get_tag_repr(tag_t tag) {
+	switch(tag) {
+		case integer_tag:
+			return "integer";
+		case char_tag:
+			return "char";
+		case boolean_tag:
+			return "boolean";
+		case string_tag:
+			return "string";
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::Primitive::get_tag_repr: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+std::string Semantics::Type::Primitive::get_tag_repr() const {
+	return get_tag_repr(tag);
+}
+
+Semantics::Type::Simple::Simple()
+	{}
+
+#if 0
+Semantics::Type::Simple::Simple(const Base &base, const Type *referent)
+	: Base(base)
+	, referent(referent)
+	{}
+
+Semantics::Type::Simple::Simple(Base &&base, const Type *referent)
+	: Base(std::move(base))
+	, referent(referent)
+	{}
+#endif /* #if 0 */
+
+Semantics::Type::Simple::Simple(const std::string &identifier, const Type *referent)
+	: Base(identifier, referent->get_fixed_width(), referent->get_size())
+	, referent(referent)
+	{}
+
+Semantics::Type::Simple::Simple(const std::string &identifier, const Type *referent, const IdentifierScope &identifier_scope)
+	: Base(identifier, identifier_scope.get(referent->get_identifier_copy()).get_type().get_fixed_width(), identifier_scope.get(referent->get_identifier_copy()).get_type().get_size())
+	, referent(referent)
+	{}
+
+// | Resolve a chain of aliases.
+// TODO: check for cycles and null.
+const Semantics::Type &Semantics::Type::Simple::resolve_type() const {
+	const Type *type = referent;
+	while (type->is_simple()) {
+		type = type->get_simple().referent;
+	}
+	return *type;
+}
+
+Semantics::Type::Record::Record()
+	{}
+
+Semantics::Type::Record::Record(const std::string &identifier, const std::vector<std::pair<std::string, const Type *>> &fields)
+	: Record(identifier, std::move(std::vector<std::pair<std::string, const Type *>>(fields)))
+	{}
+
+Semantics::Type::Record::Record(const std::string &identifier, std::vector<std::pair<std::string, const Type *>> &&fields)
+	: fields(fields)
+{
+	this->identifier = identifier;
+	fixed_width = true;
+	size = 0;
+	for (const std::pair<std::string, const Type *> &field : this->fields) {
+		// TODO: check for overflow.
+		const std::string &field_identifier = field.first;
+		const Type        &field_type       = *field.second;
+
+		if (!field_type.get_fixed_width()) {
+			fixed_width = false;
+		}
+
+		size += field_type.get_size();
+	}
+}
+
+Semantics::Type::Array::Array()
+	{}
+
+Semantics::Type::Array::Array(const std::string &identifier, const Type *base_type, uint32_t min_index, uint32_t max_index)
+	: base_type(base_type)
+	, min_index(min_index)
+	, max_index(max_index)
+{
+	this->identifier = identifier;
+	fixed_width = base_type->get_fixed_width();
+	if (min_index > max_index) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Type::Array::Array: attempt to construct an array with a minimum index greater than the maximum: " << min_index << " > " << max_index << ".";
+		throw SemanticsError(sstr.str());
+	}
+	// TODO: check for overflow.
+	size = get_index_range() * base_type->get_size();
+}
+
+uint32_t Semantics::Type::Array::get_min_index() const {
+	return min_index;
+}
+
+uint32_t Semantics::Type::Array::get_max_index() const {
+	return max_index;
+}
+
+uint32_t Semantics::Type::Array::get_begin_index() const {
+	return min_index;
+}
+
+uint32_t Semantics::Type::Array::get_end_index() const {
+	// TODO: check for overflow (and/or when constructing)
+	return max_index + 1;
+}
+
+uint32_t Semantics::Type::Array::get_index_range() const {
+	return get_end_index() - get_begin_index();
+}
+
+uint32_t Semantics::Type::Array::get_offset_of_index(uint32_t index) const {
+	if (index < get_begin_index()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Type::Array::get_offset_of_index: attempt to obtain offset of out-of-bounds array index: " << index << " < " << get_begin_index() << ".";
+		throw SemanticsError(sstr.str());
+	}
+
+	if (index >= get_end_index()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Type::Array::get_offset_of_index: attempt to obtain offset of out-of-bounds array index: " << index << " >= " << get_end_index() << ".";
+		throw SemanticsError(sstr.str());
+	}
+
+	return index - get_begin_index();
+}
+
+uint32_t Semantics::Type::Array::get_index_of_offset(uint32_t offset) const {
+	if (get_index_range() <= 0) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Type::Array::get_index_of_offset: attempt to obtain array index of an empty array.";
+		throw SemanticsError(sstr.str());
+	}
+
+	if (offset >= get_index_range()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Type::Array::get_index_of_offset: attempt to obtain array index of out-of-bounds offset: " << offset << " >= " << get_index_range() << ".";
+		throw SemanticsError(sstr.str());
+	}
+
+	return get_begin_index() + offset;
+}
+
+Semantics::Type::Type()
+	{}
+
+Semantics::Type::Type(tag_t tag, const data_t &data)
+	: tag(tag)
+	, data(data)
+	{}
+
+Semantics::Type::Type(tag_t tag, data_t &&data)
+	: tag(tag)
+	, data(std::move(data))
+	{}
+
+const Semantics::Type::Base &Semantics::Type::get_base() const {
+	switch(tag) {
+		case primitive_tag:
+			return get_primitive();
+		case simple_tag:
+			return get_simple();
+		case record_tag:
+			return get_record();
+		case array_tag:
+			return get_array();
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::get_base: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+std::string Semantics::Type::get_identifier_copy() const {
+	return std::string(std::as_const(get_base().identifier));
+}
+
+bool Semantics::Type::get_fixed_width() const {
+	return get_base().fixed_width;
+}
+
+uint32_t Semantics::Type::get_size() const {
+	return get_base().size;
+}
+
+Semantics::Type::Base &&Semantics::Type::get_base() {
+	switch(tag) {
+		case primitive_tag:
+			return get_primitive();
+		case simple_tag:
+			return get_simple();
+		case record_tag:
+			return get_record();
+		case array_tag:
+			return get_array();
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::get_base: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+Semantics::Type::Type(const Primitive &primitive)
+	: Type(primitive_tag, primitive)
+	{}
+
+Semantics::Type::Type(const Simple &simple)
+	: Type(simple_tag, simple)
+	{}
+
+Semantics::Type::Type(const Record &record)
+	: Type(record_tag, record)
+	{}
+
+Semantics::Type::Type(const Array &array)
+	: Type(array_tag, array)
+	{}
+
+Semantics::Type::Type(Primitive &&primitive)
+	: Type(primitive_tag, std::move(primitive))
+	{}
+
+Semantics::Type::Type(Simple &&simple)
+	: Type(simple_tag, std::move(simple))
+	{}
+
+Semantics::Type::Type(Record &&record)
+	: Type(record_tag, std::move(record))
+	{}
+
+Semantics::Type::Type(Array &&array)
+	: Type(array_tag, std::move(array))
+	{}
+
+bool Semantics::Type::is_primitive() const {
+	switch(tag) {
+		case primitive_tag:
+			return true;
+		case simple_tag:
+		case record_tag:
+		case array_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::is_primitive: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::Type::is_simple() const {
+	switch(tag) {
+		case primitive_tag:
+			return false;
+		case simple_tag:
+			return true;
+		case record_tag:
+		case array_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::is_simple: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::Type::is_record() const {
+	switch(tag) {
+		case primitive_tag:
+		case simple_tag:
+			return false;
+		case record_tag:
+			return true;
+		case array_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::is_record: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::Type::is_array() const {
+	switch(tag) {
+		case primitive_tag:
+		case simple_tag:
+		case record_tag:
+			return false;
+		case array_tag:
+			return true;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::is_array: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+// | The tags must be correct, or else an exception will be thrown, including for set_*.
+const Semantics::Type::Primitive &Semantics::Type::get_primitive() const {
+	switch(tag) {
+		case primitive_tag:
+		case simple_tag:
+		case record_tag:
+		case array_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::get_primitive: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_primitive()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Type::get_primitive: binding has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<Primitive>(data);
+}
+
+const Semantics::Type::Simple &Semantics::Type::get_simple() const {
+	switch(tag) {
+		case primitive_tag:
+		case simple_tag:
+		case record_tag:
+		case array_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::get_simple: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_simple()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Type::get_simple: binding has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<Simple>(data);
+}
+
+const Semantics::Type::Record &Semantics::Type::get_record() const {
+	switch(tag) {
+		case primitive_tag:
+		case simple_tag:
+		case record_tag:
+		case array_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::get_record: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_record()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Type::get_record: binding has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<Record>(data);
+}
+
+const Semantics::Type::Array &Semantics::Type::get_array() const {
+	switch(tag) {
+		case primitive_tag:
+		case simple_tag:
+		case record_tag:
+		case array_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::get_array: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_array()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Type::get_array: binding has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<Array>(data);
+}
+
+// | The tags must be correct, or else an exception will be thrown, including for set_*.
+Semantics::Type::Primitive &&Semantics::Type::get_primitive() {
+	switch(tag) {
+		case primitive_tag:
+		case simple_tag:
+		case record_tag:
+		case array_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::get_primitive: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_primitive()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Type::get_primitive: binding has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<Primitive>(std::move(data));
+}
+
+Semantics::Type::Simple &&Semantics::Type::get_simple() {
+	switch(tag) {
+		case primitive_tag:
+		case simple_tag:
+		case record_tag:
+		case array_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::get_simple: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_simple()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Type::get_simple: binding has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<Simple>(std::move(data));
+}
+
+Semantics::Type::Record &&Semantics::Type::get_record() {
+	switch(tag) {
+		case primitive_tag:
+		case simple_tag:
+		case record_tag:
+		case array_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::get_record: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_record()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Type::get_record: binding has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<Record>(std::move(data));
+}
+
+Semantics::Type::Array &&Semantics::Type::get_array() {
+	switch(tag) {
+		case primitive_tag:
+		case simple_tag:
+		case record_tag:
+		case array_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::get_array: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_array()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Type::get_array: binding has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<Array>(std::move(data));
+}
+
+// | Return "primitive", "simple", "record", or "array".
+std::string Semantics::Type::get_tag_repr(tag_t tag) {
+	switch(tag) {
+		case primitive_tag:
+			return "primitive";
+		case simple_tag:
+			return "simple";
+		case record_tag:
+			return "record";
+		case array_tag:
+			return "array";
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::get_tag_repr: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+std::string Semantics::Type::get_tag_repr() const {
 	return get_tag_repr(tag);
 }
 
@@ -2229,6 +2871,8 @@ void Semantics::analyze() {
 
 		case ConstantDeclOpt::value_branch: {
 			// TODO
+			//CONST_KEYWORD constant_assignment constant_assignment_list {$$ = pg.new_constant_decl($1, $2, $3);}
+			// Unpack the constant declarations.
 			break;
 		}
 

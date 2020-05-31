@@ -5,6 +5,7 @@
 #include <map>        // std::map
 #include <optional>   // std::optional
 #include <string>     // std::string
+#include <utility>    // std::pair
 #include <vector>     // std::vector
 #include <variant>    // std::monostate, std::variant
 
@@ -92,6 +93,157 @@ public:
 		std::string get_tag_repr() const;
 	};
 
+	// | A representation of a type.  Another tagged union.
+	class IdentifierScope;  // Forward declare class IdentifierScope.
+	class Type {
+	public:
+		class Base {
+		public:
+			Base();
+			Base(const std::string  &identifier, bool fixed_width = true, uint32_t size = 0);
+			Base(std::string       &&identifier, bool fixed_width = true, uint32_t size = 0);
+			std::string identifier;  // In the scope in which this type is visible, which identifier refers to this type?
+			bool fixed_width;        // Are values of this type constrained to a fixed size?
+			uint32_t size;           // How many bytes do values of this type occupy in memory?  Ignored if !fixed_width.
+		};
+
+		class Primitive : public Base {
+		public:
+			enum tag_e {
+				null_tag     = 0,
+				integer_tag  = 1,
+				char_tag     = 2,
+				boolean_tag  = 3,
+				string_tag   = 4,
+				num_tags     = 4,
+			};
+			typedef enum tag_e tag_t;
+
+			Primitive();
+			Primitive(const Base &base, tag_t tag);
+			Primitive(Base &&base, tag_t tag);
+			Primitive(tag_t tag);
+			tag_t tag;
+
+			bool is_integer() const;
+			bool is_char() const;
+			bool is_boolean() const;
+			bool is_string() const;
+
+			// | Return "integer", "char", "boolean", or "string".
+			static std::string get_tag_repr(tag_t tag);
+			std::string get_tag_repr() const;
+		};
+
+		class Simple : public Base {
+		public:
+			Simple();
+#if 0
+			Simple(const Base &base, const Type *referent);
+			Simple(Base &&base, const Type *referent);
+#endif /* #if 0 */
+			// | referent must be non-null; this is not checked!  (TODO: check)
+			Simple(const std::string &identifier, const Type *referent);
+			// | referent must be non-null (not checked!), its identifier must be in scope, and the identifier must refer to a type.
+			Simple(const std::string &identifier, const Type *referent, const IdentifierScope &identifier_scope);
+			const Type *referent;
+
+			// | Resolve a chain of aliases.
+			//
+			// This is not checked for cycles!
+			// TODO: check for cycles and null.
+			const Type &resolve_type() const;
+		};
+
+		class Record : public Base {
+		public:
+			Record();
+			Record(const std::string &identifier, const std::vector<std::pair<std::string, const Type *>> &fields);
+			Record(const std::string &identifier, std::vector<std::pair<std::string, const Type *>> &&fields);
+			// | Ordered list of identifier, type pairs.
+			std::vector<std::pair<std::string, const Type *>> fields;
+		};
+
+		class Array : public Base {
+		public:
+			Array();
+			Array(const std::string &identifier, const Type *base_type, uint32_t min_index, uint32_t max_index);
+
+			const Type *base_type;  // ^ This is an array of values of what type?
+			uint32_t min_index;
+			uint32_t max_index;
+
+			uint32_t get_min_index() const;
+			uint32_t get_max_index() const;
+			uint32_t get_begin_index() const;
+			uint32_t get_end_index() const;
+			uint32_t get_index_range() const;
+			uint32_t get_offset_of_index(uint32_t index) const;
+			uint32_t get_index_of_offset(uint32_t offset) const;
+		};
+
+		enum tag_e {
+			null_tag      = 0,
+			primitive_tag = 1,  // ^ integer, char, boolean, or string.
+			simple_tag    = 2,  // ^ An alias of another type.
+			record_tag    = 3,  // ^ A record type.
+			array_tag     = 4,  // ^ An array type.
+			num_tags      = 4,
+		};
+		typedef enum tag_e tag_t;
+
+		using data_t = std::variant<
+			std::monostate,
+			Primitive,
+			Simple,
+			Record,
+			Array
+		>;
+
+		Type();
+		Type(tag_t tag, const data_t &data);
+		Type(tag_t tag, data_t &&data);
+		tag_t tag;
+		data_t data;
+
+		const Base &get_base() const;
+		Base &&get_base();
+
+		std::string get_identifier_copy() const;
+		bool        get_fixed_width() const;
+		uint32_t    get_size() const;
+
+		explicit Type(const Primitive &primitive);
+		explicit Type(const Simple    &simple);
+		explicit Type(const Record    &record);
+		explicit Type(const Array     &array);
+
+		explicit Type(Primitive &&primitive);
+		explicit Type(Simple    &&simple);
+		explicit Type(Record    &&record);
+		explicit Type(Array     &&array);
+
+		bool is_primitive() const;
+		bool is_simple() const;
+		bool is_record() const;
+		bool is_array() const;
+
+		// | The tags must be correct, or else an exception will be thrown, including for set_*.
+		const Primitive &get_primitive() const;
+		const Simple    &get_simple()    const;
+		const Record    &get_record()    const;
+		const Array     &get_array()     const;
+
+		Primitive &&get_primitive();
+		Simple    &&get_simple();
+		Record    &&get_record();
+		Array     &&get_array();
+
+		// | Return "primitive", "simple", "record", or "array".
+		static std::string get_tag_repr(tag_t tag);
+		std::string get_tag_repr() const;
+	};
+
 	// | Objects represent a collection of identifiers in scope and what they refer to.
 	class IdentifierScope {
 	public:
@@ -121,10 +273,7 @@ public:
 			public:
 				// TODO
 			};
-			class Type {
-			public:
-				// TODO
-			};
+			using Type = ::Semantics::Type;
 			class Var {
 			public:
 				// TODO
@@ -189,15 +338,6 @@ public:
 
 		std::optional<IdentifierBinding> lookup_copy(std::string identifier) const;
 	};
-
-	/*
-	class TypeDecl {
-	public:
-		TypeDecl();
-		uint64_t type_decl;
-		uint32_t size;
-	};
-	*/
 
 	Semantics();
 	Semantics(bool auto_analyze);
