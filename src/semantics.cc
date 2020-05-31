@@ -119,7 +119,25 @@ Semantics::Output::Output()
 	{}
 
 bool Semantics::Output::is_normalized() const {
-	return unexpanded_symbols.size() <= 0 && ((sections.size() == 0) == (normalized_lines.size() == 0));
+	if (unexpanded_symbols.size() > 0) {
+		// There are unexpanded symbols.
+		return false;
+	}
+
+	// It's normalized if both normalized_output and sections are available,
+	// or the entire output is empty.
+	bool empty_normalized = normalized_lines.size() <= 0;
+	bool empty_sections = true;
+	if (sections.size() > 0) {
+		for (const std::vector<std::string> &section : std::as_const(sections)) {
+			if (section.size() > 0) {
+				empty_sections = false;
+				break;
+			}
+		}
+	}
+
+	return empty_normalized == empty_sections;
 }
 
 // | Return a new output, expanding unexpanded symbols, so that they
@@ -255,6 +273,14 @@ Semantics::Output Semantics::Output::normalize(const std::set<std::string> &addi
 #endif /* #if 0 */
 		}
 
+		// Make sure the new output is actually normalized, or else get_normalized_lines_copy() may loop infinitely.
+		if (!normalized_output.is_normalized()) {
+			std::ostringstream sstr;
+			sstr << "Semantics::Output::normalize: internal error: normalize() produced output that was not detected as normalized.";
+			throw SemanticsError(sstr.str());
+		}
+
+		// Return the new normalized output.
 		return normalized_output;
 	}
 }
