@@ -2818,10 +2818,12 @@ bool Semantics::would_addition_overflow(int32_t a, int32_t b) {
 
 	if (smaller >= 0) {
 		// positive + positive
-		return std::numeric_limits<int32_t>::max() - smaller > larger;
+		// a + b > max <=> b > max - a
+		return std::numeric_limits<int32_t>::max() - smaller < larger;
 	} else if (larger < 0) {
 		// negative + negative
-		return std::numeric_limits<int32_t>::min() - larger < smaller;
+		// a + b < min <=> b < min - a
+		return std::numeric_limits<int32_t>::min() - larger > smaller;
 	} else {
 		// positive + negative or negative + positive
 		return false;
