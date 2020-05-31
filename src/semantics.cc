@@ -2,6 +2,7 @@
 #include <cassert>       // assert
 #include <limits>        // std::numeric_limits
 #include <optional>      // std::optional
+#include <set>           // std::set
 #include <sstream>       // std::ostringstream
 #include <string>        // std::string
 #include <utility>       // std::as_const, std::move, std::pair
@@ -28,6 +29,8 @@ SemanticsError::SemanticsError(const std::string &message)
  * Semantics types.
  */
 
+const bool Semantics::combine_identifier_namespaces = CPSL_CC_SEMANTICS_COMBINE_IDENTIFIER_NAMESPACES;
+
 Semantics::ConstantValue::ConstantValue()
 	: tag(null_tag)
 	, data(std::monostate())
@@ -44,6 +47,9 @@ Semantics::ConstantValue::ConstantValue(tag_t tag, data_t &&data)
 	{}
 
 const Semantics::ConstantValue Semantics::ConstantValue::dynamic(Semantics::ConstantValue::dynamic_tag, Semantics::ConstantValue::Dynamic());
+
+const Semantics::ConstantValue Semantics::ConstantValue::true_constant  {static_cast<bool>(true)};
+const Semantics::ConstantValue Semantics::ConstantValue::false_constant {static_cast<bool>(false)};
 
 Semantics::ConstantValue::ConstantValue(int32_t integer)
 	: tag(integer_tag)
@@ -513,6 +519,26 @@ Semantics::Type::Primitive::Primitive(tag_t tag)
 	: tag(tag)
 	{}
 
+const Semantics::Type::Primitive Semantics::Type::Primitive::integer_type {
+	{"integer", true, 4},
+	Semantics::Type::Primitive::integer_tag,
+};
+
+const Semantics::Type::Primitive Semantics::Type::Primitive::char_type {
+	{"char", true, 1},
+	Semantics::Type::Primitive::char_tag,
+};
+
+const Semantics::Type::Primitive Semantics::Type::Primitive::boolean_type {
+	{"boolean", true, 1},
+	Semantics::Type::Primitive::boolean_tag,
+};
+
+const Semantics::Type::Primitive Semantics::Type::Primitive::string_type {
+	{"string", false, 0},
+	Semantics::Type::Primitive::string_tag,
+};
+
 bool Semantics::Type::Primitive::is_integer() const {
 	switch(tag) {
 		case integer_tag:
@@ -611,25 +637,25 @@ Semantics::Type::Simple::Simple()
 	{}
 
 #if 0
-Semantics::Type::Simple::Simple(const Base &base, const Type *referent)
+Semantics::Type::Simple::Simple(const Base &base, const Type &referent)
 	: Base(base)
-	, referent(referent)
+	, referent(&referent)
 	{}
 
-Semantics::Type::Simple::Simple(Base &&base, const Type *referent)
+Semantics::Type::Simple::Simple(Base &&base, const Type &referent)
 	: Base(std::move(base))
-	, referent(referent)
+	, referent(&referent)
 	{}
 #endif /* #if 0 */
 
-Semantics::Type::Simple::Simple(const std::string &identifier, const Type *referent)
-	: Base(identifier, referent->get_fixed_width(), referent->get_size())
-	, referent(referent)
+Semantics::Type::Simple::Simple(const std::string &identifier, const Type &referent)
+	: Base(identifier, referent.get_fixed_width(), referent.get_size())
+	, referent(&referent)
 	{}
 
-Semantics::Type::Simple::Simple(const std::string &identifier, const Type *referent, const IdentifierScope &identifier_scope)
-	: Base(identifier, identifier_scope.get(referent->get_identifier_copy()).get_type().get_fixed_width(), identifier_scope.get(referent->get_identifier_copy()).get_type().get_size())
-	, referent(referent)
+Semantics::Type::Simple::Simple(const std::string &identifier, const Type &referent, const IdentifierScope &identifier_type_scope)
+	: Base(identifier, identifier_type_scope.get(referent.get_identifier_copy()).get_type().get_fixed_width(), identifier_type_scope.get(referent.get_identifier_copy()).get_type().get_size())
+	, referent(&referent)
 	{}
 
 // | Resolve a chain of aliases.
@@ -645,12 +671,13 @@ const Semantics::Type &Semantics::Type::Simple::resolve_type() const {
 Semantics::Type::Record::Record()
 	{}
 
-Semantics::Type::Record::Record(const std::string &identifier, const std::vector<std::pair<std::string, const Type *>> &fields)
-	: Record(identifier, std::move(std::vector<std::pair<std::string, const Type *>>(fields)))
+Semantics::Type::Record::Record(const std::string &identifier, const std::vector<std::pair<std::string, const Type *>> &fields, IdentifierScope &anonymous_storage)
+	: Record(identifier, std::move(std::vector<std::pair<std::string, const Type *>>(fields)), anonymous_storage)
 	{}
 
-Semantics::Type::Record::Record(const std::string &identifier, std::vector<std::pair<std::string, const Type *>> &&fields)
+Semantics::Type::Record::Record(const std::string &identifier, std::vector<std::pair<std::string, const Type *>> &&fields, IdentifierScope &anonymous_storage)
 	: fields(fields)
+	, anonymous_storage(&anonymous_storage)
 {
 	this->identifier = identifier;
 	fixed_width = true;
@@ -671,36 +698,49 @@ Semantics::Type::Record::Record(const std::string &identifier, std::vector<std::
 Semantics::Type::Array::Array()
 	{}
 
-Semantics::Type::Array::Array(const std::string &identifier, const Type *base_type, uint32_t min_index, uint32_t max_index)
+Semantics::Type::Array::Array(const std::string &identifier, const Type *base_type, int32_t min_index, int32_t max_index, IdentifierScope &anonymous_storage)
 	: base_type(base_type)
 	, min_index(min_index)
 	, max_index(max_index)
+	, anonymous_storage(&anonymous_storage)
 {
 	this->identifier = identifier;
 	fixed_width = base_type->get_fixed_width();
 	if (min_index > max_index) {
 		std::ostringstream sstr;
-		sstr << "Semantics::Type::Array::Array: attempt to construct an array with a minimum index greater than the maximum: " << min_index << " > " << max_index << ".";
+		if (identifier.size() <= 0) {
+			sstr << "Semantics::Type::Array::Array: attempt to construct an anonymous array type with a minimum index greater than the maximum: " << min_index << " > " << max_index << ".";
+		} else {
+			sstr << "Semantics::Type::Array::Array: attempt to construct an array type (``" << identifier << "\") with a minimum index greater than the maximum: " << min_index << " > " << max_index << ".";
+		}
 		throw SemanticsError(sstr.str());
 	}
-	// TODO: check for overflow.
+	if (would_addition_overflow(get_index_range(), 1) || would_multiplication_overflow(get_index_range() + 1, base_type->get_size())) {
+		std::ostringstream sstr;
+		if (identifier.size() <= 0) {
+			sstr << "Semantics::Type::Array::Array: attempt to construct an anonymous array type with a size that is too large: some indices would be too big to fit into a 32-bit signed integer.";
+		} else {
+			sstr << "Semantics::Type::Array::Array: attempt to construct an array type (``" << identifier << "\") with a size that is too large: some indices would be too big to fit into a 32-bit signed integer.";
+		}
+		sstr << "  Index range: " << get_index_range() << "; base type size: " << base_type->get_size();
+		throw SemanticsError(sstr.str());
+	}
 	size = get_index_range() * base_type->get_size();
 }
 
-uint32_t Semantics::Type::Array::get_min_index() const {
+int32_t Semantics::Type::Array::get_min_index() const {
 	return min_index;
 }
 
-uint32_t Semantics::Type::Array::get_max_index() const {
+int32_t Semantics::Type::Array::get_max_index() const {
 	return max_index;
 }
 
-uint32_t Semantics::Type::Array::get_begin_index() const {
+int32_t Semantics::Type::Array::get_begin_index() const {
 	return min_index;
 }
 
-uint32_t Semantics::Type::Array::get_end_index() const {
-	// TODO: check for overflow (and/or when constructing)
+int32_t Semantics::Type::Array::get_end_index() const {
 	return max_index + 1;
 }
 
@@ -708,7 +748,7 @@ uint32_t Semantics::Type::Array::get_index_range() const {
 	return get_end_index() - get_begin_index();
 }
 
-uint32_t Semantics::Type::Array::get_offset_of_index(uint32_t index) const {
+uint32_t Semantics::Type::Array::get_offset_of_index(int32_t index) const {
 	if (index < get_begin_index()) {
 		std::ostringstream sstr;
 		sstr << "Semantics::Type::Array::get_offset_of_index: attempt to obtain offset of out-of-bounds array index: " << index << " < " << get_begin_index() << ".";
@@ -724,7 +764,7 @@ uint32_t Semantics::Type::Array::get_offset_of_index(uint32_t index) const {
 	return index - get_begin_index();
 }
 
-uint32_t Semantics::Type::Array::get_index_of_offset(uint32_t offset) const {
+int32_t Semantics::Type::Array::get_index_of_offset(uint32_t offset) const {
 	if (get_index_range() <= 0) {
 		std::ostringstream sstr;
 		sstr << "Semantics::Type::Array::get_index_of_offset: attempt to obtain array index of an empty array.";
@@ -752,6 +792,11 @@ Semantics::Type::Type(tag_t tag, data_t &&data)
 	: tag(tag)
 	, data(std::move(data))
 	{}
+
+const Semantics::Type Semantics::Type::integer_type(std::as_const(Primitive::integer_type));
+const Semantics::Type Semantics::Type::char_type(std::as_const(Primitive::char_type));
+const Semantics::Type Semantics::Type::boolean_type(std::as_const(Primitive::boolean_type));
+const Semantics::Type Semantics::Type::string_type(std::as_const(Primitive::string_type));
 
 const Semantics::Type::Base &Semantics::Type::get_base() const {
 	switch(tag) {
@@ -1676,7 +1721,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 	// | Reference to the expression in the grammar tree.
 	uint64_t expression,
 	// | A collection of identifiers of constants available to the scope of the expression.
-	const IdentifierScope &expression_scope
+	const IdentifierScope &expression_constant_scope
 ) {
 	// TODO: assert() or assert(this->verify()) and configure macros to enable
 	// assertions only when debugging is enabled (DEBUG=1 is defined).
@@ -1712,12 +1757,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			// of evaluation is referentially transparent and the parser tree
 			// is left-recursive, check the expression on the right first,
 			// which is more efficient.)
-			ConstantValue right = is_expression_constant(pipe.expression1, expression_scope);
+			ConstantValue right = is_expression_constant(pipe.expression1, expression_constant_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(pipe.expression0, expression_scope);
+			ConstantValue left  = is_expression_constant(pipe.expression0, expression_constant_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -1776,12 +1821,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const Expression            &expression1         = grammar.expression_storage.at(ampersand.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(ampersand.expression1, expression_scope);
+			ConstantValue right = is_expression_constant(ampersand.expression1, expression_constant_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(ampersand.expression0, expression_scope);
+			ConstantValue left  = is_expression_constant(ampersand.expression0, expression_constant_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -1840,12 +1885,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const Expression         &expression1      = grammar.expression_storage.at(equals.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(equals.expression1, expression_scope);
+			ConstantValue right = is_expression_constant(equals.expression1, expression_constant_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(equals.expression0, expression_scope);
+			ConstantValue left  = is_expression_constant(equals.expression0, expression_constant_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -1894,12 +1939,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const Expression         &expression1        = grammar.expression_storage.at(lt_or_gt.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(lt_or_gt.expression1, expression_scope);
+			ConstantValue right = is_expression_constant(lt_or_gt.expression1, expression_constant_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(lt_or_gt.expression0, expression_scope);
+			ConstantValue left  = is_expression_constant(lt_or_gt.expression0, expression_constant_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -1948,12 +1993,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const Expression     &expression1  = grammar.expression_storage.at(le.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(le.expression1, expression_scope);
+			ConstantValue right = is_expression_constant(le.expression1, expression_constant_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(le.expression0, expression_scope);
+			ConstantValue left  = is_expression_constant(le.expression0, expression_constant_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -2002,12 +2047,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const Expression     &expression1  = grammar.expression_storage.at(ge.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(ge.expression1, expression_scope);
+			ConstantValue right = is_expression_constant(ge.expression1, expression_constant_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(ge.expression0, expression_scope);
+			ConstantValue left  = is_expression_constant(ge.expression0, expression_constant_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -2056,12 +2101,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const Expression     &expression1  = grammar.expression_storage.at(lt.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(lt.expression1, expression_scope);
+			ConstantValue right = is_expression_constant(lt.expression1, expression_constant_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(lt.expression0, expression_scope);
+			ConstantValue left  = is_expression_constant(lt.expression0, expression_constant_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -2110,12 +2155,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const Expression     &expression1  = grammar.expression_storage.at(gt.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(gt.expression1, expression_scope);
+			ConstantValue right = is_expression_constant(gt.expression1, expression_constant_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(gt.expression0, expression_scope);
+			ConstantValue left  = is_expression_constant(gt.expression0, expression_constant_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -2164,12 +2209,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const Expression       &expression1    = grammar.expression_storage.at(plus.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(plus.expression1, expression_scope);
+			ConstantValue right = is_expression_constant(plus.expression1, expression_constant_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(plus.expression0, expression_scope);
+			ConstantValue left  = is_expression_constant(plus.expression0, expression_constant_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -2248,12 +2293,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const Expression        &expression1     = grammar.expression_storage.at(minus.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(minus.expression1, expression_scope);
+			ConstantValue right = is_expression_constant(minus.expression1, expression_constant_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(minus.expression0, expression_scope);
+			ConstantValue left  = is_expression_constant(minus.expression0, expression_constant_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -2332,12 +2377,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const Expression        &expression1     = grammar.expression_storage.at(times.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(times.expression1, expression_scope);
+			ConstantValue right = is_expression_constant(times.expression1, expression_constant_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(times.expression0, expression_scope);
+			ConstantValue left  = is_expression_constant(times.expression0, expression_constant_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -2416,12 +2461,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const Expression        &expression1     = grammar.expression_storage.at(slash.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(slash.expression1, expression_scope);
+			ConstantValue right = is_expression_constant(slash.expression1, expression_constant_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(slash.expression0, expression_scope);
+			ConstantValue left  = is_expression_constant(slash.expression0, expression_constant_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -2520,12 +2565,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const Expression          &expression1       = grammar.expression_storage.at(percent.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(percent.expression1, expression_scope);
+			ConstantValue right = is_expression_constant(percent.expression1, expression_constant_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(percent.expression0, expression_scope);
+			ConstantValue left  = is_expression_constant(percent.expression0, expression_constant_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -2604,7 +2649,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const LexemeOperator    &tilde_operator0 = grammar.lexemes.at(tilde.tilde_operator0).get_operator();
 
 			// Is the subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue value = is_expression_constant(tilde.expression, expression_scope);
+			ConstantValue value = is_expression_constant(tilde.expression, expression_constant_scope);
 			if (value.is_dynamic()) {
 				expression_constant_value = value;
 				break;
@@ -2647,7 +2692,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const LexemeOperator         &minus_operator0 = grammar.lexemes.at(unary_minus.minus_operator0).get_operator();
 
 			// Is the subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue value = is_expression_constant(unary_minus.expression, expression_scope);
+			ConstantValue value = is_expression_constant(unary_minus.expression, expression_constant_scope);
 			if (value.is_dynamic()) {
 				expression_constant_value = value;
 				break;
@@ -2709,7 +2754,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const LexemeOperator          &rightparenthesis_operator0 = grammar.lexemes.at(parentheses.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
 
 			// Is the subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue value = is_expression_constant(parentheses.expression, expression_scope);
+			ConstantValue value = is_expression_constant(parentheses.expression, expression_constant_scope);
 			if (value.is_dynamic()) {
 				expression_constant_value = value;
 				break;
@@ -2751,7 +2796,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			}
 
 			// Lookup the identifier binding.
-			std::optional<IdentifierScope::IdentifierBinding> identifier_binding_search = expression_scope.lookup_copy(lexeme_identifier.text);
+			std::optional<IdentifierScope::IdentifierBinding> identifier_binding_search = expression_constant_scope.lookup_copy(lexeme_identifier.text);
 			if (!identifier_binding_search) {
 				std::ostringstream sstr;
 				sstr << "Semantics::is_expression_constant: error (line " << lexeme_identifier.line << " col " << lexeme_identifier.column << "): identifier out of scope when checking for constant lvalue: " << lexeme_identifier.text;
@@ -2804,6 +2849,356 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 	// Cache and return the calculated constant value.
 	is_expression_constant_calculations.insert({expression, ConstantValue(expression_constant_value)});
 	return expression_constant_value;
+}
+
+Semantics::ConstantValue Semantics::is_expression_constant(const Expression &expression, const IdentifierScope &expression_constant_scope) {
+	return is_expression_constant(&expression - &grammar.expression_storage[0], expression_constant_scope);
+}
+
+// | From the parse tree Type, construct a Semantics::Type that represents the type.
+Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::Type &type, const IdentifierScope &type_constant_scope, const IdentifierScope &type_type_scope, IdentifierScope &anonymous_storage) {
+	switch (type.branch) {
+		case ::Type::simple_branch: {
+			// Unpack the simple_type.
+			const ::Type::Simple   &simple            = grammar.type_simple_storage.at(type.data);
+			const SimpleType       &simple_type       = grammar.simple_type_storage.at(simple.simple_type);
+			const LexemeIdentifier &simple_identifier = grammar.lexemes.at(simple_type.identifier).get_identifier();
+
+			// Check for redefinitions.  (Redundant; this has already been checked, with better location information.)
+			if (type_type_scope.has(identifier)) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::analyze_type: error (near line "
+					<< simple_identifier.line << " col " << simple_identifier.column
+					<< "): redefinition of type ``" << identifier << "\"."
+					<< "  (Internal error: this should already have been detected by now.)"
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Lookup the referent.
+			if (!type_type_scope.has(simple_identifier.text)) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::analyze_type: error (line "
+					<< simple_identifier.line << " col " << simple_identifier.column
+					<< "): couldn't find type ``" << simple_identifier.text
+					<< "\" when defining type alias ``" << identifier
+					<< "\"."
+					;
+				throw SemanticsError(sstr.str());
+			}
+			// type_type_scope should only have Type identifier bindings.
+			const IdentifierScope::IdentifierBinding::Type &referent_binding = type_type_scope.get(simple_identifier.text).get_type();
+			// The pointer's lifetime should not exceed the lifetime of the referent, normally inside the identifier scope.
+			const Type &referent = referent_binding;
+
+			// Construct the Simple type.
+			Type::Simple semantics_simple(identifier, referent);
+
+			// Return the constructed simple type.
+			return Type(semantics_simple);
+		}
+
+		case ::Type::record_branch: {
+			// Unpack the record_type.
+			const ::Type::Record              &record                         = grammar.type_record_storage.at(type.data);
+			const RecordType                  &record_type                    = grammar.record_type_storage.at(record.record_type);
+			const LexemeKeyword               &record_keyword0                = grammar.lexemes.at(record_type.record_keyword0).get_keyword(); (void) record_keyword0;
+			const TypedIdentifierSequenceList &typed_identifier_sequence_list = grammar.typed_identifier_sequence_list_storage.at(record_type.typed_identifier_sequence_list);
+			const LexemeKeyword               &end_keyword0                   = grammar.lexemes.at(record_type.end_keyword0).get_keyword(); (void) end_keyword0;
+
+			// Check for redefinitions.  (Redundant; this has already been checked.)
+			if (type_type_scope.has(identifier)) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::analyze_type: error (line "
+					<< record_keyword0.line << " col " << record_keyword0.column
+					<< "): redefinition of type ``" << identifier << "\"."
+					<< "  (Internal error: this should already have been detected by now.)"
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Prepare the fields vector.
+			std::set<std::string>                             field_identifiers;
+			std::vector<std::pair<std::string, const Type *>> fields;
+
+			// Collect the typed identifier sequences in the list.
+			std::vector<const TypedIdentifierSequence *> typed_identifier_sequences;
+			bool reached_end = false;
+			for (const TypedIdentifierSequenceList *last_list = &typed_identifier_sequence_list; !reached_end; ) {
+				// Unpack the last list encountered.
+				switch(last_list->branch) {
+					case TypedIdentifierSequenceList::empty_branch: {
+						// We're done.
+						// (No need to unpack the empty branch.)
+						reached_end = true;
+						break;
+					}
+
+					case TypedIdentifierSequenceList::cons_branch: {
+						// Unpack the list.
+						const TypedIdentifierSequenceList::Cons &last_typed_identifier_sequence_list_cons = grammar.typed_identifier_sequence_list_cons_storage.at(last_list->data);
+						const TypedIdentifierSequenceList       &last_typed_identifier_sequence_list      = grammar.typed_identifier_sequence_list_storage.at(last_typed_identifier_sequence_list_cons.typed_identifier_sequence_list);
+						const TypedIdentifierSequence           &last_typed_identifier_sequence           = grammar.typed_identifier_sequence_storage.at(last_typed_identifier_sequence_list_cons.typed_identifier_sequence);
+
+						// Add the constant assignment.
+						typed_identifier_sequences.push_back(&last_typed_identifier_sequence);
+						last_list = &last_typed_identifier_sequence_list;
+
+						// Loop.
+						break;
+					}
+
+					// Unrecognized branch.
+					default: {
+						std::ostringstream sstr;
+						sstr << "Semantics::analyze_type: internal error: invalid typed_identifier_sequence_list branch at index " << last_list - &grammar.typed_identifier_sequence_list_storage[0] << ": " << last_list->branch;
+						throw SemanticsError(sstr.str());
+					}
+				}
+			}
+
+			// Correct the order of the list.
+			std::reverse(typed_identifier_sequences.begin(), typed_identifier_sequences.end());
+
+			// Handle the typed identifier sequences.
+			for (const TypedIdentifierSequence *next_typed_identifier_sequence : typed_identifier_sequences) {
+				const IdentList      &ident_list          = grammar.ident_list_storage.at(next_typed_identifier_sequence->ident_list);
+				const LexemeOperator &colon_operator0     = grammar.lexemes.at(next_typed_identifier_sequence->colon_operator0).get_operator(); (void) colon_operator0;
+				const ::Type         &next_type           = grammar.type_storage.at(next_typed_identifier_sequence->type);
+				const LexemeOperator &semicolon_operator0 = grammar.lexemes.at(next_typed_identifier_sequence->semicolon_operator0).get_operator(); (void) semicolon_operator0;
+
+				// Get a copy of the subtype or construct a new anonymous subtype using "anonymous_storage".
+				const Type *next_semantics_type;
+				// Branch on next_type.  If it's in the "simple" type alias
+				// format, it should refer to an existing type, although it's
+				// not a type alias.  Otherwise, create an anonymous type.
+				if (next_type.branch == ::Type::simple_branch) {
+					const ::Type::Simple   &simple            = grammar.type_simple_storage.at(next_type.data);
+					const SimpleType       &simple_type       = grammar.simple_type_storage.at(simple.simple_type);
+					const LexemeIdentifier &simple_identifier = grammar.lexemes.at(simple_type.identifier).get_identifier();
+
+					// Make sure the reference typed is in scope.
+					if (!type_type_scope.has(simple_identifier.text)) {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze_type: error (line "
+							<< simple_identifier.line << " col " << simple_identifier.column
+							<< "): undefined type ``" << simple_identifier.text << "\": not in scope."
+							;
+						throw SemanticsError(sstr.str());
+					}
+
+					// Set next_semantics_type.
+					next_semantics_type = &type_type_scope.get(simple_identifier.text).get_type();
+				} else {
+					// Create an anonymous type.
+					Type anonymous_type = analyze_type("", next_type, type_constant_scope, type_type_scope, anonymous_storage);
+					anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(anonymous_type));
+					next_semantics_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
+				}
+
+				// Unpack the ident_list.
+				const LexemeIdentifier       &first_identifier         = grammar.lexemes.at(ident_list.identifier).get_identifier();
+				const IdentifierPrefixedList &identifier_prefixed_list = grammar.identifier_prefixed_list_storage.at(ident_list.identifier_prefixed_list);
+
+				// Collect the identifiers in the list.
+				std::vector<const LexemeIdentifier *> identifiers;
+				identifiers.push_back(&first_identifier);
+				bool reached_end = false;
+				for (const IdentifierPrefixedList *last_list = &identifier_prefixed_list; !reached_end; ) {
+					// Unpack the last list encountered.
+					switch(last_list->branch) {
+						case IdentifierPrefixedList::empty_branch: {
+							// We're done.
+							// (No need to unpack the empty branch.)
+							reached_end = true;
+							break;
+						}
+
+						case IdentifierPrefixedList::cons_branch: {
+							// Unpack the list.
+							const IdentifierPrefixedList::Cons &last_identifier_prefixed_list_cons = grammar.identifier_prefixed_list_cons_storage.at(last_list->data);
+							const IdentifierPrefixedList       &last_identifier_prefixed_list      = grammar.identifier_prefixed_list_storage.at(last_identifier_prefixed_list_cons.identifier_prefixed_list);
+							const LexemeOperator               &last_colon_operator0               = grammar.lexemes.at(last_identifier_prefixed_list_cons.comma_operator0).get_operator(); (void) last_colon_operator0;
+							const LexemeIdentifier             &last_identifier                    = grammar.lexemes.at(last_identifier_prefixed_list_cons.identifier).get_identifier();
+
+							// Add the identifier.
+							identifiers.push_back(&last_identifier);
+							last_list = &last_identifier_prefixed_list;
+
+							// Loop.
+							break;
+						}
+
+						// Unrecognized branch.
+						default: {
+							std::ostringstream sstr;
+							sstr << "Semantics::analyze_type: internal error: invalid identifier_prefixed_list branch at index " << last_list - &grammar.identifier_prefixed_list_storage[0] << ": " << last_list->branch;
+							throw SemanticsError(sstr.str());
+						}
+					}
+				}
+
+				// Correct the order of the list.
+				std::reverse(identifiers.begin() + 1, identifiers.end());
+
+				// Handle the identifiers.
+				for (const LexemeIdentifier *next_identifier : identifiers) {
+					// Duplicate identifier in fields?
+					if (field_identifiers.find(next_identifier->text) != field_identifiers.cend()) {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze_type: error (line "
+							<< next_identifier->line << " col " << next_identifier->column
+							<< "): duplicate field name ``" << next_identifier->text << "\" in record type."
+							;
+						throw SemanticsError(sstr.str());
+					}
+
+					// Add a field.
+					fields.push_back({next_identifier->text, next_semantics_type});
+				}
+			}
+
+			// Construct the Record type.
+			Type::Record semantics_record(identifier, fields, anonymous_storage);
+
+			// Return the constructed record type.
+			return Type(semantics_record);
+		}
+
+		case ::Type::array_branch: {
+			// Unpack the array_type.
+			const ::Type::Array  &array                  = grammar.type_array_storage.at(type.data);
+			const ArrayType      &array_type             = grammar.array_type_storage.at(array.array_type);
+			const LexemeKeyword  &array_keyword0         = grammar.lexemes.at(array_type.array_keyword0).get_keyword(); (void) array_keyword0;
+			const LexemeOperator &leftbracket_operator0  = grammar.lexemes.at(array_type.leftbracket_operator0).get_operator();
+			const Expression     &expression0            = grammar.expression_storage.at(array_type.expression0);
+			const LexemeOperator &colon_operator0        = grammar.lexemes.at(array_type.colon_operator0).get_operator();
+			const Expression     &expression1            = grammar.expression_storage.at(array_type.expression1);
+			const LexemeOperator &rightbracket_operator0 = grammar.lexemes.at(array_type.rightbracket_operator0).get_operator(); (void) rightbracket_operator0;
+			const LexemeKeyword  &of_keyword0            = grammar.lexemes.at(array_type.of_keyword0).get_keyword(); (void) of_keyword0;
+			const ::Type         &base_type              = grammar.type_storage.at(array_type.type);
+
+			// Check for redefinitions.  (Redundant; this has already been checked.)
+			if (type_type_scope.has(identifier)) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::analyze_type: error (line "
+					<< array_keyword0.line << " col " << array_keyword0.column
+					<< "): redefinition of type ``" << identifier << "\"."
+					<< "  (Internal error: this should already have been detected by now.)"
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Get minimum and maximum indices.
+			ConstantValue min_index_value = is_expression_constant(expression0, type_constant_scope);
+			ConstantValue max_index_value = is_expression_constant(expression1, type_constant_scope);
+
+			// Make sure they're static (constant).
+			if (min_index_value.is_dynamic()) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::analyze_type: error (near line "
+					<< leftbracket_operator0.line << " col " << leftbracket_operator0.column
+					<< "): the minimum index of an array is not a constant value."
+					;
+				throw SemanticsError(sstr.str());
+			}
+			if (max_index_value.is_dynamic()) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::analyze_type: error (near line "
+					<< colon_operator0.line << " col " << colon_operator0.column
+					<< "): the maximum index of an array is not a constant value."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Make sure they're integers.
+			if (!min_index_value.is_integer()) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::analyze_type: error (near line "
+					<< leftbracket_operator0.line << " col " << leftbracket_operator0.column
+					<< "): the minimum index of an array is not an integer value."
+					;
+				throw SemanticsError(sstr.str());
+			}
+			if (!max_index_value.is_integer()) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::analyze_type: error (near line "
+					<< colon_operator0.line << " col " << colon_operator0.column
+					<< "): the maximum index of an array is not an integer value."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Get the minimum and maximum indices.
+			int32_t min_index = min_index_value.get_integer();
+			int32_t max_index = max_index_value.get_integer();
+
+			// Make sure the minimum index is not > the maximum index.
+			if (!min_index_value.is_integer()) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::analyze_type: error (line "
+					<< leftbracket_operator0.line << " col " << leftbracket_operator0.column
+					<< "): the minimum index of an array is greater than the maximum index: "
+					<< min_index << " > " << max_index
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Get a copy of the subtype or construct a new anonymous subtype using "anonymous_storage".
+			const Type *base_semantics_type;
+			// Branch on base_type.  If it's in the "simple" type alias
+			// format, it should refer to an existing type, although it's
+			// not a type alias.  Otherwise, create an anonymous type.
+			if (base_type.branch == ::Type::simple_branch) {
+				const ::Type::Simple   &simple            = grammar.type_simple_storage.at(base_type.data);
+				const SimpleType       &simple_type       = grammar.simple_type_storage.at(simple.simple_type);
+				const LexemeIdentifier &simple_identifier = grammar.lexemes.at(simple_type.identifier).get_identifier();
+
+				// Make sure the reference typed is in scope.
+				if (!type_type_scope.has(simple_identifier.text)) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_type: error (line "
+						<< simple_identifier.line << " col " << simple_identifier.column
+						<< "): undefined type ``" << simple_identifier.text << "\": not in scope."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Set base_semantics_type.
+				base_semantics_type = &type_type_scope.get(simple_identifier.text).get_type();
+			} else {
+				// Create an anonymous type.
+				Type anonymous_type = analyze_type("", base_type, type_constant_scope, type_type_scope, anonymous_storage);
+				anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(anonymous_type));
+				base_semantics_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
+			}
+
+			// Construct the Array type.
+			Type::Array semantics_array(identifier, base_semantics_type, min_index, max_index, anonymous_storage);
+
+			// Return the constructed array type.
+			return Type(semantics_array);
+		}
+
+		// Unrecognized branch.
+		default: {
+			std::ostringstream sstr;
+			sstr << "Semantics::analyze: internal error: invalid type branch at index " << &type - &grammar.type_storage[0] << ": " << type.branch;
+			throw SemanticsError(sstr.str());
+		}
+	}
 }
 
 bool Semantics::would_addition_overflow(int32_t a, int32_t b) {
@@ -2905,18 +3300,79 @@ int32_t Semantics::euclidian_mod(int32_t a, int32_t b) {
 	}
 }
 
-// | Clear memoization caches and calculated output values.
-void Semantics::clear_output() {
+// | Clear memoization caches and calculated output values and reset them to default values.
+//
+// Set up the identifier scopes with the 12 built-in identifiers:
+// - integer : integer type
+// - char    : char type
+// - boolean : boolean type
+// - string  : string type
+// - true    : true boolean constant
+// - false   : false boolean constant
+// - INTEGER : integer type
+// - CHAR    : char type
+// - BOOLEAN : boolean type
+// - STRING  : string type
+// - TRUE    : true boolean constant
+// - FALSE   : false boolean constant
+void Semantics::reset_output() {
+	// Clear.
+
 	is_expression_constant_calculations.clear();
-	top_level_scope = IdentifierScope();
+	top_level_scope          = IdentifierScope();
+	top_level_type_scope     = IdentifierScope();
+	top_level_constant_scope = IdentifierScope();
+	anonymous_storage        = IdentifierScope();
 	string_constants.clear();
+
+	// Reset.
+
+	using S = IdentifierScope;
+	using C = ConstantValue;
+	using T = Type;
+
+	top_level_constant_scope.scope.insert({"true", S::IdentifierBinding(C::true_constant)});
+	top_level_scope.scope.insert({"true", S::IdentifierBinding(C::true_constant)});
+
+	top_level_constant_scope.scope.insert({"false", S::IdentifierBinding(C::false_constant)});
+	top_level_scope.scope.insert({"false", S::IdentifierBinding(C::false_constant)});
+
+	top_level_constant_scope.scope.insert({"TRUE", S::IdentifierBinding(C::true_constant)});
+	top_level_scope.scope.insert({"TRUE", S::IdentifierBinding(C::true_constant)});
+
+	top_level_constant_scope.scope.insert({"FALSE", S::IdentifierBinding(C::false_constant)});
+	top_level_scope.scope.insert({"FALSE", S::IdentifierBinding(C::false_constant)});
+
+	top_level_type_scope.scope.insert({"integer", S::IdentifierBinding(T::integer_type)});
+	top_level_scope.scope.insert({"integer", S::IdentifierBinding(T::integer_type)});
+
+	top_level_type_scope.scope.insert({"char", S::IdentifierBinding(T::char_type)});
+	top_level_scope.scope.insert({"char", S::IdentifierBinding(T::char_type)});
+
+	top_level_type_scope.scope.insert({"boolean", S::IdentifierBinding(T::boolean_type)});
+	top_level_scope.scope.insert({"boolean", S::IdentifierBinding(T::boolean_type)});
+
+	top_level_type_scope.scope.insert({"string", S::IdentifierBinding(T::string_type)});
+	top_level_scope.scope.insert({"string", S::IdentifierBinding(T::string_type)});
+
+	top_level_type_scope.scope.insert({"INTEGER", S::IdentifierBinding(T::integer_type)});
+	top_level_scope.scope.insert({"INTEGER", S::IdentifierBinding(T::integer_type)});
+
+	top_level_type_scope.scope.insert({"CHAR", S::IdentifierBinding(T::char_type)});
+	top_level_scope.scope.insert({"CHAR", S::IdentifierBinding(T::char_type)});
+
+	top_level_type_scope.scope.insert({"BOOLEAN", S::IdentifierBinding(T::boolean_type)});
+	top_level_scope.scope.insert({"BOOLEAN", S::IdentifierBinding(T::boolean_type)});
+
+	top_level_type_scope.scope.insert({"STRING", S::IdentifierBinding(T::string_type)});
+	top_level_scope.scope.insert({"STRING", S::IdentifierBinding(T::string_type)});
 }
 
 // | Force a re-analysis of the semantics data.
 void Semantics::analyze() {
 	// It's possible the grammar was reset.  Clear caches and outputs just in
 	// case.
-	clear_output();
+	reset_output();
 
 	// If there are no parsed start symbols, then the grammar probably has not
 	// yet been set up.  Just return, in this case.  The Semantics value might
@@ -2989,7 +3445,7 @@ void Semantics::analyze() {
 					// Unrecognized branch.
 					default: {
 						std::ostringstream sstr;
-						sstr << "Semantics::analyze: internal error: invalid constant_assignment_list branch at index " << last_list - &grammar.constant_assignment_list_storage[0] << ": " << constant_decl_opt.branch;
+						sstr << "Semantics::analyze: internal error: invalid constant_assignment_list branch at index " << last_list - &grammar.constant_assignment_list_storage[0] << ": " << last_list->branch;
 						throw SemanticsError(sstr.str());
 					}
 				}
@@ -3000,13 +3456,13 @@ void Semantics::analyze() {
 
 			// Handle the constant assignments.
 			for (const ConstantAssignment *next_constant_assignment : constant_assignments) {
-				const LexemeIdentifier &identifier          = grammar.lexemes.at(next_constant_assignment->identifier).get_identifier(); (void) identifier;
+				const LexemeIdentifier &identifier          = grammar.lexemes.at(next_constant_assignment->identifier).get_identifier();
 				const LexemeOperator   &equals_operator0    = grammar.lexemes.at(next_constant_assignment->equals_operator0).get_operator(); (void) equals_operator0;
-				const Expression       &expression          = grammar.expression_storage.at(next_constant_assignment->expression); (void) expression;
+				const Expression       &expression          = grammar.expression_storage.at(next_constant_assignment->expression);
 				const LexemeOperator   &semicolon_operator0 = grammar.lexemes.at(next_constant_assignment->semicolon_operator0).get_operator(); (void) semicolon_operator0;
 
 				// Calculate the constant value.
-				ConstantValue constant_value = is_expression_constant(next_constant_assignment->expression, top_level_scope);
+				ConstantValue constant_value = is_expression_constant(expression, top_level_constant_scope);
 
 				// Fail if this is not a static value.
 				if (!constant_value.is_static()) {
@@ -3030,10 +3486,11 @@ void Semantics::analyze() {
 					sstr
 						<< "Semantics::analyze: error (line "
 						<< identifier.line << " col " << identifier.column
-						<< "): redefinition of constant ``" << identifier.text << "\""
+						<< "): redefinition of constant ``" << identifier.text << "\"."
 						;
 					throw SemanticsError(sstr.str());
 				}
+				top_level_constant_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Static(constant_value))});
 				top_level_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Static(constant_value))});
 			}
 
@@ -3045,6 +3502,110 @@ void Semantics::analyze() {
 		default: {
 			std::ostringstream sstr;
 			sstr << "Semantics::analyze: internal error: invalid constant_decl_opt branch at index " << program.constant_decl_opt << ": " << constant_decl_opt.branch;
+			throw SemanticsError(sstr.str());
+		}
+	}
+
+	// Next, parse top-level type definitions.
+	switch (type_decl_opt.branch) {
+		case TypeDeclOpt::empty_branch: {
+			// No constant declarations.  Nothing to do here.
+			break;
+		}
+
+		case TypeDeclOpt::value_branch: {
+			// Unpack the type_decl.
+			const TypeDeclOpt::Value &type_decl_opt_value  = grammar.type_decl_opt_value_storage.at(type_decl_opt.data);
+			const TypeDecl           &type_decl            = grammar.type_decl_storage.at(type_decl_opt_value.type_decl);
+			const LexemeKeyword      &type_keyword0        = grammar.lexemes.at(type_decl.type_keyword0).get_keyword(); (void) type_keyword0;
+			const TypeAssignment     &type_assignment      = grammar.type_assignment_storage.at(type_decl.type_assignment);
+			const TypeAssignmentList &type_assignment_list = grammar.type_assignment_list_storage.at(type_decl.type_assignment_list);
+
+			// Collect the type assignments in the list.
+			std::vector<const TypeAssignment *> type_assignments;
+			type_assignments.push_back(&type_assignment);
+			bool reached_end = false;
+			for (const TypeAssignmentList *last_list = &type_assignment_list; !reached_end; ) {
+				// Unpack the last list encountered.
+				switch(last_list->branch) {
+					case TypeAssignmentList::empty_branch: {
+						// We're done.
+						// (No need to unpack the empty branch.)
+						reached_end = true;
+						break;
+					}
+
+					case TypeAssignmentList::cons_branch: {
+						// Unpack the list.
+						const TypeAssignmentList::Cons &last_type_assignment_list_cons = grammar.type_assignment_list_cons_storage.at(last_list->data);
+						const TypeAssignmentList       &last_type_assignment_list      = grammar.type_assignment_list_storage.at(last_type_assignment_list_cons.type_assignment_list);
+						const TypeAssignment           &last_type_assignment           = grammar.type_assignment_storage.at(last_type_assignment_list_cons.type_assignment);
+
+						// Add the type assignment.
+						type_assignments.push_back(&last_type_assignment);
+						last_list = &last_type_assignment_list;
+
+						// Loop.
+						break;
+					}
+
+					// Unrecognized branch.
+					default: {
+						std::ostringstream sstr;
+						sstr << "Semantics::analyze: internal error: invalid type_assignment_list branch at index " << last_list - &grammar.type_assignment_list_storage[0] << ": " << last_list->branch;
+						throw SemanticsError(sstr.str());
+					}
+				}
+			}
+
+			// Correct the order of the list.
+			std::reverse(type_assignments.begin() + 1, type_assignments.end());
+
+			// Handle the type assignments.
+			for (const TypeAssignment *next_type_assignment : type_assignments) {
+				const LexemeIdentifier &identifier          = grammar.lexemes.at(next_type_assignment->identifier).get_identifier();
+				const LexemeOperator   &equals_operator0    = grammar.lexemes.at(next_type_assignment->equals_operator0).get_operator(); (void) equals_operator0;
+				const ::Type           &type                = grammar.type_storage.at(next_type_assignment->type);
+				const LexemeOperator   &semicolon_operator0 = grammar.lexemes.at(next_type_assignment->semicolon_operator0).get_operator(); (void) semicolon_operator0;
+
+				// Check for redefinition.
+				if (top_level_type_scope.has(identifier.text)) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze: error (line "
+						<< identifier.line << " col " << identifier.column
+						<< "): redefinition of type ``" << identifier.text << "\"."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				if (combine_identifier_namespaces && top_level_scope.has(identifier.text)) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze: error (line "
+						<< identifier.line << " col " << identifier.column
+						<< "): identifier ``" << identifier.text << "\" has already been defined."
+						<< "  Set combine_identifier_namespaces to 0 to isolate identifier namespaces"
+						<< " from each other."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Calculate the type.
+				Type semantics_type = analyze_type(identifier.text, type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
+
+				// Add this type to the top-level scope.
+				top_level_type_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Type(semantics_type))});
+				top_level_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Type(semantics_type))});
+			}
+
+			// Done handling type part.
+			break;
+		}
+
+		// Unrecognized branch.
+		default: {
+			std::ostringstream sstr;
+			sstr << "Semantics::analyze: internal error: invalid type_decl_opt branch at index " << program.type_decl_opt << ": " << type_decl_opt.branch;
 			throw SemanticsError(sstr.str());
 		}
 	}

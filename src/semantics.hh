@@ -26,8 +26,12 @@ public:
  * Grammar types.
  */
 
+#define CPSL_CC_SEMANTICS_COMBINE_IDENTIFIER_NAMESPACES true
+
 class Semantics {
 public:
+	static const bool combine_identifier_namespaces;
+
 	// | The result of a constant expression.
 	class ConstantValue {
 	public:
@@ -63,6 +67,10 @@ public:
 		data_t data;
 
 		static const ConstantValue dynamic;
+
+		static const ConstantValue true_constant;
+		static const ConstantValue false_constant;
+
 		explicit ConstantValue(int32_t integer);
 		explicit ConstantValue(char char_);
 		explicit ConstantValue(bool integer);
@@ -95,10 +103,15 @@ public:
 		std::string get_tag_repr() const;
 	};
 
-	// | A representation of a type.  Another tagged union.
 	class IdentifierScope;  // Forward declare class IdentifierScope.
+	// | A representation of a type.  Another tagged union.
+	//
+	// Note: this class uses raw Type pointers.  The lifetime of them should
+	// not exceed the lifetime of the IdentifierScope in which the Type is
+	// stored.
 	class Type {
 	public:
+		// | Anonymous types have .identifier == "".
 		class Base {
 		public:
 			Base();
@@ -127,6 +140,11 @@ public:
 			Primitive(tag_t tag);
 			tag_t tag;
 
+			static const Primitive integer_type;
+			static const Primitive char_type;
+			static const Primitive boolean_type;
+			static const Primitive string_type;
+
 			bool is_integer() const;
 			bool is_char() const;
 			bool is_boolean() const;
@@ -145,9 +163,9 @@ public:
 			Simple(Base &&base, const Type *referent);
 #endif /* #if 0 */
 			// | referent must be non-null; this is not checked!  (TODO: check)
-			Simple(const std::string &identifier, const Type *referent);
+			Simple(const std::string &identifier, const Type &referent);
 			// | referent must be non-null (not checked!), its identifier must be in scope, and the identifier must refer to a type.
-			Simple(const std::string &identifier, const Type *referent, const IdentifierScope &identifier_scope);
+			Simple(const std::string &identifier, const Type &referent, const IdentifierScope &identifier_type_scope);
 			const Type *referent;
 
 			// | Resolve a chain of aliases.
@@ -160,28 +178,32 @@ public:
 		class Record : public Base {
 		public:
 			Record();
-			Record(const std::string &identifier, const std::vector<std::pair<std::string, const Type *>> &fields);
-			Record(const std::string &identifier, std::vector<std::pair<std::string, const Type *>> &&fields);
+			Record(const std::string &identifier, const std::vector<std::pair<std::string, const Type *>> &fields, IdentifierScope &anonymous_storage);
+			Record(const std::string &identifier, std::vector<std::pair<std::string, const Type *>> &&fields, IdentifierScope &anonymous_storage);
 			// | Ordered list of identifier, type pairs.
 			std::vector<std::pair<std::string, const Type *>> fields;
+			// | Storage of anonymous types used by this record.
+			IdentifierScope *anonymous_storage;
 		};
 
 		class Array : public Base {
 		public:
 			Array();
-			Array(const std::string &identifier, const Type *base_type, uint32_t min_index, uint32_t max_index);
+			Array(const std::string &identifier, const Type *base_type, int32_t min_index, int32_t max_index, IdentifierScope &anonymous_storage);
 
 			const Type *base_type;  // ^ This is an array of values of what type?
-			uint32_t min_index;
-			uint32_t max_index;
+			int32_t min_index;
+			int32_t max_index;
+			// | Storage of anonymous types used by this array.
+			IdentifierScope *anonymous_storage;
 
-			uint32_t get_min_index() const;
-			uint32_t get_max_index() const;
-			uint32_t get_begin_index() const;
-			uint32_t get_end_index() const;
+			int32_t get_min_index() const;
+			int32_t get_max_index() const;
+			int32_t get_begin_index() const;
+			int32_t get_end_index() const;
 			uint32_t get_index_range() const;
-			uint32_t get_offset_of_index(uint32_t index) const;
-			uint32_t get_index_of_offset(uint32_t offset) const;
+			uint32_t get_offset_of_index(int32_t index) const;
+			int32_t get_index_of_offset(uint32_t offset) const;
 		};
 
 		enum tag_e {
@@ -207,6 +229,11 @@ public:
 		Type(tag_t tag, data_t &&data);
 		tag_t tag;
 		data_t data;
+
+		static const Type integer_type;
+		static const Type char_type;
+		static const Type boolean_type;
+		static const Type string_type;
 
 		const Base &get_base() const;
 		Base &&get_base();
@@ -340,7 +367,10 @@ public:
 		IdentifierScope(const std::map<std::string, IdentifierBinding> &scope);
 		IdentifierScope(std::map<std::string, IdentifierBinding> &&scope);
 
+		// | Identifier bindings mapped by identifier strings.
 		std::map<std::string, IdentifierBinding> scope;
+		// | Anonymous identifier bindings mapped by index.
+		std::vector<IdentifierBinding> anonymous_bindings;
 
 		bool has(std::string identifier) const;
 
@@ -362,11 +392,6 @@ public:
 	void set_grammar(const Grammar &grammar);
 	void set_grammar(Grammar &&grammar);
 
-	// TODO: constants.
-	//std::
-
-	// TODO: std::vector<std::string> string_literals;
-
 	// | Determine whether the expression in the grammar tree is a constant expression.
 	// The result will be memoized in is_expression_constant_calculations.
 	ConstantValue is_expression_constant(
@@ -375,8 +400,20 @@ public:
 		// | A collection of identifiers of constants available to the scope of the expression.
 		// Note: We don't record the identifier scope here.  There is only one
 		// identifier scope for each expression.
-		const IdentifierScope &expression_scope
+		const IdentifierScope &expression_constant_scope
 	);
+	ConstantValue is_expression_constant(const Expression &expression, const IdentifierScope &expression_constant_scope);
+
+	// | From the parse tree Type, construct a Semantics::Type that represents the type.
+	//
+	// If the type contains anonymous subtypes, they will be stored in
+	// "storage".  In this case, the lifetime of the type should not exceed the
+	// lifetime of the storage, since the type will contain raw pointers to it.
+	//
+	// The lifetimes of types should not exceed the lifetime of their
+	// referents, which are normally stored inside of the type_type_scope
+	// IdentifierScope passed to this method.
+	Type analyze_type(const std::string &identifier, const ::Type &type, const IdentifierScope &type_constant_scope, const IdentifierScope &type_type_scope, IdentifierScope &anonymous_storage);
 
 	static bool would_addition_overflow(int32_t a, int32_t b);
 	static bool would_multiplication_overflow(int32_t a, int32_t b);
@@ -384,15 +421,25 @@ public:
 	static int32_t euclidian_div(int32_t a, int32_t b);
 	static int32_t euclidian_mod(int32_t a, int32_t b);
 
-	// | Clear memoization caches and calculated output values.
-	void clear_output();
+	// | Clear memoization caches and calculated output values and reset them to default values.
+	//
+	// Set up the identifier scopes with the 12 built-in identifiers:
+	// - integer : integer type
+	// - char    : char type
+	// - boolean : boolean type
+	// - string  : string type
+	// - true    : true boolean constant
+	// - false   : false boolean constant
+	// - INTEGER : integer type
+	// - CHAR    : char type
+	// - BOOLEAN : boolean type
+	// - STRING  : string type
+	// - TRUE    : true boolean constant
+	// - FALSE   : false boolean constant
+	void reset_output();
 
 	// | Force a re-analysis of the semantics data.
 	void analyze();
-
-	// TODO: visibility
-	IdentifierScope top_level_scope;
-	std::set<std::string> string_constants;
 
 protected:
 	// | The grammar tree used for the semantics data.
@@ -400,7 +447,24 @@ protected:
 	// | Whether to automatically construct the semantics analysis after loading the grammar.
 	bool auto_analyze;
 
+	// | Memoization cache for is_expression_constant, but probably redundant anyway.
 	std::map<uint64_t, ConstantValue> is_expression_constant_calculations;
+
+	// | Collection of string constants we collect as we analyze the parse tree.
+	//
+	// Assembled output can contain a section of labeled string constants that
+	// other parts can refer to.
+	std::set<std::string> string_constants;
+	// | After collecting all string constants, an ordered association of labels and constant constants is produced.
+	// The labels are unique and different from all top level identifiers.
+	std::vector<std::pair<std::string, std::string>> labeled_string_constants;
+
+	IdentifierScope top_level_constant_scope;
+	IdentifierScope top_level_type_scope;
+	// | Union of top_level_*_scope.  If !combine_identifier_namespaces, the last identifier overrides.
+	IdentifierScope top_level_scope;
+	// | The lifetime of anonymous_storage should not exceed that of *_scope, since they may contain raw pointers into this storage.
+	IdentifierScope anonymous_storage;
 };
 
 #endif /* #ifndef CPSL_CC_SEMANTICS_HH */
