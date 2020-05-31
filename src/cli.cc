@@ -893,16 +893,11 @@ std::vector<std::string> cli::assemble(const ParsedArgs &parsed_args, const std:
 	// Parse the grammar.
 	Grammar grammar = parse_lexemes(lexemes, parsed_args.is("parser-trace"));
 
-	// Analyze the semantics.
+	// Analyze the semantics and assemble the code.
 	Semantics semantics(std::move(Grammar(grammar)));
 
-	// Assemble the code.
-
-	// Collections we will populate as we traverse the program tree.
-	//std::vector<std::string> string_literals;
-
-	// TODO
-	std::cout << "To be implemented..." << std::endl;
+	// Obtain the assembly output.
+	output_lines = semantics.get_normalized_output_lines_copy();
 
 	// Return our output.
 	return output_lines;

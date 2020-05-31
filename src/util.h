@@ -18,4 +18,6 @@
 // Use (void) to silent unused warnings.
 #define assertm(exp, msg) assert(((void)msg, exp))
 
+#define A_BILLION 1000000000
+
 #endif /* #ifndef CPSL_CC_UTIL_H */

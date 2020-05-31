@@ -1,4 +1,4 @@
-#include <algorithm>     // std::reverse
+#include <algorithm>     // std::reverse, std::stable_sort
 #include <cassert>       // assert
 #include <limits>        // std::numeric_limits
 #include <optional>      // std::optional
@@ -30,6 +30,245 @@ SemanticsError::SemanticsError(const std::string &message)
  */
 
 const bool Semantics::combine_identifier_namespaces = CPSL_CC_SEMANTICS_COMBINE_IDENTIFIER_NAMESPACES;
+
+Semantics::Symbol::Symbol()
+	{}
+
+Semantics::Symbol::Symbol(const std::string &prefix, const std::string &requested_suffix, uint64_t unique_identifier)
+	: prefix(prefix)
+	, requested_suffix(requested_suffix)
+	, unique_identifier(unique_identifier)
+	{}
+
+const uint64_t Semantics::Symbol::max_unique_try_iterations = CPSL_CC_SEMANTICS_MAX_UNIQUE_TRY_ITERATIONS;
+
+std::map<Semantics::Symbol, std::string> Semantics::Symbol::generate_symbol_values(const std::set<Symbol> &symbols, const std::set<std::string> additional_names) {
+	std::set<std::string> used_names(additional_names);
+
+	std::map<Symbol, std::string> symbol_values;
+
+	for (const Symbol &symbol : std::as_const(symbols)) {
+		std::string start(symbol.prefix + symbol.requested_suffix);
+
+		// Is the name available with no modifications?
+		if (used_names.find(start) == used_names.cend()) {
+			// Use it.
+			symbol_values.insert({symbol, start});
+			continue;
+		}
+
+		// Find a different name; just apply numbers, beginning with 2
+		bool found = false;
+		static const uint64_t start_number = 2;
+		for (uint64_t iterations = 0; iterations < max_unique_try_iterations; ++iterations) {
+			std::ostringstream stry;
+			stry << start << iterations + start_number;
+			std::string try_ = stry.str();
+
+			// Does this one work?
+			if (used_names.find(try_) == used_names.cend()) {
+				// Use it.
+				symbol_values.insert({symbol, try_});
+				found = true;
+				break;
+			}
+		}
+		if (!found) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::Symbol::generate_symbol_values: internal error: failed to find a unique symbol value in " << max_unique_try_iterations << " iterations." << std::endl
+				<< "  symbol.prefix            : " << symbol.prefix             << std::endl
+				<< "  symbol.requested_suffix  : " << symbol.requested_suffix   << std::endl
+				<< "  symbol.unique_identifier : " << symbol.unique_identifier
+				;
+			throw SemanticsError(sstr.str());
+		}
+	}
+
+	return symbol_values;
+}
+
+Semantics::Output::SymbolLocation::SymbolLocation()
+	{}
+
+Semantics::Output::SymbolLocation::SymbolLocation(section_t section, std::vector<std::string>::size_type line, std::string::size_type start_pos, std::string::size_type length)
+	: section(section)
+	, line(line)
+	, start_pos(start_pos)
+	, length(length)
+	{}
+
+// | Returns true if b is less than a, so that when used with
+// std::stable_sort from <algorithm> as the 3rd argument, a vector
+// can be reverse sorted.
+bool Semantics::Output::SymbolLocation::reverse_cmp(const SymbolLocation &a, const SymbolLocation &b) {
+	if        (b.section   < a.section) {
+		return true;
+	} else if (b.line      < a.line) {
+		return true;
+	} else if (b.start_pos < a.start_pos) {
+		return true;
+	} else if (b.length    < a.length) {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+Semantics::Output::Output()
+	{}
+
+bool Semantics::Output::is_normalized() const {
+	return unexpanded_symbols.size() <= 0 && ((sections.size() == 0) == (normalized_lines.size() == 0));
+}
+
+// | Return a new output, expanding unexpanded symbols, so that they
+// are unique and different from any element of "additional_names".
+//
+// If this output is already normalized, return a copy of this output.
+Semantics::Output Semantics::Output::normalize(const std::set<std::string> &additional_names) const {
+	if (is_normalized()) {
+		return Output(std::as_const(*this));
+	} else {
+		Output normalized_output;
+
+		// If sections is empty, treat it as empty.
+		if (sections.size() <= 0) {
+			// No sections; just ensure normalized_output's normalized_lines is clear.
+			normalized_output.normalized_lines.clear();
+		} else {
+			// Make sure we have the correct number of sections.
+			if (sections.size() != num_sections + 1) {
+				std::ostringstream sstr;
+				sstr << "Semantics::Output::normalize: invalid number of sections: " << sections.size() << " != " << num_sections + 1;
+				throw SemanticsError(sstr.str());
+			}
+
+			// Get unique names for each symbol.
+			std::set<Symbol> symbols;
+			for (const std::pair<Symbol, std::vector<SymbolLocation>> &pair : std::as_const(unexpanded_symbols)) {
+				const Symbol &symbol = pair.first;
+				symbols.insert(symbol);
+			}
+			std::map<Symbol, std::string> symbol_values = Symbol::generate_symbol_values(symbols, additional_names);
+
+			// Normalize the sections.
+
+			// Iterate over each line in the unexpanded output.
+			for (const std::vector<std::string> &section : std::as_const(sections)) {
+				section_t section_index = static_cast<section_t>(&section - &sections[0]);
+
+				normalized_output.sections.push_back(std::vector<std::string>());
+				std::vector<std::string> &normalized_section = normalized_output.sections[normalized_output.sections.size() - 1];
+
+				for (const std::string &line : std::as_const(section)) {
+					std::vector<std::string>::size_type line_index = static_cast<std::vector<std::string>::size_type>(&line - &section[0]);
+
+					std::string normalized_line;
+
+					// Are there symbols on this line?
+					std::map<std::pair<section_t, std::vector<std::string>::size_type>, std::vector<Symbol>>::const_iterator reverse_unexpanded_symbols_search = reverse_unexpanded_symbols.find({section_index, line_index});
+					if (reverse_unexpanded_symbols_search == reverse_unexpanded_symbols.cend()) {
+						// Nope.
+						normalized_line = line;
+					} else {
+						// Yep.
+						const std::vector<Symbol> &line_symbols = reverse_unexpanded_symbols_search->second;
+
+						// Just copy the line and then do new substitutions.
+						normalized_line = line;
+
+						// Substitute each symbol.
+						for (const Symbol &symbol : std::as_const(line_symbols)) {
+							// Get the locations and the unique name for this symbol.
+							std::map<Symbol, std::string>::const_iterator                 symbol_values_search      = symbol_values.find(symbol);
+							std::map<Symbol, std::vector<SymbolLocation>>::const_iterator unexpanded_symbols_search = unexpanded_symbols.find(symbol);
+
+							// These both should exist, or there is an internal error.
+							if (symbol_values_search == symbol_values.cend()) {
+								std::ostringstream sstr;
+								sstr
+									<< "Semantics::Output::normalize: internal error: failed to find the generated unique name for the unexpanded symbol ``"
+									<< symbol.prefix << "\":``" << symbol.requested_suffix
+									<< "\".  Are ``symbol_values\" (local) and ``reverse_unexpanded_symbols\" consistent?"
+									;
+								throw SemanticsError(sstr.str());
+							}
+							if (unexpanded_symbols_search == unexpanded_symbols.cend()) {
+								std::ostringstream sstr;
+								sstr
+									<< "Semantics::Output::normalize: internal error: failed to find locations for the unexpanded symbol ``"
+									<< symbol.prefix << "\":``" << symbol.requested_suffix
+									<< "\".  Are ``unexpanded_symbols\" and ``reverse_unexpanded_symbols\" consistent?"
+									;
+								throw SemanticsError(sstr.str());
+							}
+
+							// Assign the locations and the unique name for this symbol.
+							const std::string                 &symbol_value     = symbol_values_search->second;
+							const std::vector<SymbolLocation> &symbol_locations = unexpanded_symbols_search->second;
+
+							// Sort the symbol locations right-to-left.
+							std::vector<SymbolLocation> sorted_symbol_locations(symbol_locations);
+							std::stable_sort(sorted_symbol_locations.begin(), sorted_symbol_locations.end(), SymbolLocation::reverse_cmp);
+
+							// Perform a substitution at each location.
+							for (const SymbolLocation &symbol_location : std::as_const(sorted_symbol_locations)) {
+								// Make sure the location is within bounds.
+								if (symbol_location.start_pos >= line.size() || symbol_location.start_pos + symbol_location.length >= line.size()) {
+									std::ostringstream sstr;
+									sstr
+										<< "Semantics::Output::normalize: error: a symbol location in the output refers to an out-of-bounds location." << std::endl
+										<< "  symbol.prefix             : " << symbol.prefix             << std::endl
+										<< "  symbol.requested_suffix   : " << symbol.requested_suffix   << std::endl
+										<< "  symbol.unique_identifier  : " << symbol.unique_identifier  << std::endl
+										<< "  symbol_value              : " << symbol_value              << std::endl
+										<< "  symbol_location.line      : " << symbol_location.line      << std::endl
+										<< "  symbol_location.start_pos : " << symbol_location.start_pos << std::endl
+										<< "  symbol_location.length    : " << symbol_location.length
+										;
+									throw SemanticsError(sstr.str());
+								}
+
+								// Perform the substitution.
+								normalized_line = normalized_line.substr(0, symbol_location.start_pos) + symbol_value + normalized_line.substr(symbol_location.start_pos + symbol_location.length);
+							}
+						}
+					}
+
+					// Add this normalized line to the normalized output.
+					normalized_section.push_back(normalized_line);
+					// Also add this normalized line to the normalized_output vector.
+					normalized_output.normalized_lines.push_back(normalized_line);
+				}
+			}
+
+#if 0
+			// Now that the sections are normalized, join the output.
+			// Ensure normalized_output's normalized_lines is clear before we add to it.
+			normalized_output.normalized_lines.clear();
+			for (const std::vector<std::string> &section : sections) {
+				for (const std::string &line : section) {
+					normalized_output.normalized_lines.push_back(line);
+				}
+			}
+#endif /* #if 0 */
+		}
+
+		return normalized_output;
+	}
+}
+
+// | Normalize this output if it isn't normalized to a new value, and
+// discard the new output container after returning a copy of its
+// lines.
+std::vector<std::string> Semantics::Output::get_normalized_lines_copy(const std::set<std::string> &additional_names) const {
+	if (is_normalized()) {
+		return std::vector<std::string>(std::as_const(normalized_lines));
+	} else {
+		return std::move(normalize(additional_names).get_normalized_lines_copy(additional_names));
+	}
+}
 
 Semantics::ConstantValue::ConstantValue()
 	: tag(null_tag)
@@ -1695,6 +1934,10 @@ Semantics::Semantics(Grammar &&grammar, bool auto_analyze)
 	}
 }
 
+std::vector<std::string> Semantics::get_normalized_output_lines_copy() const {
+	return std::move(output.get_normalized_lines_copy());
+}
+
 const Grammar Semantics::get_grammar() const {
 	return grammar;
 }
@@ -3318,6 +3561,7 @@ int32_t Semantics::euclidian_mod(int32_t a, int32_t b) {
 void Semantics::reset_output() {
 	// Clear.
 
+	output                   = Output();
 	is_expression_constant_calculations.clear();
 	top_level_scope          = IdentifierScope();
 	top_level_type_scope     = IdentifierScope();
@@ -3366,6 +3610,10 @@ void Semantics::reset_output() {
 
 	top_level_type_scope.scope.insert({"STRING", S::IdentifierBinding(T::string_type)});
 	top_level_scope.scope.insert({"STRING", S::IdentifierBinding(T::string_type)});
+
+	for (Output::section_t section = Output::null_section; section <= Output::num_sections; section = static_cast<Output::section_t>(static_cast<int>(section) + 1)) {
+		output.sections.push_back(std::vector<std::string>());
+	}
 }
 
 // | Force a re-analysis of the semantics data.
@@ -3612,3 +3860,41 @@ void Semantics::analyze() {
 
 	// TODO
 }
+
+inline bool operator< (const Semantics::Symbol &a, const Semantics::Symbol &b) {
+	if        (a.prefix           != b.prefix) {
+		return a.prefix            < b.prefix;
+	} else if (a.requested_suffix != b.requested_suffix) {
+		return a.requested_suffix  < b.requested_suffix;
+	} else {
+		return a.unique_identifier < b.unique_identifier;
+	}
+}
+inline bool operator> (const Semantics::Symbol &a, const Semantics::Symbol &b) { return   b < a;  }
+inline bool operator<=(const Semantics::Symbol &a, const Semantics::Symbol &b) { return !(a > b); }
+inline bool operator>=(const Semantics::Symbol &a, const Semantics::Symbol &b) { return !(a < b); }
+
+inline bool operator==(const Semantics::Symbol &a, const Semantics::Symbol &b) {
+	return a.prefix == b.prefix && a.requested_suffix == b.requested_suffix && a.unique_identifier == b.unique_identifier;
+}
+inline bool operator!=(const Semantics::Symbol &a, const Semantics::Symbol &b) { return !(a == b); }
+
+inline bool operator< (const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b) {
+	if        (a.section   != b.section) {
+		return a.section   < b.section;
+	} else if (a.line      != b.line) {
+		return a.line      < b.line;
+	} else if (a.start_pos != b.start_pos) {
+		return a.start_pos < b.start_pos;
+	} else {
+		return a.length    < b.length;
+	}
+}
+inline bool operator> (const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b) { return   b < a;  }
+inline bool operator<=(const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b) { return !(a > b); }
+inline bool operator>=(const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b) { return !(a < b); }
+
+inline bool operator==(const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b) {
+	return a.section == b.section && a.line == b.line && a.start_pos == b.start_pos && a.length == b.length;
+}
+inline bool operator!=(const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b) { return !(a == b); }

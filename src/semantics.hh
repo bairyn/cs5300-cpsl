@@ -12,6 +12,14 @@
 
 #include "grammar.hh"
 
+extern "C" {
+#include "util.h"     // A_BILLION
+}
+
+// MIPS overview (the project uses MARS rather than SPIM): https://minnie.tuhs.org/CompArch/Resources/mips_quick_tutorial.html
+// MIPS green sheet: https://inst.eecs.berkeley.edu/~cs61c/resources/MIPS_Green_Sheet.pdf
+// MARS syscalls: https://courses.missouristate.edu/KenVollmar/MARS/Help/SyscallHelp.html
+
 /*
  * Exceptions types.
  */
@@ -27,10 +35,88 @@ public:
  */
 
 #define CPSL_CC_SEMANTICS_COMBINE_IDENTIFIER_NAMESPACES true
+#define CPSL_CC_SEMANTICS_MAX_UNIQUE_TRY_ITERATIONS     A_BILLION  // fun
 
 class Semantics {
 public:
 	static const bool combine_identifier_namespaces;
+
+	// | In the assembled output, locations marked as symbols will be replaced
+	// with a unique and consistent substring.
+	//
+	// The Symbol class represents what the substring will begin with and a
+	// requested suffix that will be used if it does not cause collisions with
+	// other symbols or other entities depending on the context, e.g. identifiers.
+	//
+	// These are used to generate labels in the assembly output.
+	class Symbol {
+	public:
+		Symbol();
+		Symbol(const std::string &prefix, const std::string &requested_suffix, uint64_t unique_identifier = 0);
+		std::string prefix;
+		std::string requested_suffix;
+		uint64_t unique_identifier;
+
+		static const uint64_t max_unique_try_iterations;
+
+		static std::map<Symbol, std::string> generate_symbol_values(const std::set<Symbol> &symbols, const std::set<std::string> additional_names);
+	};
+
+	// | Output strings, possibly with unexpanded symbols.
+	class Output {
+	public:
+		enum section_e {
+			null_section        = 0,
+			strings_section     = 1,
+			global_vars_section = 2,
+			text_section        = 3,
+			num_sections        = 3,
+		};
+		typedef enum section_e section_t;
+
+		class SymbolLocation {
+		public:
+			SymbolLocation();
+			SymbolLocation(section_t section, std::vector<std::string>::size_type line, std::string::size_type start_pos, std::string::size_type length = 0);
+			section_t                           section;
+			std::vector<std::string>::size_type line;
+			std::string::size_type              start_pos;
+			std::string::size_type              length;
+
+			// | Returns true if b is less than a, so that when used with
+			// std::stable_sort from <algorithm> as the 3rd argument, a vector
+			// can be reverse sorted.
+			static bool reverse_cmp(const SymbolLocation &a, const SymbolLocation &b);
+		};
+
+		Output();
+
+		// | The lines of output, possibly with unexpanded symbol locations.
+		std::vector<std::vector<std::string>> sections;
+
+		// | The symbol table.
+		std::map<Symbol, std::vector<SymbolLocation>> unexpanded_symbols;
+		std::map<std::pair<section_t, std::vector<std::string>::size_type>, std::vector<Symbol>> reverse_unexpanded_symbols;
+
+		// | If present, all lines joined together with symbols expanded.
+		std::vector<std::string> normalized_lines;
+
+		// | Does this output contain no unexpanded symbols?
+		bool is_normalized() const;
+
+		// | Return a new output, expanding unexpanded symbols, so that they
+		// are unique and different from any element of "additional_names".
+		//
+		// If this output is already normalized, return a copy of this output.
+		Output normalize(const std::set<std::string> &additional_names = std::set<std::string>()) const;
+
+		// | Normalize this output if it isn't normalized to a new value, and
+		// discard the new output container after returning a copy of its
+		// lines.
+		//
+		// If this output is already normalized, then additional_names is ignored.
+		std::vector<std::string> get_normalized_lines_copy(const std::set<std::string> &additional_names = std::set<std::string>()) const;
+	};
 
 	// | The result of a constant expression.
 	class ConstantValue {
@@ -388,6 +474,9 @@ public:
 	Semantics(const Grammar &grammar, bool auto_analyze = true);
 	Semantics(Grammar &&grammar, bool auto_analyze = true);
 
+	// | Get a copy of the normalized output lines.
+	std::vector<std::string> get_normalized_output_lines_copy() const;
+
 	const Grammar get_grammar() const;
 	void set_grammar(const Grammar &grammar);
 	void set_grammar(Grammar &&grammar);
@@ -465,6 +554,25 @@ protected:
 	IdentifierScope top_level_scope;
 	// | The lifetime of anonymous_storage should not exceed that of *_scope, since they may contain raw pointers into this storage.
 	IdentifierScope anonymous_storage;
+
+	// The analyzed assembly output.
+	Output output;
 };
+
+inline bool operator< (const Semantics::Symbol &a, const Semantics::Symbol &b);
+inline bool operator> (const Semantics::Symbol &a, const Semantics::Symbol &b);
+inline bool operator<=(const Semantics::Symbol &a, const Semantics::Symbol &b);
+inline bool operator>=(const Semantics::Symbol &a, const Semantics::Symbol &b);
+
+inline bool operator==(const Semantics::Symbol &a, const Semantics::Symbol &b);
+inline bool operator!=(const Semantics::Symbol &a, const Semantics::Symbol &b);
+
+inline bool operator< (const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b);
+inline bool operator> (const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b);
+inline bool operator<=(const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b);
+inline bool operator>=(const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b);
+
+inline bool operator==(const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b);
+inline bool operator!=(const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b);
 
 #endif /* #ifndef CPSL_CC_SEMANTICS_HH */
