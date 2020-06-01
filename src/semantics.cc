@@ -118,6 +118,30 @@ bool Semantics::Output::SymbolLocation::reverse_cmp(const SymbolLocation &a, con
 Semantics::Output::Output()
 	{}
 
+// | Add a symbol location.
+void Semantics::Output::add_symbol_location(const Symbol &symbol, const SymbolLocation &symbol_location) {
+	// Is this a recognized symbol?
+	std::map<Symbol, std::vector<SymbolLocation>>::iterator unexpanded_symbols_search = unexpanded_symbols.find(symbol);
+	if (unexpanded_symbols_search == unexpanded_symbols.end()) {
+		// Nope.
+		unexpanded_symbols.insert({symbol, std::vector<SymbolLocation>(1, symbol_location)});
+	} else {
+		// Yep.
+		unexpanded_symbols_search->second.push_back(symbol_location);
+	}
+
+	// Is this a recognized line?
+	std::pair<section_t, std::vector<std::string>::size_type> line {symbol_location.section, symbol_location.line};
+	std::map<std::pair<section_t, std::vector<std::string>::size_type>, std::vector<Symbol>>::iterator reverse_unexpanded_symbols_search = reverse_unexpanded_symbols.find(std::as_const(line));
+	if (reverse_unexpanded_symbols_search == reverse_unexpanded_symbols.end()) {
+		// Nope.
+		reverse_unexpanded_symbols.insert({std::as_const(line), std::vector<Symbol>(1, symbol)});
+	} else {
+		// Yep.
+		reverse_unexpanded_symbols_search->second.push_back(symbol);
+	}
+}
+
 bool Semantics::Output::is_normalized() const {
 	if (unexpanded_symbols.size() > 0) {
 		// There are unexpanded symbols.

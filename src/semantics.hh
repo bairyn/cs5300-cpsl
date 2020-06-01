@@ -101,6 +101,9 @@ public:
 		// | If present, all lines joined together with symbols expanded.
 		std::vector<std::string> normalized_lines;
 
+		// | Add a symbol location.
+		void add_symbol_location(const Symbol &symbol, const SymbolLocation &symbol_location);
+
 		// | Does this output contain no unexpanded symbols?
 		bool is_normalized() const;
 
