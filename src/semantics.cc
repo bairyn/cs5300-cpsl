@@ -1608,8 +1608,9 @@ Semantics::IdentifierScope::IdentifierBinding::Static::Static(ConstantValue &&co
 Semantics::IdentifierScope::IdentifierBinding::Var::Var()
 	{}
 
-Semantics::IdentifierScope::IdentifierBinding::Var::Var(const Type &type, bool global, Symbol symbol, bool register_, uint8_t arg_register_id, uint32_t offset)
-	: type(type)
+Semantics::IdentifierScope::IdentifierBinding::Var::Var(bool ref, const Type &type, bool global, Symbol symbol, bool register_, uint8_t arg_register_id, uint32_t offset)
+	: ref(ref)
+	, type(type)
 	, global(global)
 	, symbol(symbol)
 	, register_(register_)
@@ -2168,25 +2169,20 @@ void Semantics::set_grammar(Grammar &&grammar) {
 }
 
 // | Determine whether the expression in the grammar tree is a constant expression.
-// The result will be memoized in is_expression_constant_calculations.
+//
+// TODO: this will work if the grammar parse tree is valid, but check for cycles in case there's a mistake somewhere.
 Semantics::ConstantValue Semantics::is_expression_constant(
 	// | Reference to the expression in the grammar tree.
 	uint64_t expression,
 	// | A collection of identifiers of constants available to the scope of the expression.
 	const IdentifierScope &expression_constant_scope
-) {
+) const {
 	// TODO: assert() or assert(this->verify()) and configure macros to enable
 	// assertions only when debugging is enabled (DEBUG=1 is defined).
 	if (expression > grammar.expression_storage.size()) {
 		std::ostringstream sstr;
 		sstr << "Semantics::is_expression_constant: out of bounds expression reference: " << expression << " >= " << grammar.expression_storage.size() << ".";
 		throw SemanticsError(sstr.str());
-	}
-
-	// Have we already calculated this value?
-	std::map<uint64_t, ConstantValue>::const_iterator expression_search = is_expression_constant_calculations.find(expression);
-	if (expression_search != is_expression_constant_calculations.cend()) {
-		return expression_search->second;
 	}
 
 	// Lookup the expression from the grammar tree.
@@ -3298,12 +3294,11 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 		}
 	}
 
-	// Cache and return the calculated constant value.
-	is_expression_constant_calculations.insert({expression, ConstantValue(expression_constant_value)});
+	// Return the calculated constant value.
 	return expression_constant_value;
 }
 
-Semantics::ConstantValue Semantics::is_expression_constant(const Expression &expression, const IdentifierScope &expression_constant_scope) {
+Semantics::ConstantValue Semantics::is_expression_constant(const Expression &expression, const IdentifierScope &expression_constant_scope) const {
 	return is_expression_constant(&expression - &grammar.expression_storage[0], expression_constant_scope);
 }
 
@@ -3654,6 +3649,15 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 	}
 }
 
+Semantics::MIPSIO Semantics::analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) const {
+	return std::move(analyze_expression(grammar.expression_storage.at(expression), constant_scope, type_scope, var_scope, combined_scope));
+}
+
+Semantics::MIPSIO Semantics::analyze_expression(const Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) const {
+	// TODO
+	return MIPSIO();  // TODO
+}
+
 bool Semantics::would_addition_overflow(int32_t a, int32_t b) {
 	int32_t smaller, larger;
 	if (a <= b) {
@@ -3772,7 +3776,6 @@ void Semantics::reset_output() {
 	// Clear.
 
 	output                   = Output();
-	is_expression_constant_calculations.clear();
 	top_level_scope          = IdentifierScope();
 	top_level_type_scope     = IdentifierScope();
 	top_level_var_scope      = IdentifierScope();
@@ -4239,11 +4242,6 @@ void Semantics::analyze() {
 						std::ostringstream sline;
 						sline << ".data";
 						output.add_line(Output::global_vars_section, sline.str());
-
-						// Since .data is non-empty, add a newline for readability between .data and .text.
-						if (output.is_section_empty(Output::text_section)) {
-							output.add_line(Output::text_section, "");
-						}
 					}
 
 					// Add the variable binding.
@@ -4251,7 +4249,7 @@ void Semantics::analyze() {
 					// Use the Var index as its symbol unique identifier.
 					const std::string next_identifier_text = std::as_const(next_identifier->text);
 					const Symbol var_symbol("global_var_", next_identifier_text, top_level_vars.size());
-					const IdentifierScope::IdentifierBinding::Var var(*next_semantics_type, true, var_symbol, false, 0, 0);
+					const IdentifierScope::IdentifierBinding::Var var(false, *next_semantics_type, true, var_symbol, false, 0, 0);
 					top_level_vars.push_back(var);
 					top_level_var_scope.scope.insert({next_identifier_text, IdentifierScope::IdentifierBinding(var)});
 
@@ -4297,6 +4295,13 @@ void Semantics::analyze() {
 	}
 
 	// Next, analyze the top-level procedures and functions.
+
+	// Add ".text", since unconditionally there will be at least "main:" defined.
+	if (!output.is_section_empty(Output::global_vars_section)) {
+		// If .data is non-empty, add a newline for readability between .data and .text.
+		output.add_line(Output::text_section, "");
+	}
+	output.add_line(Output::text_section, ".text");
 
 	// Collect the procedure_decl_or_function_decls in the list.
 	std::vector<const ProcedureDeclOrFunctionDecl *> procedure_decl_or_function_decls;

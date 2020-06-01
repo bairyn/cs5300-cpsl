@@ -408,7 +408,10 @@ public:
 			class Var {
 			public:
 				Var();
-				Var(const Type &type, bool global, Symbol symbol, bool register_, uint8_t arg_register_id, uint32_t offset);
+				Var(bool ref, const Type &type, bool global, Symbol symbol, bool register_, uint8_t arg_register_id, uint32_t offset);
+				// | Is this a pointer / reference (Ref)?
+				bool ref;
+				// | What is the base type of this variable, ignoring the pointer?
 				Type type;
 				// | Is the variable a global variable or a local variable?
 				bool global;
@@ -421,6 +424,7 @@ public:
 				// | If this variable is local and not stored in a register, what is its offset relative to the stack pointer?
 				uint32_t offset;
 			};
+			// TODO: Ref is now merged into Var.  Remove.
 			// | Pointer variable.
 			class Ref {
 			public:
@@ -519,7 +523,8 @@ public:
 	void set_grammar(Grammar &&grammar);
 
 	// | Determine whether the expression in the grammar tree is a constant expression.
-	// The result will be memoized in is_expression_constant_calculations.
+	//
+	// TODO: this will work if the grammar parse tree is valid, but check for cycles in case there's a mistake somewhere.
 	ConstantValue is_expression_constant(
 		// | Reference to the expression in the grammar tree.
 		uint64_t expression,
@@ -527,8 +532,8 @@ public:
 		// Note: We don't record the identifier scope here.  There is only one
 		// identifier scope for each expression.
 		const IdentifierScope &expression_constant_scope
-	);
-	ConstantValue is_expression_constant(const Expression &expression, const IdentifierScope &expression_constant_scope);
+	) const;
+	ConstantValue is_expression_constant(const Expression &expression, const IdentifierScope &expression_constant_scope) const;
 
 	// | From the parse tree Type, construct a Semantics::Type that represents the type.
 	//
@@ -540,6 +545,39 @@ public:
 	// referents, which are normally stored inside of the type_type_scope
 	// IdentifierScope passed to this method.
 	Type analyze_type(const std::string &identifier, const ::Type &type, const IdentifierScope &type_constant_scope, const IdentifierScope &type_type_scope, IdentifierScope &anonymous_storage);
+
+	// | An intermediate unit representation of MIPS instructions.
+	class Instruction {
+	public:
+		// TODO
+	};
+
+	// | A MIPS IO monad.
+	//
+	// Tracks registers, space, or working memory used and those needed.
+	class MIPSIO {
+	public:
+		std::vector<int32_t> input;
+		std::vector<int32_t> output;
+		std::vector<int32_t> working;
+		std::vector<Instruction> instructions;
+	};
+
+	MIPSIO analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) const;
+	MIPSIO analyze_expression(const Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) const;
+	// TODO
+	//MIPSIO analyze_statement();
+
+	// | Analyze a sequence of statements.
+	//
+	// Note: this does not need to necessarily correspond to a ::Block in the
+	// grammar tree but can be a sequence of statements without a BEGIN and END
+	// keyword.
+	// TODO
+	//Block analyze_block();
+
+	// TODO
+	//Routine analyze_routine();
 
 	static bool would_addition_overflow(int32_t a, int32_t b);
 	static bool would_multiplication_overflow(int32_t a, int32_t b);
@@ -572,9 +610,6 @@ protected:
 	Grammar grammar;
 	// | Whether to automatically construct the semantics analysis after loading the grammar.
 	bool auto_analyze;
-
-	// | Memoization cache for is_expression_constant, but probably redundant anyway.
-	std::map<uint64_t, ConstantValue> is_expression_constant_calculations;
 
 	// | Collection of string constants we collect as we analyze the parse tree.
 	//
