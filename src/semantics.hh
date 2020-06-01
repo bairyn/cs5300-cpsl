@@ -126,6 +126,9 @@ public:
 		void add_line(section_t section, const std::string &line, const Symbol &symbol, std::string::size_type start_pos = 0, std::string::size_type length = 0);
 		// | Add a symbol to the last line.
 		void add_symbol_location_current_last_line(section_t section, const Symbol &symbol, std::string::size_type start_pos = 0, std::string::size_type length = 0);
+
+		// | Is the section empty?
+		bool is_section_empty(section_t section) const;
 	};
 
 	// | The result of a constant expression.
@@ -578,16 +581,17 @@ protected:
 	// Assembled output can contain a section of labeled string constants that
 	// other parts can refer to.
 	std::set<std::string> string_constants;
-	// | After collecting all string constants, an ordered association of labels and constant constants is produced.
-	// The labels are unique and different from all top level identifiers.
-	std::vector<std::pair<std::string, std::string>> labeled_string_constants;
 
 	IdentifierScope top_level_constant_scope;
 	IdentifierScope top_level_type_scope;
+	IdentifierScope top_level_var_scope;
 	// | Union of top_level_*_scope.  If !combine_identifier_namespaces, the last identifier overrides.
 	IdentifierScope top_level_scope;
 	// | The lifetime of anonymous_storage should not exceed that of *_scope, since they may contain raw pointers into this storage.
 	IdentifierScope anonymous_storage;
+
+	// | Ordered copy of the Var identifier bindings in top_level_var_scope.
+	std::vector<IdentifierScope::IdentifierBinding::Var> top_level_vars;
 
 	// The analyzed assembly output.
 	Output output;

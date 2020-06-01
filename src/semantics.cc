@@ -1,5 +1,6 @@
 #include <algorithm>     // std::reverse, std::stable_sort
 #include <cassert>       // assert
+#include <iomanip>       // std::left, std::right, std::setw
 #include <limits>        // std::numeric_limits
 #include <optional>      // std::optional
 #include <set>           // std::set
@@ -415,6 +416,44 @@ void Semantics::Output::add_symbol_location_current_last_line(section_t section,
 
 	// Add the symbol location.
 	add_symbol_location(symbol, SymbolLocation(section, output_section.size() - 1, start_pos, length));
+}
+
+bool Semantics::Output::is_section_empty(section_t section) const {
+	// Make sure the section index is valid.
+	if (section < null_section || section >= num_sections) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::Output::is_section_empty: error: attempted to access a section with an invalid index." << std::endl
+			<< "  section                   : " << section      << std::endl
+			<< "  num_sections (recognized) : " << num_sections
+			;
+		throw SemanticsError(sstr.str());
+	}
+
+	// If the sections vector is empty, just treat this section as empty.
+	if (sections.size() <= 0) {
+		return true;
+	}
+
+	// Make sure we have the correct number of sections.
+	if (sections.size() != num_sections + 1) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Output::is_section_empty: invalid number of sections: " << sections.size() << " != " << num_sections + 1;
+		throw SemanticsError(sstr.str());
+	}
+
+	// Make sure the section exists.
+	if (section >= sections.size()) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::Output::is_section_empty: error: attempted to access a non-existent section when checking whether it is empty." << std::endl
+			<< "  section : " << section
+			;
+		throw SemanticsError(sstr.str());
+	}
+
+	// Return whether it's empty.
+	return sections[section].size() <= 0;
 }
 
 Semantics::ConstantValue::ConstantValue()
@@ -921,7 +960,8 @@ const Semantics::Type::Primitive Semantics::Type::Primitive::boolean_type {
 };
 
 const Semantics::Type::Primitive Semantics::Type::Primitive::string_type {
-	{"string", false, 0},
+	//{"string", false, 0},  // dynamic array
+	{"string", true, 4},  // char *
 	Semantics::Type::Primitive::string_tag,
 };
 
@@ -3471,6 +3511,7 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 					}
 
 					// Add a field.
+					field_identifiers.insert({next_identifier->text});
 					fields.push_back({next_identifier->text, next_semantics_type});
 				}
 			}
@@ -3734,8 +3775,10 @@ void Semantics::reset_output() {
 	is_expression_constant_calculations.clear();
 	top_level_scope          = IdentifierScope();
 	top_level_type_scope     = IdentifierScope();
+	top_level_var_scope      = IdentifierScope();
 	top_level_constant_scope = IdentifierScope();
 	anonymous_storage        = IdentifierScope();
+	top_level_vars.clear();
 	string_constants.clear();
 
 	// Reset.
@@ -4000,7 +4043,7 @@ void Semantics::analyze() {
 					sstr
 						<< "Semantics::analyze: error (line "
 						<< identifier.line << " col " << identifier.column
-						<< "): identifier ``" << identifier.text << "\" has already been defined."
+						<< "): type identifier ``" << identifier.text << "\" has already been assigned."
 						<< "  Set combine_identifier_namespaces to 0 to isolate identifier namespaces"
 						<< " from each other."
 						;
@@ -4023,6 +4066,227 @@ void Semantics::analyze() {
 		default: {
 			std::ostringstream sstr;
 			sstr << "Semantics::analyze: internal error: invalid type_decl_opt branch at index " << program.type_decl_opt << ": " << type_decl_opt.branch;
+			throw SemanticsError(sstr.str());
+		}
+	}
+
+	// Next, parse top-level var definitions.
+	switch (var_decl_opt.branch) {
+		case VarDeclOpt::empty_branch: {
+			// No top-level variable declarations.  Nothing to do here.
+			break;
+		}
+
+		case VarDeclOpt::value_branch: {
+			// Unpack the var_decl.
+			const VarDeclOpt::Value           &var_decl_opt_value             = grammar.var_decl_opt_value_storage.at(var_decl_opt.data);
+			const VarDecl                     &var_decl                       = grammar.var_decl_storage.at(var_decl_opt_value.var_decl);
+			const LexemeKeyword               &var_keyword0                   = grammar.lexemes.at(var_decl.var_keyword0).get_keyword(); (void) var_keyword0;
+			const TypedIdentifierSequence     &typed_identifier_sequence      = grammar.typed_identifier_sequence_storage.at(var_decl.typed_identifier_sequence);
+			const TypedIdentifierSequenceList &typed_identifier_sequence_list = grammar.typed_identifier_sequence_list_storage.at(var_decl.typed_identifier_sequence_list);
+
+			// Collect the typed identifier sequences in the list.
+			std::vector<const TypedIdentifierSequence *> typed_identifier_sequences;
+			typed_identifier_sequences.push_back(&typed_identifier_sequence);
+			bool reached_end = false;
+			for (const TypedIdentifierSequenceList *last_list = &typed_identifier_sequence_list; !reached_end; ) {
+				// Unpack the last list encountered.
+				switch(last_list->branch) {
+					case TypedIdentifierSequenceList::empty_branch: {
+						// We're done.
+						// (No need to unpack the empty branch.)
+						reached_end = true;
+						break;
+					}
+
+					case TypedIdentifierSequenceList::cons_branch: {
+						// Unpack the list.
+						const TypedIdentifierSequenceList::Cons &last_typed_identifier_sequence_list_cons = grammar.typed_identifier_sequence_list_cons_storage.at(last_list->data);
+						const TypedIdentifierSequenceList       &last_typed_identifier_sequence_list      = grammar.typed_identifier_sequence_list_storage.at(last_typed_identifier_sequence_list_cons.typed_identifier_sequence_list);
+						const TypedIdentifierSequence           &last_typed_identifier_sequence           = grammar.typed_identifier_sequence_storage.at(last_typed_identifier_sequence_list_cons.typed_identifier_sequence);
+
+						// Add the constant assignment.
+						typed_identifier_sequences.push_back(&last_typed_identifier_sequence);
+						last_list = &last_typed_identifier_sequence_list;
+
+						// Loop.
+						break;
+					}
+
+					// Unrecognized branch.
+					default: {
+						std::ostringstream sstr;
+						sstr << "Semantics::analyze: internal error: invalid typed_identifier_sequence_list branch at index " << last_list - &grammar.typed_identifier_sequence_list_storage[0] << ": " << last_list->branch;
+						throw SemanticsError(sstr.str());
+					}
+				}
+			}
+
+			// Correct the order of the list.
+			std::reverse(typed_identifier_sequences.begin() + 1, typed_identifier_sequences.end());
+
+			// Handle the typed identifier sequences.
+			for (const TypedIdentifierSequence *next_typed_identifier_sequence : typed_identifier_sequences) {
+				const IdentList      &ident_list          = grammar.ident_list_storage.at(next_typed_identifier_sequence->ident_list);
+				const LexemeOperator &colon_operator0     = grammar.lexemes.at(next_typed_identifier_sequence->colon_operator0).get_operator(); (void) colon_operator0;
+				const ::Type         &next_type           = grammar.type_storage.at(next_typed_identifier_sequence->type);
+				const LexemeOperator &semicolon_operator0 = grammar.lexemes.at(next_typed_identifier_sequence->semicolon_operator0).get_operator(); (void) semicolon_operator0;
+
+				// Get a copy of the subtype or construct a new anonymous subtype using "anonymous_storage".
+				const Type *next_semantics_type;
+				// Branch on next_type.  If it's in the "simple" type alias
+				// format, it should refer to an existing type, although it's
+				// not a type alias.  Otherwise, create an anonymous type.
+				if (next_type.branch == ::Type::simple_branch) {
+					const ::Type::Simple   &simple            = grammar.type_simple_storage.at(next_type.data);
+					const SimpleType       &simple_type       = grammar.simple_type_storage.at(simple.simple_type);
+					const LexemeIdentifier &simple_identifier = grammar.lexemes.at(simple_type.identifier).get_identifier();
+
+					// Make sure the reference typed is in scope.
+					if (!top_level_type_scope.has(simple_identifier.text)) {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze: error (line "
+							<< simple_identifier.line << " col " << simple_identifier.column
+							<< "): undefined type ``" << simple_identifier.text << "\": not in scope."
+							;
+						throw SemanticsError(sstr.str());
+					}
+
+					// Set next_semantics_type.
+					next_semantics_type = &top_level_type_scope.get(simple_identifier.text).get_type();
+				} else {
+					// Create an anonymous type.
+					Type anonymous_type = analyze_type("", next_type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
+					anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(anonymous_type));
+					next_semantics_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
+				}
+
+				// Unpack the ident_list.
+				const LexemeIdentifier       &first_identifier         = grammar.lexemes.at(ident_list.identifier).get_identifier();
+				const IdentifierPrefixedList &identifier_prefixed_list = grammar.identifier_prefixed_list_storage.at(ident_list.identifier_prefixed_list);
+
+				// Collect the identifiers in the list.
+				std::vector<const LexemeIdentifier *> identifiers;
+				identifiers.push_back(&first_identifier);
+				bool reached_end = false;
+				for (const IdentifierPrefixedList *last_list = &identifier_prefixed_list; !reached_end; ) {
+					// Unpack the last list encountered.
+					switch(last_list->branch) {
+						case IdentifierPrefixedList::empty_branch: {
+							// We're done.
+							// (No need to unpack the empty branch.)
+							reached_end = true;
+							break;
+						}
+
+						case IdentifierPrefixedList::cons_branch: {
+							// Unpack the list.
+							const IdentifierPrefixedList::Cons &last_identifier_prefixed_list_cons = grammar.identifier_prefixed_list_cons_storage.at(last_list->data);
+							const IdentifierPrefixedList       &last_identifier_prefixed_list      = grammar.identifier_prefixed_list_storage.at(last_identifier_prefixed_list_cons.identifier_prefixed_list);
+							const LexemeOperator               &last_colon_operator0               = grammar.lexemes.at(last_identifier_prefixed_list_cons.comma_operator0).get_operator(); (void) last_colon_operator0;
+							const LexemeIdentifier             &last_identifier                    = grammar.lexemes.at(last_identifier_prefixed_list_cons.identifier).get_identifier();
+
+							// Add the identifier.
+							identifiers.push_back(&last_identifier);
+							last_list = &last_identifier_prefixed_list;
+
+							// Loop.
+							break;
+						}
+
+						// Unrecognized branch.
+						default: {
+							std::ostringstream sstr;
+							sstr << "Semantics::analyze_type: internal error: invalid identifier_prefixed_list branch at index " << last_list - &grammar.identifier_prefixed_list_storage[0] << ": " << last_list->branch;
+							throw SemanticsError(sstr.str());
+						}
+					}
+				}
+
+				// Correct the order of the list.
+				std::reverse(identifiers.begin() + 1, identifiers.end());
+
+				// Handle the identifiers.
+				for (const LexemeIdentifier *next_identifier : identifiers) {
+					// Duplicate variable definition?
+					if (top_level_var_scope.has(next_identifier->text)) {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze: error (line "
+							<< next_identifier->line << " col " << next_identifier->column
+							<< "): redefinition of variable ``" << next_identifier->text << "\"."
+							;
+						throw SemanticsError(sstr.str());
+					}
+
+					// Duplicate identifier binding in another namespace?
+					if (combine_identifier_namespaces && top_level_scope.has(next_identifier->text)) {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze: error (line "
+							<< next_identifier->line << " col " << next_identifier->column
+							<< "): variable identifier ``" << next_identifier->text << "\" has already been assigned."
+							<< "  Set combine_identifier_namespaces to 0 to isolate identifier namespaces"
+							<< " from each other."
+							;
+						throw SemanticsError(sstr.str());
+					}
+
+					// If this is the first line in the global_vars_section,
+					// add the initial declarations.
+					if (output.is_section_empty(Output::global_vars_section)) {
+						std::ostringstream sline;
+						sline << ".data";
+						output.add_line(Output::global_vars_section, sline.str());
+					}
+
+					// Add the variable binding.
+
+					// Use the Var index as its symbol unique identifier.
+					const std::string next_identifier_text = std::as_const(next_identifier->text);
+					const Symbol var_symbol("global_var_", next_identifier_text, top_level_vars.size());
+					const IdentifierScope::IdentifierBinding::Var var(*next_semantics_type, true, var_symbol, false, 0, 0);
+					top_level_vars.push_back(var);
+					top_level_var_scope.scope.insert({next_identifier_text, IdentifierScope::IdentifierBinding(var)});
+
+					// Global variable-width variables are currently unsupported.
+					if (!var.type.get_fixed_width()) {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze: error (line "
+							<< next_identifier->line << " col " << next_identifier->column
+							<< "): variable-width globals are currently unsupported; not compiling ``" << next_identifier->text << "\"."
+							;
+						throw SemanticsError(sstr.str());
+					}
+
+					// Compile the variable references.
+					output.add_line(Output::global_vars_section, ":", var.symbol);
+					if        (var.type.get_size() == 4) {
+						std::ostringstream sline;
+						sline << "\t.word  " << std::right << std::setw(11) << "0";
+						output.add_line(Output::global_vars_section, sline.str());
+					} else if (var.type.get_size() == 1) {
+						std::ostringstream sline;
+						sline << "\t.byte  " << std::right << std::setw(11) << "0";
+						output.add_line(Output::global_vars_section, sline.str());
+					} else {
+						std::ostringstream sline;
+						sline << "\t.space " << std::right << std::setw(11) << var.type.get_size();
+						output.add_line(Output::global_vars_section, sline.str());
+					}
+				}
+			}
+
+			// We're done handling the top-level variable declarations.
+			break;
+		}
+
+		// Unrecognized branch.
+		default: {
+			std::ostringstream sstr;
+			sstr << "Semantics::analyze: internal error: invalid var_decl_opt branch at index " << program.var_decl_opt << ": " << var_decl_opt.branch;
 			throw SemanticsError(sstr.str());
 		}
 	}
