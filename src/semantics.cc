@@ -420,7 +420,7 @@ void Semantics::Output::add_symbol_location_current_last_line(section_t section,
 
 bool Semantics::Output::is_section_empty(section_t section) const {
 	// Make sure the section index is valid.
-	if (section < null_section || section >= num_sections) {
+	if (section < null_section || section > num_sections) {
 		std::ostringstream sstr;
 		sstr
 			<< "Semantics::Output::is_section_empty: error: attempted to access a section with an invalid index." << std::endl
