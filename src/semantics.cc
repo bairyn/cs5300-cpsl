@@ -3937,20 +3937,91 @@ std::string Semantics::Instruction::get_tag_repr() const {
 }
 
 Semantics::MIPSIO::MIPSIO()
+	: output_size(0)
 	{}
 
-Semantics::MIPSIO::MIPSIO(const std::vector<int32_t> &input, const std::vector<int32_t> &working, const std::vector<int32_t> &output, const std::vector<Instruction> &instructions)
-	: input(input)
-	, working(working)
-	, output(output)
+Semantics::MIPSIO::MIPSIO(const std::vector<uint32_t> &working, const std::vector<Instruction> &instructions, const std::vector<uint32_t> &input, uint32_t output_size)
+	: working(working)
 	, instructions(instructions)
+	, input(input)
+	, output_size(output_size)
 	{}
+
+const std::vector<uint32_t> &Semantics::MIPSIO::get_working() const {
+	return working;
+}
+
+const std::vector<Semantics::Instruction> &Semantics::MIPSIO::get_instructions() const {
+	return instructions;
+}
+
+const std::vector<uint32_t> &Semantics::MIPSIO::get_input() const {
+	return input;
+}
+
+uint32_t Semantics::MIPSIO::get_output_size() const {
+	return output_size;
+}
+
+// | For convenience, common size sequences are provided.
+
+// Sizes of 0.
+const std::vector<uint32_t>               Semantics::MIPSIO::working_0      {};
+const std::vector<Semantics::Instruction> Semantics::MIPSIO::instructions_0 {};
+const std::vector<uint32_t>               Semantics::MIPSIO::input_0        {};
+const uint32_t                            Semantics::MIPSIO::output_0       {};
+
+// Sizes of 1.
+const std::vector<uint32_t>               Semantics::MIPSIO::working_1      {1};
+const std::vector<uint32_t>               Semantics::MIPSIO::input_1        {1};
+const uint32_t                            Semantics::MIPSIO::output_1       {1};
+
+// Sizes of 4.
+const std::vector<uint32_t>               Semantics::MIPSIO::working_4      {4};
+const std::vector<uint32_t>               Semantics::MIPSIO::input_4        {4};
+const uint32_t                            Semantics::MIPSIO::output_4       {4};
+
+// 2 sizes.
+const std::vector<uint32_t>               Semantics::MIPSIO::working_0_0    {0, 0};
+const std::vector<uint32_t>               Semantics::MIPSIO::input_0_0      {0, 0};
+
+const std::vector<uint32_t>               Semantics::MIPSIO::working_0_1    {0, 1};
+const std::vector<uint32_t>               Semantics::MIPSIO::input_0_1      {0, 1};
+
+const std::vector<uint32_t>               Semantics::MIPSIO::working_0_4    {0, 4};
+const std::vector<uint32_t>               Semantics::MIPSIO::input_0_4      {0, 4};
+
+const std::vector<uint32_t>               Semantics::MIPSIO::working_1_0    {1, 0};
+const std::vector<uint32_t>               Semantics::MIPSIO::input_1_0      {1, 0};
+
+const std::vector<uint32_t>               Semantics::MIPSIO::working_1_1    {1, 1};
+const std::vector<uint32_t>               Semantics::MIPSIO::input_1_1      {1, 1};
+
+const std::vector<uint32_t>               Semantics::MIPSIO::working_1_4    {1, 4};
+const std::vector<uint32_t>               Semantics::MIPSIO::input_1_4      {1, 4};
+
+const std::vector<uint32_t>               Semantics::MIPSIO::working_4_0    {4, 0};
+const std::vector<uint32_t>               Semantics::MIPSIO::input_4_0      {4, 0};
+
+const std::vector<uint32_t>               Semantics::MIPSIO::working_4_1    {4, 1};
+const std::vector<uint32_t>               Semantics::MIPSIO::input_4_1      {4, 1};
+
+const std::vector<uint32_t>               Semantics::MIPSIO::working_4_4    {4, 4};
+const std::vector<uint32_t>               Semantics::MIPSIO::input_4_4      {4, 4};
 
 Semantics::MIPSIO Semantics::analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) const {
 	return std::move(analyze_expression(grammar.expression_storage.at(expression), constant_scope, type_scope, var_scope, combined_scope));
 }
 
 Semantics::MIPSIO Semantics::analyze_expression(const Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) const {
+	// Some type aliases to improve readability.
+	using M  = MIPSIO;
+	using I  = Instruction;
+	using B  = Instruction::Base;
+	using U  = uint32_t;
+	using US = std::vector<uint32_t>;
+	using IS = std::vector<Instruction>;
+
 	// First, is this expression a constant value?
 	ConstantValue constant_result = is_expression_constant(expression, constant_scope);
 	if (constant_result.is_static()) {
@@ -3969,9 +4040,8 @@ Semantics::MIPSIO Semantics::analyze_expression(const Expression &expression, co
 		}
 
 		// This expression has 0 inputs, 0 working memory units, and 1 output.
-		MIPSIO mips_io;
-		mips_io.output.push_back(primitive_type.size);
-		mips_io.instructions.push_back(Instruction(Instruction::LoadImmediate(Instruction::Base(), 0, constant_result)));
+		MIPSIO mips_io(M::working_0, IS { I(I::LoadImmediate(B(), 0, constant_result)) }, M::input_0, M::output_0);
+		return mips_io;
 	}
 
 	// Prepare the MIPS IO value.

@@ -614,15 +614,71 @@ public:
 	class MIPSIO {
 	public:
 		MIPSIO();
-		MIPSIO(const std::vector<int32_t> &input, const std::vector<int32_t> &working, const std::vector<int32_t> &output, const std::vector<Instruction> &instructions);
-		// | The elements represent the sizes of the inputs.
-		std::vector<int32_t> input;
+		MIPSIO(const std::vector<uint32_t> &working, const std::vector<Instruction> &instructions, const std::vector<uint32_t> &input, uint32_t output_size);
+		// | Bind constructor.
+		//MIPSIO(const std::vector<MIPSIO> todo);
+
+		const std::vector<uint32_t>    &get_working()      const;
+		const std::vector<Instruction> &get_instructions() const;
+		const std::vector<uint32_t>    &get_input()        const;
+		uint32_t                        get_output_size()  const;
+
+		// | For convenience, common size sequences are provided.
+
+		// Sizes of 0.
+		static const std::vector<uint32_t>    working_0;
+		static const std::vector<Instruction> instructions_0;
+		static const std::vector<uint32_t>    input_0;
+		static const uint32_t                 output_0;
+
+		// Sizes of 1.
+		static const std::vector<uint32_t>    working_1;
+		static const std::vector<uint32_t>    input_1;
+		static const uint32_t                 output_1;
+
+		// Sizes of 4.
+		static const std::vector<uint32_t>    working_4;
+		static const std::vector<uint32_t>    input_4;
+		static const uint32_t                 output_4;
+
+		// 2 sizes.
+		static const std::vector<uint32_t>    working_0_0;
+		static const std::vector<uint32_t>    input_0_0;
+
+		static const std::vector<uint32_t>    working_0_1;
+		static const std::vector<uint32_t>    input_0_1;
+
+		static const std::vector<uint32_t>    working_0_4;
+		static const std::vector<uint32_t>    input_0_4;
+
+		static const std::vector<uint32_t>    working_1_0;
+		static const std::vector<uint32_t>    input_1_0;
+
+		static const std::vector<uint32_t>    working_1_1;
+		static const std::vector<uint32_t>    input_1_1;
+
+		static const std::vector<uint32_t>    working_1_4;
+		static const std::vector<uint32_t>    input_1_4;
+
+		static const std::vector<uint32_t>    working_4_0;
+		static const std::vector<uint32_t>    input_4_0;
+
+		static const std::vector<uint32_t>    working_4_1;
+		static const std::vector<uint32_t>    input_4_1;
+
+		static const std::vector<uint32_t>    working_4_4;
+		static const std::vector<uint32_t>    input_4_4;
+
+	protected:
 		// | When joining, working units (e.g. registers) can be freely reused.  A MIPSIO's working units must be isolated from other MIPSIOs.
-		std::vector<int32_t> working;
-		// | When input is combined with output, the connected units become working units.
-		std::vector<int32_t> output;
-		// | Instructions.
+		// When input is combined with output, the connected units become working units.
+		std::vector<uint32_t>    working;
+		// | Instructions.  TODO: when you have time, a stack or list-based interface would be more efficient.
 		std::vector<Instruction> instructions;
+		// | The elements represent the sizes of the inputs.
+		std::vector<uint32_t>    input;
+		// | The size of the output.
+		uint32_t                 output_size;
 	};
 
 	MIPSIO analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) const;
