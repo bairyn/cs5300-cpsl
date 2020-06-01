@@ -1565,6 +1565,28 @@ Semantics::IdentifierScope::IdentifierBinding::Static::Static(ConstantValue &&co
 	: constant_value(std::move(constant_value))
 	{}
 
+Semantics::IdentifierScope::IdentifierBinding::Var::Var()
+	{}
+
+Semantics::IdentifierScope::IdentifierBinding::Var::Var(const Type &type, bool global, Symbol symbol, bool register_, uint8_t arg_register_id, uint32_t offset)
+	: type(type)
+	, global(global)
+	, symbol(symbol)
+	, register_(register_)
+	, arg_register_id(arg_register_id)
+	, offset(offset)
+	{}
+
+Semantics::IdentifierScope::IdentifierBinding::Ref::Ref()
+	{}
+
+Semantics::IdentifierScope::IdentifierBinding::Ref::Ref(const Type &type, bool register_, uint8_t arg_register_id, uint32_t offset)
+	: type(type)
+	, register_(register_)
+	, arg_register_id(arg_register_id)
+	, offset(offset)
+	{}
+
 Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding()
 	{}
 

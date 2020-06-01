@@ -385,6 +385,7 @@ public:
 			};
 			typedef enum tag_e tag_t;
 
+			// | Constant expression / static value.
 			class Static {
 			public:
 				Static();
@@ -394,18 +395,41 @@ public:
 				// Keep a copy of the constant value.
 				ConstantValue constant_value;
 			};
+			// TODO: I don't think you need Dynamic here.
 			class Dynamic {
 			public:
 				// TODO
 			};
 			using Type = ::Semantics::Type;
+			// | Variable.
 			class Var {
 			public:
-				// TODO
+				Var();
+				Var(const Type &type, bool global, Symbol symbol, bool register_, uint8_t arg_register_id, uint32_t offset);
+				Type type;
+				// | Is the variable a global variable or a local variable?
+				bool global;
+				// | If this variable is global, what is the label that refers to its address?  Ignored if it isn't global.
+				Symbol symbol;
+				// | If this variable is local, is this variable stored in a register?
+				bool register_;
+				// | If this variable is stored in a register, which of $a0 - $a3 is it?
+				uint8_t arg_register_id;
+				// | If this variable is local and not stored in a register, what is its offset relative to the stack pointer?
+				uint32_t offset;
 			};
+			// | Pointer variable.
 			class Ref {
 			public:
-				// TODO
+				Ref();
+				Ref(const Type &type, bool register_, uint8_t arg_register_id, uint32_t offset);
+				Type type;
+				// | Is this variable stored in a register?
+				bool register_;
+				// | If this variable is stored in a register, which of $a0 - $a3 is it?
+				uint8_t arg_register_id;
+				// | If this variable is not stored in a register, what is its offset relative to the stack pointer?
+				uint32_t offset;
 			};
 
 			using data_t = std::variant<
