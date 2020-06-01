@@ -58,15 +58,16 @@ uint64_t LexemeBase::get_line_end() const {
 }
 
 uint64_t LexemeBase::get_column_end() const {
+	// Get the position of the last newline character.
 	std::string::size_type last_newline_pos = text.rfind('\n');
-	std::string::size_type last_line_pos;
 	if (last_newline_pos == std::string::npos) {
-		last_line_pos = 0;
+		// There is no newline in this lexeme, so don't reset the column.
+		return column + text.size();
 	} else {
-		last_line_pos = last_newline_pos + 1;
+		// Reset the column.
+		uint64_t last_line_length = (text.size() - 1) - last_newline_pos;  // last character position - last newline position.
+		return last_line_length + 1;  // "+ 1": Columns begin at 1.
 	}
-
-	return text.substr(last_line_pos).size() + 1;  // "+ 1": Columns begin at 1.
 }
 
 LexemeIdentifier::LexemeIdentifier(const LexemeBase &lexeme_base)
@@ -926,7 +927,7 @@ LexemeBase Lexeme::get_base() const {
 		case null_lexeme_tag:
 			// For convenience, this is the initial base state available for
 			// the lexer.
-			return LexemeBase(1, 0, "");
+			return LexemeBase(1, 1, "");
 
 		case keyword_tag:
 			try {
