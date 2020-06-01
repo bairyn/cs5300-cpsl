@@ -1047,7 +1047,7 @@ DEFINE_SYMBOL_0_3(FormalParameterPrefixedList, formal_parameter_prefixed_list, E
 DEFINE_SYMBOL_4(FormalParameter, formal_parameter, var_or_ref, ident_list, colon_operator0, type)
 DEFINE_SYMBOL_1_1(VarOrRef, var_or_ref, Var, Ref, var, ref, var_keyword0, ref_keyword0)
 DEFINE_SYMBOL_4(Body, body, constant_decl_opt, type_decl_opt, var_decl_opt, block)
-DEFINE_SYMBOL_3(Block, block, constant_decl_opt, type_decl_opt, block)
+DEFINE_SYMBOL_3(Block, block, begin_keyword0, statement_sequence, end_keyword0)
 DEFINE_SYMBOL_3(TypeDecl, type_decl, type_keyword0, type_assignment, type_assignment_list)
 DEFINE_SYMBOL_0_2(TypeAssignmentList, type_assignment_list, Empty, Cons, empty, cons, type_assignment_list, type_assignment)
 DEFINE_SYMBOL_4(TypeAssignment, type_assignment, identifier, equals_operator0, type, semicolon_operator0)

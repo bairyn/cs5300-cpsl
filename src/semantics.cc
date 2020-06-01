@@ -3858,7 +3858,7 @@ void Semantics::analyze() {
 	const Block                           &block                                = grammar.block_storage.at(program.block);
 	const LexemeOperator                  &dot_operator0                        = grammar.lexemes.at(program.dot_operator0).get_operator(); (void) dot_operator0;
 
-	// First, parse top-level constants.  These are at the beginning of the
+	// First, analyze top-level constants.  These are at the beginning of the
 	// parsed program grammar tree.
 	switch (constant_decl_opt.branch) {
 		case ConstantDeclOpt::empty_branch: {
@@ -3966,7 +3966,7 @@ void Semantics::analyze() {
 		}
 	}
 
-	// Next, parse top-level type definitions.
+	// Next, analyze top-level type definitions.
 	switch (type_decl_opt.branch) {
 		case TypeDeclOpt::empty_branch: {
 			// No constant declarations.  Nothing to do here.
@@ -4070,7 +4070,7 @@ void Semantics::analyze() {
 		}
 	}
 
-	// Next, parse top-level var definitions.
+	// Next, analyze top-level var definitions.
 	switch (var_decl_opt.branch) {
 		case VarDeclOpt::empty_branch: {
 			// No top-level variable declarations.  Nothing to do here.
@@ -4239,6 +4239,11 @@ void Semantics::analyze() {
 						std::ostringstream sline;
 						sline << ".data";
 						output.add_line(Output::global_vars_section, sline.str());
+
+						// Since .data is non-empty, add a newline for readability between .data and .text.
+						if (output.is_section_empty(Output::text_section)) {
+							output.add_line(Output::text_section, "");
+						}
 					}
 
 					// Add the variable binding.
@@ -4290,6 +4295,184 @@ void Semantics::analyze() {
 			throw SemanticsError(sstr.str());
 		}
 	}
+
+	// Next, analyze the top-level procedures and functions.
+
+	// Collect the procedure_decl_or_function_decls in the list.
+	std::vector<const ProcedureDeclOrFunctionDecl *> procedure_decl_or_function_decls;
+	bool reached_end = false;
+	for (const ProcedureDeclOrFunctionDeclList *last_list = &procedure_decl_or_function_decl_list; !reached_end; ) {
+		// Unpack the last list encountered.
+		switch(last_list->branch) {
+			case ProcedureDeclOrFunctionDeclList::empty_branch: {
+				// We're done.
+				// (No need to unpack the empty branch.)
+				reached_end = true;
+				break;
+			}
+
+			case ProcedureDeclOrFunctionDeclList::cons_branch: {
+				// Unpack the list.
+				const ProcedureDeclOrFunctionDeclList::Cons &last_procedure_decl_or_function_decl_list_cons = grammar.procedure_decl_or_function_decl_list_cons_storage.at(last_list->data);
+				const ProcedureDeclOrFunctionDeclList       &last_procedure_decl_or_function_decl_list      = grammar.procedure_decl_or_function_decl_list_storage.at(last_procedure_decl_or_function_decl_list_cons.procedure_decl_or_function_decl_list);
+				const ProcedureDeclOrFunctionDecl           &last_procedure_decl_or_function_decl           = grammar.procedure_decl_or_function_decl_storage.at(last_procedure_decl_or_function_decl_list_cons.procedure_decl_or_function_decl);
+
+				// Add the constant assignment.
+				procedure_decl_or_function_decls.push_back(&last_procedure_decl_or_function_decl);
+				last_list = &last_procedure_decl_or_function_decl_list;
+
+				// Loop.
+				break;
+			}
+
+			// Unrecognized branch.
+			default: {
+				std::ostringstream sstr;
+				sstr << "Semantics::analyze: internal error: invalid procedure_decl_or_function_decl_list branch at index " << last_list - &grammar.procedure_decl_or_function_decl_list_storage[0] << ": " << last_list->branch;
+				throw SemanticsError(sstr.str());
+			}
+		}
+	}
+
+	// Correct the order of the list.
+	std::reverse(procedure_decl_or_function_decls.begin(), procedure_decl_or_function_decls.end());
+
+	// Handle the procedure_decl_or_function_decls.
+	for (const ProcedureDeclOrFunctionDecl *next_procedure_decl_or_function_decl : procedure_decl_or_function_decls) {
+		switch (next_procedure_decl_or_function_decl->branch) {
+			case ProcedureDeclOrFunctionDecl::procedure_branch: {
+				// Unpack the procedure.
+				const ProcedureDeclOrFunctionDecl::Procedure &procedure      = grammar.procedure_decl_or_function_decl_procedure_storage.at(next_procedure_decl_or_function_decl->data);
+				const ProcedureDecl                          &procedure_decl = grammar.procedure_decl_storage.at(procedure.procedure_decl);
+
+				// Forward declaration or definition?
+				switch (procedure_decl.branch) {
+					case ProcedureDecl::forward_branch: {
+						// Unpack the forward declaration.
+						const ProcedureDecl::Forward &forward                    = grammar.procedure_decl_forward_storage.at(procedure_decl.data);
+						const LexemeKeyword          &procedure_keyword0         = grammar.lexemes.at(forward.procedure_keyword0).get_keyword(); (void) procedure_keyword0;
+						const LexemeIdentifier       &identifier                 = grammar.lexemes.at(forward.identifier).get_identifier();
+						const LexemeOperator         &leftparenthesis_operator0  = grammar.lexemes.at(forward.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
+						const FormalParameters       &formal_parameters          = grammar.formal_parameters_storage.at(forward.formal_parameters);
+						const LexemeOperator         &rightparenthesis_operator0 = grammar.lexemes.at(forward.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+						const LexemeOperator         &semicolon_operator0        = grammar.lexemes.at(forward.semicolon_operator0).get_operator(); (void) semicolon_operator0;
+						const LexemeKeyword          &forward_keyword0           = grammar.lexemes.at(forward.forward_keyword0).get_keyword(); (void) forward_keyword0;
+						const LexemeOperator         &semicolon_operator1        = grammar.lexemes.at(forward.semicolon_operator1).get_operator(); (void) semicolon_operator1;
+
+						// TODO
+
+						// We're done handling the forward declaration.
+						break;
+					}
+
+					case ProcedureDecl::definition_branch: {
+						// Unpack the procedure definition.
+						const ProcedureDecl::Definition &definition                 = grammar.procedure_decl_definition_storage.at(procedure_decl.data);
+						const LexemeKeyword             &procedure_keyword0         = grammar.lexemes.at(definition.procedure_keyword0).get_keyword(); (void) procedure_keyword0;
+						const LexemeIdentifier          &identifier                 = grammar.lexemes.at(definition.identifier).get_identifier();
+						const LexemeOperator            &leftparenthesis_operator0  = grammar.lexemes.at(definition.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
+						const FormalParameters          &formal_parameters          = grammar.formal_parameters_storage.at(definition.formal_parameters);
+						const LexemeOperator            &rightparenthesis_operator0 = grammar.lexemes.at(definition.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+						const LexemeOperator            &semicolon_operator0        = grammar.lexemes.at(definition.semicolon_operator0).get_operator(); (void) semicolon_operator0;
+						const Body                      &body                       = grammar.body_storage.at(definition.body);
+						const LexemeOperator            &semicolon_operator1        = grammar.lexemes.at(definition.semicolon_operator1).get_operator(); (void) semicolon_operator1;
+
+						// TODO
+
+						// We're done handling the procedure definition.
+						break;
+					}
+
+					// Unrecognized branch.
+					default: {
+						std::ostringstream sstr;
+						sstr << "Semantics::analyze: internal error: invalid procedure_decl branch at index " << procedure.procedure_decl << ": " << procedure_decl.branch;
+						throw SemanticsError(sstr.str());
+					}
+				}
+
+				// TODO
+
+				// We're done handling the procedure.
+				break;
+			}
+
+			case ProcedureDeclOrFunctionDecl::function_branch: {
+				// Unpack the function.
+				const ProcedureDeclOrFunctionDecl::Function &function      = grammar.procedure_decl_or_function_decl_function_storage.at(next_procedure_decl_or_function_decl->data);
+				const FunctionDecl                          &function_decl = grammar.function_decl_storage.at(function.function_decl);
+
+				// Forward declaration or definition?
+				switch (function_decl.branch) {
+					case FunctionDecl::forward_branch: {
+						// Unpack the forward declaration.
+						const FunctionDecl::Forward &forward                    = grammar.function_decl_forward_storage.at(function_decl.data);
+						const LexemeKeyword         &function_keyword0          = grammar.lexemes.at(forward.function_keyword0).get_keyword(); (void) function_keyword0;
+						const LexemeIdentifier      &identifier                 = grammar.lexemes.at(forward.identifier).get_identifier();
+						const LexemeOperator        &leftparenthesis_operator0  = grammar.lexemes.at(forward.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
+						const FormalParameters      &formal_parameters          = grammar.formal_parameters_storage.at(forward.formal_parameters);
+						const LexemeOperator        &rightparenthesis_operator0 = grammar.lexemes.at(forward.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+						const LexemeOperator        &colon_operator0            = grammar.lexemes.at(forward.colon_operator0).get_operator(); (void) colon_operator0;
+						const ::Type                &type                       = grammar.type_storage.at(forward.type);
+						const LexemeOperator        &semicolon_operator0        = grammar.lexemes.at(forward.semicolon_operator0).get_operator(); (void) semicolon_operator0;
+						const LexemeKeyword         &forward_keyword0           = grammar.lexemes.at(forward.forward_keyword0).get_keyword(); (void) forward_keyword0;
+						const LexemeOperator        &semicolon_operator1        = grammar.lexemes.at(forward.semicolon_operator1).get_operator(); (void) semicolon_operator1;
+
+						// TODO
+
+						// We're done handling the forward declaration.
+						break;
+					}
+
+					case FunctionDecl::definition_branch: {
+						// Unpack the function definition.
+						const FunctionDecl::Definition &definition                 = grammar.function_decl_definition_storage.at(function_decl.data);
+						const LexemeKeyword            &function_keyword0          = grammar.lexemes.at(definition.function_keyword0).get_keyword(); (void) function_keyword0;
+						const LexemeIdentifier         &identifier                 = grammar.lexemes.at(definition.identifier).get_identifier();
+						const LexemeOperator           &leftparenthesis_operator0  = grammar.lexemes.at(definition.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
+						const FormalParameters         &formal_parameters          = grammar.formal_parameters_storage.at(definition.formal_parameters);
+						const LexemeOperator           &rightparenthesis_operator0 = grammar.lexemes.at(definition.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+						const LexemeOperator           &colon_operator0            = grammar.lexemes.at(definition.colon_operator0).get_operator(); (void) colon_operator0;
+						const ::Type                   &type                       = grammar.type_storage.at(definition.type);
+						const LexemeOperator           &semicolon_operator0        = grammar.lexemes.at(definition.semicolon_operator0).get_operator(); (void) semicolon_operator0;
+						const Body                     &body                       = grammar.body_storage.at(definition.body);
+						const LexemeOperator           &semicolon_operator1        = grammar.lexemes.at(definition.semicolon_operator1).get_operator(); (void) semicolon_operator1;
+
+						// TODO
+
+						// We're done handling the function definition.
+						break;
+					}
+
+					// Unrecognized branch.
+					default: {
+						std::ostringstream sstr;
+						sstr << "Semantics::analyze: internal error: invalid function_decl branch at index " << function.function_decl << ": " << function_decl.branch;
+						throw SemanticsError(sstr.str());
+					}
+				}
+
+				// TODO
+
+				// We're done handling the function.
+				break;
+			}
+
+			// Unrecognized branch.
+			default: {
+				std::ostringstream sstr;
+				sstr << "Semantics::analyze: internal error: invalid procedure_decl_or_function_decl branch at index " << next_procedure_decl_or_function_decl - &grammar.procedure_decl_or_function_decl_storage[0] << ": " << next_procedure_decl_or_function_decl->branch;
+				throw SemanticsError(sstr.str());
+			}
+		}
+	}
+
+	// Next, analyze the top-level block (main).
+
+	// Unpack block.
+	const LexemeKeyword &begin_keyword0         = grammar.lexemes.at(block.begin_keyword0).get_keyword(); (void) begin_keyword0;
+	const StatementSequence &statement_sequence = grammar.statement_sequence_storage.at(block.statement_sequence);
+	const LexemeKeyword &end_keyword0           = grammar.lexemes.at(block.end_keyword0).get_keyword(); (void) end_keyword0;
 
 	// TODO
 }
