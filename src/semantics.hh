@@ -131,77 +131,6 @@ public:
 		bool is_section_empty(section_t section) const;
 	};
 
-	// | The result of a constant expression.
-	class ConstantValue {
-	public:
-		// | Is this value considered to be a constant calculable at compile-time?
-		//
-		// If so, which type of constant is it?
-		enum tag_e {
-			null_tag    = 0,
-			dynamic_tag = 1,
-			integer_tag = 2,
-			char_tag    = 3,
-			boolean_tag = 4,
-			string_tag  = 5,
-			num_tags    = 5,
-		};
-		typedef enum tag_e tag_t;
-
-		class Dynamic {};
-
-		using data_t = std::variant<
-			std::monostate,
-			Dynamic,
-			int32_t,
-			char,
-			bool,
-			std::string
-		>;
-
-		ConstantValue();
-		ConstantValue(tag_t tag, const data_t &data);
-		ConstantValue(tag_t tag, data_t &&data);
-		tag_t  tag;
-		data_t data;
-
-		static const ConstantValue dynamic;
-
-		static const ConstantValue true_constant;
-		static const ConstantValue false_constant;
-
-		explicit ConstantValue(int32_t integer);
-		explicit ConstantValue(char char_);
-		explicit ConstantValue(bool integer);
-		ConstantValue(const std::string &string);
-		ConstantValue(std::string &&string);
-
-		// | Is the non-null constant value not tagged with "dynamic_tag"?
-		bool is_static() const;
-		bool is_dynamic() const;
-		bool is_integer() const;
-		bool is_char() const;
-		bool is_boolean() const;
-		bool is_string() const;
-
-		// | The tags must be correct, or else an exception will be thrown, including for set_*.
-		int32_t get_integer() const;
-		char get_char() const;
-		bool get_boolean() const;
-		std::string get_string_copy() const;
-		const std::string &get_string() const;
-		std::string &&get_string();
-		void set_integer(int32_t integer);
-		void set_char(char char_);
-		void set_boolean(bool boolean);
-		void set_string(const std::string &string);
-		void set_string(std::string &&string);
-
-		// | Return "dynamic", "integer", "char", "boolean", or "string".
-		static std::string get_tag_repr(tag_t tag);
-		std::string get_tag_repr() const;
-	};
-
 	class IdentifierScope;  // Forward declare class IdentifierScope.
 	// | A representation of a type.  Another tagged union.
 	//
@@ -370,6 +299,91 @@ public:
 		// | Return "primitive", "simple", "record", or "array".
 		static std::string get_tag_repr(tag_t tag);
 		std::string get_tag_repr() const;
+	};
+
+	// | The result of a constant expression.
+	class ConstantValue {
+	public:
+		// | Is this value considered to be a constant calculable at compile-time?
+		//
+		// If so, which type of constant is it?
+		enum tag_e {
+			null_tag    = 0,
+			dynamic_tag = 1,
+			integer_tag = 2,
+			char_tag    = 3,
+			boolean_tag = 4,
+			string_tag  = 5,
+			num_tags    = 5,
+		};
+		typedef enum tag_e tag_t;
+
+		class Dynamic {
+		public:
+			static const Dynamic dynamic;
+		};
+
+		using data_t = std::variant<
+			std::monostate,
+			Dynamic,
+			int32_t,
+			char,
+			bool,
+			std::string
+		>;
+
+		ConstantValue();
+		ConstantValue(tag_t tag, const data_t &data, uint64_t lexeme_begin, uint64_t lexeme_end);
+		ConstantValue(tag_t tag, data_t &&data, uint64_t lexeme_begin, uint64_t lexeme_end);
+		// | Copy the constant value but use new lexeme identifiers.
+		ConstantValue(const ConstantValue &constant_value, uint64_t lexeme_begin, uint64_t lexeme_end);
+		ConstantValue(ConstantValue &&constant_value, uint64_t lexeme_begin, uint64_t lexeme_end);
+		tag_t  tag;
+		data_t data;
+		uint64_t lexeme_begin;
+		uint64_t lexeme_end;
+
+		static const ConstantValue true_constant;
+		static const ConstantValue false_constant;
+
+		ConstantValue(const Dynamic &dynamic, uint64_t lexeme_begin, uint64_t lexeme_end);
+		ConstantValue(Dynamic &&dynamic, uint64_t lexeme_begin, uint64_t lexeme_end);
+		explicit ConstantValue(int32_t integer, uint64_t lexeme_begin, uint64_t lexeme_end);
+		explicit ConstantValue(char char_, uint64_t lexeme_begin, uint64_t lexeme_end);
+		explicit ConstantValue(bool integer, uint64_t lexeme_begin, uint64_t lexeme_end);
+		ConstantValue(const std::string &string, uint64_t lexeme_begin, uint64_t lexeme_end);
+		ConstantValue(std::string &&string, uint64_t lexeme_begin, uint64_t lexeme_end);
+
+		// | Is the non-null constant value not tagged with "dynamic_tag"?
+		bool is_static() const;
+		bool is_dynamic() const;
+		bool is_integer() const;
+		bool is_char() const;
+		bool is_boolean() const;
+		bool is_string() const;
+
+		// | The tags must be correct, or else an exception will be thrown, including for set_*.
+		int32_t get_integer() const;
+		char get_char() const;
+		bool get_boolean() const;
+		std::string get_string_copy() const;
+		const std::string &get_string() const;
+		std::string &&get_string();
+		void set_integer(int32_t integer);
+		void set_char(char char_);
+		void set_boolean(bool boolean);
+		void set_string(const std::string &string);
+		void set_string(std::string &&string);
+
+		// | Return "dynamic", "integer", "char", "boolean", or "string".
+		static std::string get_tag_repr(tag_t tag);
+		std::string get_tag_repr() const;
+
+		// | Get the primitive type of the constant value, which must be static.
+		//
+		// Raise an error if it's not static.
+		Type::Primitive get_static_primitive_type() const;
+		Type            get_static_type() const;
 	};
 
 	// | Objects represent a collection of identifiers in scope and what they refer to.
@@ -549,7 +563,22 @@ public:
 	// | An intermediate unit representation of MIPS instructions.
 	class Instruction {
 	public:
+		enum tag_e {
+			null_tag = 0,
+			num_tags = 0,
+		};
+		typedef enum tag_e tag_t;
 		// TODO
+
+		using data_t = std::variant<
+			std::monostate
+		>;
+
+		Instruction();
+		Instruction(tag_t tag, const data_t &data);
+		Instruction(tag_t tag, data_t &&data);
+
+		//explicit Instruction(const );
 	};
 
 	// | A MIPS IO monad.

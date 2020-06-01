@@ -413,6 +413,7 @@ void cli::run(const std::vector<std::string> &argv) {
 	cli::ArgsSpec args_spec(cli::ArgsSpec::default_args_spec);
 
 	// Print CLIErrors, RunErrors, and std::ios_base::failures with friendlier formatting.
+	// TODO: on verbose (-v), don't strip prefix.
 	try {
 		// Parse the arguments.
 		cli::ParsedArgs parsed_args(args_spec.parse(args, prog));

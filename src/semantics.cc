@@ -456,462 +456,6 @@ bool Semantics::Output::is_section_empty(section_t section) const {
 	return sections[section].size() <= 0;
 }
 
-Semantics::ConstantValue::ConstantValue()
-	: tag(null_tag)
-	, data(std::monostate())
-	{}
-
-Semantics::ConstantValue::ConstantValue(tag_t tag, const data_t &data)
-	: tag(tag)
-	, data(data)
-	{}
-
-Semantics::ConstantValue::ConstantValue(tag_t tag, data_t &&data)
-	: tag(tag)
-	, data(std::move(data))
-	{}
-
-const Semantics::ConstantValue Semantics::ConstantValue::dynamic(Semantics::ConstantValue::dynamic_tag, Semantics::ConstantValue::Dynamic());
-
-const Semantics::ConstantValue Semantics::ConstantValue::true_constant  {static_cast<bool>(true)};
-const Semantics::ConstantValue Semantics::ConstantValue::false_constant {static_cast<bool>(false)};
-
-Semantics::ConstantValue::ConstantValue(int32_t integer)
-	: tag(integer_tag)
-	, data(integer)
-	{}
-
-Semantics::ConstantValue::ConstantValue(char char_)
-	: tag(char_tag)
-	, data(char_)
-	{}
-
-Semantics::ConstantValue::ConstantValue(bool boolean)
-	: tag(integer_tag)
-	, data(boolean)
-	{}
-
-Semantics::ConstantValue::ConstantValue(const std::string &string)
-	: tag(string_tag)
-	, data(string)
-	{}
-
-Semantics::ConstantValue::ConstantValue(std::string &&string)
-	: tag(string_tag)
-	, data(std::move(string))
-	{}
-
-bool Semantics::ConstantValue::is_static() const {
-	switch(tag) {
-		case dynamic_tag:
-			return false;
-		case integer_tag:
-		case char_tag:
-		case boolean_tag:
-		case string_tag:
-			return true;
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::is_static: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-}
-
-bool Semantics::ConstantValue::is_dynamic() const {
-	switch(tag) {
-		case dynamic_tag:
-			return true;
-		case integer_tag:
-		case char_tag:
-		case boolean_tag:
-		case string_tag:
-			return false;
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::is_dynamic: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-}
-
-bool Semantics::ConstantValue::is_integer() const {
-	switch(tag) {
-		case dynamic_tag:
-			return false;
-		case integer_tag:
-			return true;
-		case char_tag:
-		case boolean_tag:
-		case string_tag:
-			return false;
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::is_integer: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-}
-
-bool Semantics::ConstantValue::is_char() const {
-	switch(tag) {
-		case dynamic_tag:
-		case integer_tag:
-			return false;
-		case char_tag:
-			return true;
-		case boolean_tag:
-		case string_tag:
-			return false;
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::is_char: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-}
-
-bool Semantics::ConstantValue::is_boolean() const {
-	switch(tag) {
-		case dynamic_tag:
-		case integer_tag:
-		case char_tag:
-			return false;
-		case boolean_tag:
-			return true;
-		case string_tag:
-			return false;
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::is_boolean: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-}
-
-bool Semantics::ConstantValue::is_string() const {
-	switch(tag) {
-		case dynamic_tag:
-		case integer_tag:
-		case char_tag:
-		case boolean_tag:
-			return false;
-		case string_tag:
-			return true;
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::is_string: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-}
-
-int32_t Semantics::ConstantValue::get_integer() const {
-	switch(tag) {
-		case dynamic_tag:
-		case integer_tag:
-		case char_tag:
-		case boolean_tag:
-		case string_tag:
-			break;
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::get_integer: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-
-	if (!is_integer()) {
-		std::ostringstream sstr;
-		sstr << "Semantics::ConstantValue::get_integer: constant value has a different type tag: " << tag;
-		throw SemanticsError(sstr.str());
-	}
-
-	return std::get<int32_t>(data);
-}
-
-char Semantics::ConstantValue::get_char() const {
-	switch(tag) {
-		case dynamic_tag:
-		case integer_tag:
-		case char_tag:
-		case boolean_tag:
-		case string_tag:
-			break;
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::get_char: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-
-	if (!is_char()) {
-		std::ostringstream sstr;
-		sstr << "Semantics::ConstantValue::get_char: constant value has a different type tag: " << tag;
-		throw SemanticsError(sstr.str());
-	}
-
-	return std::get<char>(data);
-}
-
-bool Semantics::ConstantValue::get_boolean() const {
-	switch(tag) {
-		case dynamic_tag:
-		case integer_tag:
-		case char_tag:
-		case boolean_tag:
-		case string_tag:
-			break;
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::get_boolean: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-
-	if (!is_boolean()) {
-		std::ostringstream sstr;
-		sstr << "Semantics::ConstantValue::get_boolean: constant value has a different type tag: " << tag;
-		throw SemanticsError(sstr.str());
-	}
-
-	return std::get<bool>(data);
-}
-
-std::string Semantics::ConstantValue::get_string_copy() const {
-	switch(tag) {
-		case dynamic_tag:
-		case integer_tag:
-		case char_tag:
-		case boolean_tag:
-		case string_tag:
-			break;
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::get_string_copy: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-
-	if (!is_string()) {
-		std::ostringstream sstr;
-		sstr << "Semantics::ConstantValue::get_string_copy: constant value has a different type tag: " << tag;
-		throw SemanticsError(sstr.str());
-	}
-
-	return std::string(std::as_const(std::get<std::string>(data)));
-}
-
-const std::string &Semantics::ConstantValue::get_string() const {
-	switch(tag) {
-		case dynamic_tag:
-		case integer_tag:
-		case char_tag:
-		case boolean_tag:
-		case string_tag:
-			break;
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::get_string: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-
-	if (!is_string()) {
-		std::ostringstream sstr;
-		sstr << "Semantics::ConstantValue::get_string: constant value has a different type tag: " << tag;
-		throw SemanticsError(sstr.str());
-	}
-
-	return std::get<std::string>(data);
-}
-
-std::string &&Semantics::ConstantValue::get_string() {
-	switch(tag) {
-		case dynamic_tag:
-		case integer_tag:
-		case char_tag:
-		case boolean_tag:
-		case string_tag:
-			break;
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::get_string: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-
-	if (!is_string()) {
-		std::ostringstream sstr;
-		sstr << "Semantics::ConstantValue::get_string: constant value has a different type tag: " << tag;
-		throw SemanticsError(sstr.str());
-	}
-
-	return std::move(std::get<std::string>(data));
-}
-
-void Semantics::ConstantValue::set_integer(int32_t integer) {
-	switch(tag) {
-		case dynamic_tag:
-		case integer_tag:
-		case char_tag:
-		case boolean_tag:
-		case string_tag:
-			break;
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::set_integer: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-
-	if (!is_integer()) {
-		std::ostringstream sstr;
-		sstr << "Semantics::ConstantValue::set_integer: constant value has a different type tag: " << tag;
-		throw SemanticsError(sstr.str());
-	}
-
-	data = integer;
-}
-
-void Semantics::ConstantValue::set_char(char char_) {
-	switch(tag) {
-		case dynamic_tag:
-		case integer_tag:
-		case char_tag:
-		case boolean_tag:
-		case string_tag:
-			break;
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::set_char: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-
-	if (!is_char()) {
-		std::ostringstream sstr;
-		sstr << "Semantics::ConstantValue::set_char: constant value has a different type tag: " << tag;
-		throw SemanticsError(sstr.str());
-	}
-
-	data = char_;
-}
-
-void Semantics::ConstantValue::set_boolean(bool boolean) {
-	switch(tag) {
-		case dynamic_tag:
-		case integer_tag:
-		case char_tag:
-		case boolean_tag:
-		case string_tag:
-			break;
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::set_boolean: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-
-	if (!is_boolean()) {
-		std::ostringstream sstr;
-		sstr << "Semantics::ConstantValue::set_boolean: constant value has a different type tag: " << tag;
-		throw SemanticsError(sstr.str());
-	}
-
-	data = boolean;
-}
-
-void Semantics::ConstantValue::set_string(const std::string &string) {
-	switch(tag) {
-		case dynamic_tag:
-		case integer_tag:
-		case char_tag:
-		case boolean_tag:
-		case string_tag:
-			break;
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::set_string: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-
-	if (!is_string()) {
-		std::ostringstream sstr;
-		sstr << "Semantics::ConstantValue::set_string: constant value has a different type tag: " << tag;
-		throw SemanticsError(sstr.str());
-	}
-
-	data = string;
-}
-
-void Semantics::ConstantValue::set_string(std::string &&string) {
-	switch(tag) {
-		case dynamic_tag:
-		case integer_tag:
-		case char_tag:
-		case boolean_tag:
-		case string_tag:
-			break;
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::set_string: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-
-	if (!is_string()) {
-		std::ostringstream sstr;
-		sstr << "Semantics::ConstantValue::set_string: constant value has a different type tag: " << tag;
-		throw SemanticsError(sstr.str());
-	}
-
-	data = std::string(string);
-}
-
-std::string Semantics::ConstantValue::get_tag_repr(tag_t tag) {
-	switch(tag) {
-		case dynamic_tag:
-			return "dynamic";
-		case integer_tag:
-			return "integer";
-		case char_tag:
-			return "char";
-		case boolean_tag:
-			return "boolean";
-		case string_tag:
-			return "string";
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::get_tag_repr: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-}
-
-std::string Semantics::ConstantValue::get_tag_repr() const {
-	return get_tag_repr(tag);
-}
-
 Semantics::Type::Base::Base()
 	{}
 
@@ -1594,6 +1138,555 @@ std::string Semantics::Type::get_tag_repr() const {
 	return get_tag_repr(tag);
 }
 
+const Semantics::ConstantValue::Dynamic Semantics::ConstantValue::Dynamic::dynamic {};
+
+Semantics::ConstantValue::ConstantValue()
+	: tag(null_tag)
+	, data(std::monostate())
+	{}
+
+Semantics::ConstantValue::ConstantValue(tag_t tag, const data_t &data, uint64_t lexeme_begin, uint64_t lexeme_end)
+	: tag(tag)
+	, data(data)
+	, lexeme_begin(lexeme_begin)
+	, lexeme_end(lexeme_end)
+	{}
+
+Semantics::ConstantValue::ConstantValue(tag_t tag, data_t &&data, uint64_t lexeme_begin, uint64_t lexeme_end)
+	: tag(tag)
+	, data(std::move(data))
+	, lexeme_begin(lexeme_begin)
+	, lexeme_end(lexeme_end)
+	{}
+
+// | Copy the constant value but use new lexeme identifiers.
+Semantics::ConstantValue::ConstantValue(const ConstantValue &constant_value, uint64_t lexeme_begin, uint64_t lexeme_end)
+	: tag(constant_value.tag)
+	, data(constant_value.data)
+	, lexeme_begin(lexeme_begin)
+	, lexeme_end(lexeme_end)
+	{}
+
+Semantics::ConstantValue::ConstantValue(ConstantValue &&constant_value, uint64_t lexeme_begin, uint64_t lexeme_end)
+	: tag(constant_value.tag)
+	, data(std::move(constant_value.data))
+	, lexeme_begin(lexeme_begin)
+	, lexeme_end(lexeme_end)
+	{}
+
+const Semantics::ConstantValue Semantics::ConstantValue::true_constant  {static_cast<bool>(true), 0, 0};
+const Semantics::ConstantValue Semantics::ConstantValue::false_constant {static_cast<bool>(false), 0, 0};
+
+Semantics::ConstantValue::ConstantValue(const Dynamic &dynamic, uint64_t lexeme_begin, uint64_t lexeme_end)
+	: tag(dynamic_tag)
+	, data(dynamic)
+	, lexeme_begin(lexeme_begin)
+	, lexeme_end(lexeme_end)
+	{}
+
+Semantics::ConstantValue::ConstantValue(Dynamic &&dynamic, uint64_t lexeme_begin, uint64_t lexeme_end)
+	: tag(dynamic_tag)
+	, data(std::move(dynamic))
+	, lexeme_begin(lexeme_begin)
+	, lexeme_end(lexeme_end)
+	{}
+
+Semantics::ConstantValue::ConstantValue(int32_t integer, uint64_t lexeme_begin, uint64_t lexeme_end)
+	: tag(integer_tag)
+	, data(integer)
+	, lexeme_begin(lexeme_begin)
+	, lexeme_end(lexeme_end)
+	{}
+
+Semantics::ConstantValue::ConstantValue(char char_, uint64_t lexeme_begin, uint64_t lexeme_end)
+	: tag(char_tag)
+	, data(char_)
+	, lexeme_begin(lexeme_begin)
+	, lexeme_end(lexeme_end)
+	{}
+
+Semantics::ConstantValue::ConstantValue(bool boolean, uint64_t lexeme_begin, uint64_t lexeme_end)
+	: tag(integer_tag)
+	, data(boolean)
+	, lexeme_begin(lexeme_begin)
+	, lexeme_end(lexeme_end)
+	{}
+
+Semantics::ConstantValue::ConstantValue(const std::string &string, uint64_t lexeme_begin, uint64_t lexeme_end)
+	: tag(string_tag)
+	, data(string)
+	, lexeme_begin(lexeme_begin)
+	, lexeme_end(lexeme_end)
+	{}
+
+Semantics::ConstantValue::ConstantValue(std::string &&string, uint64_t lexeme_begin, uint64_t lexeme_end)
+	: tag(string_tag)
+	, data(std::move(string))
+	, lexeme_begin(lexeme_begin)
+	, lexeme_end(lexeme_end)
+	{}
+
+bool Semantics::ConstantValue::is_static() const {
+	switch(tag) {
+		case dynamic_tag:
+			return false;
+		case integer_tag:
+		case char_tag:
+		case boolean_tag:
+		case string_tag:
+			return true;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::is_static: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::ConstantValue::is_dynamic() const {
+	switch(tag) {
+		case dynamic_tag:
+			return true;
+		case integer_tag:
+		case char_tag:
+		case boolean_tag:
+		case string_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::is_dynamic: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::ConstantValue::is_integer() const {
+	switch(tag) {
+		case dynamic_tag:
+			return false;
+		case integer_tag:
+			return true;
+		case char_tag:
+		case boolean_tag:
+		case string_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::is_integer: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::ConstantValue::is_char() const {
+	switch(tag) {
+		case dynamic_tag:
+		case integer_tag:
+			return false;
+		case char_tag:
+			return true;
+		case boolean_tag:
+		case string_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::is_char: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::ConstantValue::is_boolean() const {
+	switch(tag) {
+		case dynamic_tag:
+		case integer_tag:
+		case char_tag:
+			return false;
+		case boolean_tag:
+			return true;
+		case string_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::is_boolean: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::ConstantValue::is_string() const {
+	switch(tag) {
+		case dynamic_tag:
+		case integer_tag:
+		case char_tag:
+		case boolean_tag:
+			return false;
+		case string_tag:
+			return true;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::is_string: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+int32_t Semantics::ConstantValue::get_integer() const {
+	switch(tag) {
+		case dynamic_tag:
+		case integer_tag:
+		case char_tag:
+		case boolean_tag:
+		case string_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::get_integer: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_integer()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::ConstantValue::get_integer: constant value has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<int32_t>(data);
+}
+
+char Semantics::ConstantValue::get_char() const {
+	switch(tag) {
+		case dynamic_tag:
+		case integer_tag:
+		case char_tag:
+		case boolean_tag:
+		case string_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::get_char: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_char()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::ConstantValue::get_char: constant value has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<char>(data);
+}
+
+bool Semantics::ConstantValue::get_boolean() const {
+	switch(tag) {
+		case dynamic_tag:
+		case integer_tag:
+		case char_tag:
+		case boolean_tag:
+		case string_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::get_boolean: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_boolean()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::ConstantValue::get_boolean: constant value has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<bool>(data);
+}
+
+std::string Semantics::ConstantValue::get_string_copy() const {
+	switch(tag) {
+		case dynamic_tag:
+		case integer_tag:
+		case char_tag:
+		case boolean_tag:
+		case string_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::get_string_copy: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_string()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::ConstantValue::get_string_copy: constant value has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::string(std::as_const(std::get<std::string>(data)));
+}
+
+const std::string &Semantics::ConstantValue::get_string() const {
+	switch(tag) {
+		case dynamic_tag:
+		case integer_tag:
+		case char_tag:
+		case boolean_tag:
+		case string_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::get_string: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_string()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::ConstantValue::get_string: constant value has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::get<std::string>(data);
+}
+
+std::string &&Semantics::ConstantValue::get_string() {
+	switch(tag) {
+		case dynamic_tag:
+		case integer_tag:
+		case char_tag:
+		case boolean_tag:
+		case string_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::get_string: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_string()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::ConstantValue::get_string: constant value has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	return std::move(std::get<std::string>(data));
+}
+
+void Semantics::ConstantValue::set_integer(int32_t integer) {
+	switch(tag) {
+		case dynamic_tag:
+		case integer_tag:
+		case char_tag:
+		case boolean_tag:
+		case string_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::set_integer: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_integer()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::ConstantValue::set_integer: constant value has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	data = integer;
+}
+
+void Semantics::ConstantValue::set_char(char char_) {
+	switch(tag) {
+		case dynamic_tag:
+		case integer_tag:
+		case char_tag:
+		case boolean_tag:
+		case string_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::set_char: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_char()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::ConstantValue::set_char: constant value has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	data = char_;
+}
+
+void Semantics::ConstantValue::set_boolean(bool boolean) {
+	switch(tag) {
+		case dynamic_tag:
+		case integer_tag:
+		case char_tag:
+		case boolean_tag:
+		case string_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::set_boolean: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_boolean()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::ConstantValue::set_boolean: constant value has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	data = boolean;
+}
+
+void Semantics::ConstantValue::set_string(const std::string &string) {
+	switch(tag) {
+		case dynamic_tag:
+		case integer_tag:
+		case char_tag:
+		case boolean_tag:
+		case string_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::set_string: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_string()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::ConstantValue::set_string: constant value has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	data = string;
+}
+
+void Semantics::ConstantValue::set_string(std::string &&string) {
+	switch(tag) {
+		case dynamic_tag:
+		case integer_tag:
+		case char_tag:
+		case boolean_tag:
+		case string_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::set_string: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	if (!is_string()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::ConstantValue::set_string: constant value has a different type tag: " << tag;
+		throw SemanticsError(sstr.str());
+	}
+
+	data = std::string(string);
+}
+
+std::string Semantics::ConstantValue::get_tag_repr(tag_t tag) {
+	switch(tag) {
+		case dynamic_tag:
+			return "dynamic";
+		case integer_tag:
+			return "integer";
+		case char_tag:
+			return "char";
+		case boolean_tag:
+			return "boolean";
+		case string_tag:
+			return "string";
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::get_tag_repr: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+std::string Semantics::ConstantValue::get_tag_repr() const {
+	return get_tag_repr(tag);
+}
+
+Semantics::Type::Primitive Semantics::ConstantValue::get_static_primitive_type() const {
+	switch(tag) {
+		case dynamic_tag: {
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::get_static_primitive_type: internal error: cannot obtain the static primitive type of a dynamic value.";
+			throw SemanticsError(sstr.str());
+		} case integer_tag: {
+			return Type::Primitive::integer_type;
+		} case char_tag: {
+			return Type::Primitive::char_type;
+		} case boolean_tag: {
+			return Type::Primitive::boolean_type;
+		} case string_tag: {
+			return Type::Primitive::string_type;
+		}
+
+		case null_tag:
+		default: {
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::get_static_primitive_type: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+		}
+	}
+}
+
+Semantics::Type Semantics::ConstantValue::get_static_type() const {
+	switch(tag) {
+		case dynamic_tag: {
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::get_static_type: internal error: cannot obtain the static type of a dynamic value.";
+			throw SemanticsError(sstr.str());
+		} case integer_tag: {
+			return Type::integer_type;
+		} case char_tag: {
+			return Type::char_type;
+		} case boolean_tag: {
+			return Type::boolean_type;
+		} case string_tag: {
+			return Type::string_type;
+		}
+
+		case null_tag:
+		default: {
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::get_static_type: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+		}
+	}
+}
+
 Semantics::IdentifierScope::IdentifierBinding::Static::Static()
 	{}
 
@@ -2244,13 +2337,13 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 
 			// Apply bitwise OR depending on the integer type.
 			if        (left.is_integer()) {
-				expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) | static_cast<int32_t>(right.get_integer())));
+				expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) | static_cast<int32_t>(right.get_integer())), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_char()) {
-				expression_constant_value = ConstantValue(static_cast<char>(static_cast<char>(left.get_char()) | static_cast<char>(right.get_char())));
+				expression_constant_value = ConstantValue(static_cast<char>(static_cast<char>(left.get_char()) | static_cast<char>(right.get_char())), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_boolean()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(static_cast<bool>(left.get_boolean()) | static_cast<bool>(right.get_boolean())));
+				expression_constant_value = ConstantValue(static_cast<bool>(static_cast<bool>(left.get_boolean()) | static_cast<bool>(right.get_boolean())), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else {
 				std::ostringstream sstr;
@@ -2308,13 +2401,13 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 
 			// Apply bitwise AND depending on the integer type.
 			if        (left.is_integer()) {
-				expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) & static_cast<int32_t>(right.get_integer())));
+				expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) & static_cast<int32_t>(right.get_integer())), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_char()) {
-				expression_constant_value = ConstantValue(static_cast<char>(static_cast<char>(left.get_char()) & static_cast<char>(right.get_char())));
+				expression_constant_value = ConstantValue(static_cast<char>(static_cast<char>(left.get_char()) & static_cast<char>(right.get_char())), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_boolean()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(static_cast<bool>(left.get_boolean()) & static_cast<bool>(right.get_boolean())));
+				expression_constant_value = ConstantValue(static_cast<bool>(static_cast<bool>(left.get_boolean()) & static_cast<bool>(right.get_boolean())), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else {
 				std::ostringstream sstr;
@@ -2359,16 +2452,16 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 
 			// Apply = comparison depending on the type.
 			if        (left.is_integer()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() == right.get_integer()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() == right.get_integer()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_char()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() == right.get_char()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() == right.get_char()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_boolean()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() == right.get_boolean()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() == right.get_boolean()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_string()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() == right.get_string()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() == right.get_string()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else {
 				std::ostringstream sstr;
@@ -2413,16 +2506,16 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 
 			// Apply <> comparison depending on the type.
 			if        (left.is_integer()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() != right.get_integer()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() != right.get_integer()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_char()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() != right.get_char()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() != right.get_char()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_boolean()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() != right.get_boolean()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() != right.get_boolean()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_string()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() != right.get_string()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() != right.get_string()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else {
 				std::ostringstream sstr;
@@ -2467,16 +2560,16 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 
 			// Apply <= comparison depending on the type.
 			if        (left.is_integer()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() <= right.get_integer()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() <= right.get_integer()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_char()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() <= right.get_char()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() <= right.get_char()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_boolean()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() <= right.get_boolean()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() <= right.get_boolean()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_string()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() <= right.get_string()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() <= right.get_string()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else {
 				std::ostringstream sstr;
@@ -2521,16 +2614,16 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 
 			// Apply >= comparison depending on the type.
 			if        (left.is_integer()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() >= right.get_integer()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() >= right.get_integer()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_char()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() >= right.get_char()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() >= right.get_char()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_boolean()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() >= right.get_boolean()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() >= right.get_boolean()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_string()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() >= right.get_string()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() >= right.get_string()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else {
 				std::ostringstream sstr;
@@ -2575,16 +2668,16 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 
 			// Apply < comparison depending on the type.
 			if        (left.is_integer()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() < right.get_integer()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() < right.get_integer()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_char()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() < right.get_char()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() < right.get_char()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_boolean()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() < right.get_boolean()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() < right.get_boolean()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_string()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() < right.get_string()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() < right.get_string()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else {
 				std::ostringstream sstr;
@@ -2629,16 +2722,16 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 
 			// Apply > comparison depending on the type.
 			if        (left.is_integer()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() > right.get_integer()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() > right.get_integer()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_char()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() > right.get_char()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() > right.get_char()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_boolean()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() > right.get_boolean()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() > right.get_boolean()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else if (left.is_string()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() > right.get_string()));
+				expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() > right.get_string()), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else {
 				std::ostringstream sstr;
@@ -2722,7 +2815,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					throw SemanticsError(sstr.str());
 				}
 
-				expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) + static_cast<int32_t>(right.get_integer())));
+				expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) + static_cast<int32_t>(right.get_integer())), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else {
 				std::ostringstream sstr;
@@ -2806,7 +2899,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					throw SemanticsError(sstr.str());
 				}
 
-				expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) - static_cast<int32_t>(right.get_integer())));
+				expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) - static_cast<int32_t>(right.get_integer())), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else {
 				std::ostringstream sstr;
@@ -2890,7 +2983,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					throw SemanticsError(sstr.str());
 				}
 
-				expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) * static_cast<int32_t>(right.get_integer())));
+				expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) * static_cast<int32_t>(right.get_integer())), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else {
 				std::ostringstream sstr;
@@ -2993,8 +3086,8 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 				// - Euclidian division: the remainder is non-negative.
 				// I prefer Euclidian division, even though this deviates from
 				// traditional division and modding in C.  So I'll use it.
-				//expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) / static_cast<int32_t>(right.get_integer())));
-				expression_constant_value = ConstantValue(static_cast<int32_t>(euclidian_div(static_cast<int32_t>(left.get_integer()), static_cast<int32_t>(right.get_integer()))));
+				//expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) / static_cast<int32_t>(right.get_integer())), left.lexeme_begin, right.lexeme_end);
+				expression_constant_value = ConstantValue(static_cast<int32_t>(euclidian_div(static_cast<int32_t>(left.get_integer()), static_cast<int32_t>(right.get_integer()))), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else {
 				std::ostringstream sstr;
@@ -3078,8 +3171,8 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					throw SemanticsError(sstr.str());
 				}
 
-				//expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) % static_cast<int32_t>(right.get_integer())));
-				expression_constant_value = ConstantValue(static_cast<int32_t>(euclidian_mod(static_cast<int32_t>(left.get_integer()), static_cast<int32_t>(right.get_integer()))));
+				//expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) % static_cast<int32_t>(right.get_integer())), left.lexeme_begin, right.lexeme_end);
+				expression_constant_value = ConstantValue(static_cast<int32_t>(euclidian_mod(static_cast<int32_t>(left.get_integer()), static_cast<int32_t>(right.get_integer()))), left.lexeme_begin, right.lexeme_end);
 				break;
 			} else {
 				std::ostringstream sstr;
@@ -3093,8 +3186,8 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			}
 		} case Expression::tilde_branch: {
 			const Expression::Tilde &tilde           = grammar.expression_tilde_storage.at(expression_symbol.data);
-			const Expression        &expression0     = grammar.expression_storage.at(tilde.expression); (void) expression0;
 			const LexemeOperator    &tilde_operator0 = grammar.lexemes.at(tilde.tilde_operator0).get_operator();
+			const Expression        &expression0     = grammar.expression_storage.at(tilde.expression); (void) expression0;
 
 			// Is the subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue value = is_expression_constant(tilde.expression, expression_constant_scope);
@@ -3116,13 +3209,13 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 
 			// Apply bitwise NOT depending on the integer type.
 			if        (value.is_integer()) {
-				expression_constant_value = ConstantValue(static_cast<int32_t>(~static_cast<int32_t>(value.get_integer())));
+				expression_constant_value = ConstantValue(static_cast<int32_t>(~static_cast<int32_t>(value.get_integer())), tilde.tilde_operator0, value.lexeme_end);
 				break;
 			} else if (value.is_char()) {
-				expression_constant_value = ConstantValue(static_cast<char>(~static_cast<char>(value.get_integer())));
+				expression_constant_value = ConstantValue(static_cast<char>(~static_cast<char>(value.get_integer())), tilde.tilde_operator0, value.lexeme_end);
 				break;
 			} else if (value.is_boolean()) {
-				expression_constant_value = ConstantValue(static_cast<bool>(~static_cast<bool>(value.get_integer())));
+				expression_constant_value = ConstantValue(static_cast<bool>(~static_cast<bool>(value.get_integer())), tilde.tilde_operator0, value.lexeme_end);
 				break;
 			} else {
 				std::ostringstream sstr;
@@ -3136,8 +3229,8 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			}
 		} case Expression::unary_minus_branch: {
 			const Expression::UnaryMinus &unary_minus     = grammar.expression_unary_minus_storage.at(expression_symbol.data);
-			const Expression             &expression0     = grammar.expression_storage.at(unary_minus.expression); (void) expression0;
 			const LexemeOperator         &minus_operator0 = grammar.lexemes.at(unary_minus.minus_operator0).get_operator();
+			const Expression             &expression0     = grammar.expression_storage.at(unary_minus.expression); (void) expression0;
 
 			// Is the subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue value = is_expression_constant(unary_minus.expression, expression_constant_scope);
@@ -3183,7 +3276,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					throw SemanticsError(sstr.str());
 				}
 
-				expression_constant_value = ConstantValue(static_cast<int32_t>(-static_cast<int32_t>(value.get_integer())));
+				expression_constant_value = ConstantValue(static_cast<int32_t>(-static_cast<int32_t>(value.get_integer())), unary_minus.minus_operator0, value.lexeme_end);
 				break;
 			} else {
 				std::ostringstream sstr;
@@ -3209,20 +3302,63 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			}
 
 			// The constant value of this expression is equivalent to the
-			// constant value of the subexpression.  Copy the subexpression's
-			// constant value.
-			expression_constant_value = std::move(ConstantValue(value));
+			// constant value of the subexpression.
+			expression_constant_value = ConstantValue(value, parentheses.leftparenthesis_operator0, parentheses.rightparenthesis_operator0 + 1);
 			break;
 		}
 
 		// These 5 branches are dynamic.
-		case Expression::call_branch:
-		case Expression::chr_branch:
-		case Expression::ord_branch:
-		case Expression::pred_branch:
-		case Expression::succ_branch:
-			expression_constant_value = ConstantValue::dynamic;
+		case Expression::call_branch: {
+			const Expression::Call      &call                        = grammar.expression_call_storage.at(expression_symbol.data);
+			const LexemeIdentifier      &call_identifier             = grammar.lexemes.at(call.identifier).get_identifier(); (void) call_identifier;
+			const LexemeOperator        &leftparenthesis_operator0   = grammar.lexemes.at(call.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
+			const ExpressionSequenceOpt &expression_sequence_opt     = grammar.expression_sequence_opt_storage.at(call.expression_sequence_opt); (void) expression_sequence_opt;
+			const LexemeOperator        &rightparenthesis_operator0  = grammar.lexemes.at(call.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+
+			expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, call.identifier, call.rightparenthesis_operator0 + 1);
+
 			break;
+		} case Expression::chr_branch: {
+			const Expression::Chr &chr                        = grammar.expression_chr_storage.at(expression_symbol.data);
+			const LexemeKeyword   &chr_keyword0               = grammar.lexemes.at(chr.chr_keyword0).get_keyword(); (void) chr_keyword0;
+			const LexemeOperator  &leftparenthesis_operator0  = grammar.lexemes.at(chr.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
+			const Expression      &expression0                = grammar.expression_storage.at(chr.expression); (void) expression0;
+			const LexemeOperator  &rightparenthesis_operator0 = grammar.lexemes.at(chr.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+
+			expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, chr.chr_keyword0, chr.rightparenthesis_operator0 + 1);
+
+			break;
+		} case Expression::ord_branch: {
+			const Expression::Ord &ord                        = grammar.expression_ord_storage.at(expression_symbol.data);
+			const LexemeKeyword   &ord_keyword0               = grammar.lexemes.at(ord.ord_keyword0).get_keyword(); (void) ord_keyword0;
+			const LexemeOperator  &leftparenthesis_operator0  = grammar.lexemes.at(ord.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
+			const Expression      &expression0                = grammar.expression_storage.at(ord.expression); (void) expression0;
+			const LexemeOperator  &rightparenthesis_operator0 = grammar.lexemes.at(ord.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+
+			expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, ord.ord_keyword0, ord.rightparenthesis_operator0 + 1);
+
+			break;
+		} case Expression::pred_branch: {
+			const Expression::Pred &pred                       = grammar.expression_pred_storage.at(expression_symbol.data);
+			const LexemeKeyword    &pred_keyword0              = grammar.lexemes.at(pred.pred_keyword0).get_keyword(); (void) pred_keyword0;
+			const LexemeOperator   &leftparenthesis_operator0  = grammar.lexemes.at(pred.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
+			const Expression       &expression0                = grammar.expression_storage.at(pred.expression); (void) expression0;
+			const LexemeOperator   &rightparenthesis_operator0 = grammar.lexemes.at(pred.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+
+			expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, pred.pred_keyword0, pred.rightparenthesis_operator0 + 1);
+
+			break;
+		} case Expression::succ_branch: {
+			const Expression::Succ &succ                       = grammar.expression_succ_storage.at(expression_symbol.data);
+			const LexemeKeyword    &succ_keyword0              = grammar.lexemes.at(succ.succ_keyword0).get_keyword(); (void) succ_keyword0;
+			const LexemeOperator   &leftparenthesis_operator0  = grammar.lexemes.at(succ.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
+			const Expression       &expression0                = grammar.expression_storage.at(succ.expression); (void) expression0;
+			const LexemeOperator   &rightparenthesis_operator0 = grammar.lexemes.at(succ.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+
+			expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, succ.succ_keyword0, succ.rightparenthesis_operator0 + 1);
+
+			break;
+		}
 
 		// lvalue_branch may or may not be dynamic, depending on whether it is
 		// a simple identifier (without .foo or [bar]) that refers to a known
@@ -3239,7 +3375,65 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			if (lvalue_accessor_clause_list.branch != LvalueAccessorClauseList::empty_branch) {
 				// It's not just an identifier.  This lvalue expression is not
 				// a constant expression.
-				expression_constant_value = ConstantValue::dynamic;
+
+				// Unpack the lvalue_accessor_clause_list just enough to get the last lexeme.
+				uint64_t lexeme_end;
+				switch (lvalue_accessor_clause_list.branch) {
+					// We already checked that the list is not empty.
+					//case LvalueAccessorClauseList::empty_branch: {
+					//	// ...
+					//	break;
+					//}
+
+					case LvalueAccessorClauseList::cons_branch: {
+						// Unpack the list.
+						const LvalueAccessorClauseList::Cons &last_lvalue_accessor_clause_list_cons = grammar.lvalue_accessor_clause_list_cons_storage.at(lvalue_accessor_clause_list.data);
+						const LvalueAccessorClauseList       &last_lvalue_accessor_clause_list      = grammar.lvalue_accessor_clause_list_storage.at(last_lvalue_accessor_clause_list_cons.lvalue_accessor_clause_list);
+						const LvalueAccessorClause           &last_lvalue_accessor_clause           = grammar.lvalue_accessor_clause_storage.at(last_lvalue_accessor_clause_list_cons.lvalue_accessor_clause); (void) last_lvalue_accessor_clause;
+
+						// Unpack just the last LvalueAccessorClause.
+						switch (last_lvalue_accessor_clause.branch) {
+							case LvalueAccessorClause::index_branch: {
+								const LvalueAccessorClause::Index &index            = grammar.lvalue_accessor_clause_index_storage.at(last_lvalue_accessor_clause.data);
+								const LexemeOperator              &dot_operator0    = grammar.lexemes.at(index.dot_operator0).get_operator(); (void) dot_operator0;
+								const LexemeIdentifier            &index_identifier = grammar.lexemes.at(index.identifier).get_identifier(); (void) index_identifier;
+
+								lexeme_end = index.identifier + 1;
+
+								break;
+							}
+
+							case LvalueAccessorClause::array_branch: {
+								const LvalueAccessorClause::Array &array                  = grammar.lvalue_accessor_clause_array_storage.at(last_lvalue_accessor_clause.data);
+								const LexemeOperator              &leftbracket_operator0  = grammar.lexemes.at(array.leftbracket_operator0).get_operator(); (void) leftbracket_operator0;
+								const Expression                  &expression0            = grammar.expression_storage.at(array.expression); (void) expression0;
+								const LexemeOperator              &rightbracket_operator0 = grammar.lexemes.at(array.rightbracket_operator0).get_operator(); (void) rightbracket_operator0;
+
+								lexeme_end = array.rightbracket_operator0 + 1;
+
+								break;
+							}
+
+							// Unrecognized branch.
+							default: {
+								std::ostringstream sstr;
+								sstr << "Semantics::is_expression_constant: internal error: invalid lvalue_accessor_clause branch at index " << last_lvalue_accessor_clause_list_cons.lvalue_accessor_clause << ": " << last_lvalue_accessor_clause.branch;
+								throw SemanticsError(sstr.str());
+							}
+						}
+
+						break;
+					}
+
+					// Unrecognized branch.
+					default: {
+						std::ostringstream sstr;
+						sstr << "Semantics::is_expression_constant: internal error: invalid lvalue_accessor_clause_list branch at index " << lvalue_symbol.lvalue_accessor_clause_list << ": " << lvalue_accessor_clause_list.branch;
+						throw SemanticsError(sstr.str());
+					}
+				};
+
+				expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, lvalue_symbol.identifier, lexeme_end);
 				break;
 			}
 
@@ -3253,12 +3447,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 
 			if (!identifier_binding_search->is_static()) {
 				// The identifier does not refer to a constant expression.
-				expression_constant_value = ConstantValue::dynamic;
+				expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, lvalue_symbol.identifier, lvalue_symbol.identifier + 1);
 				break;
 			} else {  // identifier_binding_search->is_static()
 				const IdentifierScope::IdentifierBinding::Static &static_ = identifier_binding_search->get_static();
 				// Copy the constant value.
-				expression_constant_value = std::move(ConstantValue(static_.constant_value));
+				expression_constant_value = ConstantValue(static_.constant_value, lvalue_symbol.identifier, lvalue_symbol.identifier + 1);
 				break;
 			}
 		}
@@ -3272,17 +3466,17 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 				sstr << "Semantics::is_expression_constant: error (line " << lexeme_integer.line << " col " << lexeme_integer.column << "): integer is too large to encode in 32 bits: " << lexeme_integer.text;
 				throw SemanticsError(sstr.str());
 			}
-			expression_constant_value = ConstantValue(static_cast<int32_t>(lexeme_integer.first_digits));
+			expression_constant_value = ConstantValue(static_cast<int32_t>(lexeme_integer.first_digits), integer.integer, integer.integer + 1);
 			break;
 		} case Expression::char__branch: {
 			const Expression::Char_ &char_       = grammar.expression_char__storage.at(expression_symbol.data);
 			const LexemeChar        &lexeme_char = grammar.lexemes.at(char_.char_).get_char();
-			expression_constant_value = ConstantValue(static_cast<char>(lexeme_char.char_));
+			expression_constant_value = ConstantValue(static_cast<char>(lexeme_char.char_), char_.char_, char_.char_ + 1);
 			break;
 		} case Expression::string_branch: {
 			const Expression::String &string        = grammar.expression_string_storage.at(expression_symbol.data);
 			const LexemeString       &lexeme_string = grammar.lexemes.at(string.string).get_string();
-			expression_constant_value = ConstantValue(std::move(std::string(lexeme_string.expanded)));
+			expression_constant_value = ConstantValue(std::move(std::string(lexeme_string.expanded)), string.string, string.string + 1);
 			break;
 		}
 
@@ -3551,8 +3745,8 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 			if (min_index_value.is_dynamic()) {
 				std::ostringstream sstr;
 				sstr
-					<< "Semantics::analyze_type: error (near line "
-					<< leftbracket_operator0.line << " col " << leftbracket_operator0.column
+					<< "Semantics::analyze_type: error (line "
+					<< grammar.lexemes.at(min_index_value.lexeme_begin).get_line() << " col " << grammar.lexemes.at(min_index_value.lexeme_begin).get_column()
 					<< "): the minimum index of an array is not a constant value."
 					;
 				throw SemanticsError(sstr.str());
@@ -3560,8 +3754,8 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 			if (max_index_value.is_dynamic()) {
 				std::ostringstream sstr;
 				sstr
-					<< "Semantics::analyze_type: error (near line "
-					<< colon_operator0.line << " col " << colon_operator0.column
+					<< "Semantics::analyze_type: error (line "
+					<< grammar.lexemes.at(max_index_value.lexeme_begin).get_line() << " col " << grammar.lexemes.at(max_index_value.lexeme_begin).get_column()
 					<< "): the maximum index of an array is not a constant value."
 					;
 				throw SemanticsError(sstr.str());
@@ -3571,8 +3765,8 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 			if (!min_index_value.is_integer()) {
 				std::ostringstream sstr;
 				sstr
-					<< "Semantics::analyze_type: error (near line "
-					<< leftbracket_operator0.line << " col " << leftbracket_operator0.column
+					<< "Semantics::analyze_type: error (line "
+					<< grammar.lexemes.at(min_index_value.lexeme_begin).get_line() << " col " << grammar.lexemes.at(min_index_value.lexeme_begin).get_column()
 					<< "): the minimum index of an array is not an integer value."
 					;
 				throw SemanticsError(sstr.str());
@@ -3580,8 +3774,8 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 			if (!max_index_value.is_integer()) {
 				std::ostringstream sstr;
 				sstr
-					<< "Semantics::analyze_type: error (near line "
-					<< colon_operator0.line << " col " << colon_operator0.column
+					<< "Semantics::analyze_type: error (line "
+					<< grammar.lexemes.at(max_index_value.lexeme_begin).get_line() << " col " << grammar.lexemes.at(max_index_value.lexeme_begin).get_column()
 					<< "): the maximum index of an array is not an integer value."
 					;
 				throw SemanticsError(sstr.str());
@@ -3654,8 +3848,36 @@ Semantics::MIPSIO Semantics::analyze_expression(uint64_t expression, const Ident
 }
 
 Semantics::MIPSIO Semantics::analyze_expression(const Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) const {
+	// First, is this expression a constant value?
+	ConstantValue constant_result = is_expression_constant(expression, constant_scope);
+	if (constant_result.is_static()) {
+		// It is a constant.  All constants have <= 4 bytes, so we don't need to branch on the type.
+		Type::Primitive primitive_type = constant_result.get_static_primitive_type();
+
+		// Fail if it's fixed width.
+		if (!primitive_type.fixed_width) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::analyze_expression: error (line "
+				<< grammar.lexemes.at(constant_result.lexeme_begin).get_line() << " col " << grammar.lexemes.at(constant_result.lexeme_begin).get_column()
+				<< "): constant non-fixed-width expression values are currently unsupported."
+				;
+			throw SemanticsError(sstr.str());
+		}
+
+		// This expression has 0 inputs, 0 working memory units, and 1 output.
+		MIPSIO mips_io;
+		mips_io.output.push_back(primitive_type.size);
+		//mips_io.instructions.push_back(Instruction::LoadImmediate);
+	}
+
+	// Prepare the MIPS IO value.
+	MIPSIO mips_io;
+
 	// TODO
-	return MIPSIO();  // TODO
+
+	// Return the MIPS IO value.
+	return mips_io;
 }
 
 bool Semantics::would_addition_overflow(int32_t a, int32_t b) {
