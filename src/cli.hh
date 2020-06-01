@@ -8,9 +8,10 @@
 #include <string>     // std::string
 #include <vector>     // std::vector
 
+// TODO: add direct location information to exception types.
+
 #define CLI_DEFAULT_PROG cpsl-cc
 namespace cli {
-
 	/*
 	* Exceptions types.
 	*/
