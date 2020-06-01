@@ -77,7 +77,7 @@ public:
 		class SymbolLocation {
 		public:
 			SymbolLocation();
-			SymbolLocation(section_t section, std::vector<std::string>::size_type line, std::string::size_type start_pos, std::string::size_type length = 0);
+			SymbolLocation(section_t section, std::vector<std::string>::size_type line, std::string::size_type start_pos = 0, std::string::size_type length = 0);
 			section_t                           section;
 			std::vector<std::string>::size_type line;
 			std::string::size_type              start_pos;
@@ -119,6 +119,13 @@ public:
 		//
 		// If this output is already normalized, then additional_names is ignored.
 		std::vector<std::string> get_normalized_lines_copy(const std::set<std::string> &additional_names = std::set<std::string>()) const;
+
+		// | Add a line to an output section.
+		void add_line(section_t section, const std::string &line);
+		// | Add a line to an output section with a symbol.
+		void add_line(section_t section, const std::string &line, const Symbol &symbol, std::string::size_type start_pos = 0, std::string::size_type length = 0);
+		// | Add a symbol to the last line.
+		void add_symbol_location_current_last_line(section_t section, const Symbol &symbol, std::string::size_type start_pos = 0, std::string::size_type length = 0);
 	};
 
 	// | The result of a constant expression.

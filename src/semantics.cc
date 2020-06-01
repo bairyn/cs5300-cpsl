@@ -186,6 +186,13 @@ Semantics::Output Semantics::Output::normalize(const std::set<std::string> &addi
 				throw SemanticsError(sstr.str());
 			}
 
+			// Make sure the null section is empty.
+			if (sections[0].size() > 0) {
+				std::ostringstream sstr;
+				sstr << "Semantics::Output::normalize: error: the null section is not empty.";
+				throw SemanticsError(sstr.str());
+			}
+
 			// Get unique names for each symbol.
 			std::set<Symbol> symbols;
 			for (const std::pair<Symbol, std::vector<SymbolLocation>> &pair : std::as_const(unexpanded_symbols)) {
@@ -318,6 +325,96 @@ std::vector<std::string> Semantics::Output::get_normalized_lines_copy(const std:
 	} else {
 		return std::move(normalize(additional_names).get_normalized_lines_copy(additional_names));
 	}
+}
+
+// | Add a line to an output section.
+void Semantics::Output::add_line(section_t section, const std::string &line) {
+	// If the section vector is empty, initialize it.
+	if (sections.size() <= 0) {
+		for (Output::section_t section = Output::null_section; section <= Output::num_sections; section = static_cast<Output::section_t>(static_cast<int>(section) + 1)) {
+			sections.push_back(std::vector<std::string>());
+		}
+	}
+
+	// Make sure we have the correct number of sections.
+	if (sections.size() != num_sections + 1) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Output::add_line: invalid number of sections: " << sections.size() << " != " << num_sections + 1;
+		throw SemanticsError(sstr.str());
+	}
+
+	// Make sure the section exists.
+	if (section >= sections.size()) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::Output::add_line: error: attempted to add a line to a non-existent output section." << std::endl
+			<< "  section : " << section << std::endl
+			<< "  line    :"  << line
+			;
+		throw SemanticsError(sstr.str());
+	}
+
+	// Add the line.
+	sections[section].push_back(line);
+}
+
+// | Add a line to an output section with a symbol.
+void Semantics::Output::add_line(section_t section, const std::string &line, const Symbol &symbol, std::string::size_type start_pos, std::string::size_type length) {
+	add_line(section, line);
+	add_symbol_location_current_last_line(section, symbol, start_pos, length);
+}
+
+// | Add a symbol to the last line.
+void Semantics::Output::add_symbol_location_current_last_line(section_t section, const Symbol &symbol, std::string::size_type start_pos, std::string::size_type length) {
+	// If the section vector is empty, initialize it.
+	if (sections.size() <= 0) {
+		for (Output::section_t section = Output::null_section; section <= Output::num_sections; section = static_cast<Output::section_t>(static_cast<int>(section) + 1)) {
+			sections.push_back(std::vector<std::string>());
+		}
+	}
+
+	// Make sure we have the correct number of sections.
+	if (sections.size() != num_sections + 1) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Output::add_symbol_location_current_last_line: invalid number of sections: " << sections.size() << " != " << num_sections + 1;
+		throw SemanticsError(sstr.str());
+	}
+
+	// Make sure the section exists.
+	if (section >= sections.size()) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::Output::add_symbol_location_current_last_line: error: attempted to add a symbol location to a non-existent output section." << std::endl
+			<< "  section : " << section << std::endl
+			<< "  symbol.prefix            : " << symbol.prefix             << std::endl
+			<< "  symbol.requested_suffix  : " << symbol.requested_suffix   << std::endl
+			<< "  symbol.unique_identifier : " << symbol.unique_identifier  << std::endl
+			<< "  start_pos                : " << start_pos                 << std::endl
+			<< "  length                   : " << length
+			;
+		throw SemanticsError(sstr.str());
+	}
+
+	// Get the section.
+	const std::vector<std::string> &output_section = sections[section];
+
+	// Make sure the section isn't empty.
+	if (output_section.size() <= 0) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::Output::add_symbol_location_current_last_line: error: attempted to add a symbol location to the current last line when there are currently no lines." << std::endl
+			<< "  section : " << section << std::endl
+			<< "  symbol.prefix            : " << symbol.prefix             << std::endl
+			<< "  symbol.requested_suffix  : " << symbol.requested_suffix   << std::endl
+			<< "  symbol.unique_identifier : " << symbol.unique_identifier  << std::endl
+			<< "  start_pos                : " << start_pos                 << std::endl
+			<< "  length                   : " << length
+			;
+		throw SemanticsError(sstr.str());
+	}
+
+	// Add the symbol location.
+	add_symbol_location(symbol, SymbolLocation(section, output_section.size() - 1, start_pos, length));
 }
 
 Semantics::ConstantValue::ConstantValue()
