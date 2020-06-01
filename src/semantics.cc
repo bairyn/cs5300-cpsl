@@ -3844,16 +3844,32 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 }
 
 Semantics::Instruction::Base::Base()
+	: has_symbol(false)
+	{}
+
+Semantics::Instruction::Base::Base(bool has_symbol, Symbol symbol)
+	: has_symbol(has_symbol)
+	, symbol(symbol)
 	{}
 
 Semantics::Instruction::LoadImmediate::LoadImmediate()
 	{}
 
-Semantics::Instruction::LoadImmediate::LoadImmediate(const Base &base, uint64_t output, const ConstantValue &constant_value)
+Semantics::Instruction::LoadImmediate::LoadImmediate(const Base &base, uint32_t destination, const ConstantValue &constant_value)
 	: Base(base)
-	, output(output)
+	, destination(destination)
 	, constant_value(constant_value)
 	{}
+
+Semantics::Instruction::LoadImmediate::LoadImmediate(const LoadImmediate &load_immediate, const std::vector<uint32_t> &permutation)
+	: Base(load_immediate)
+	, destination(permutation.at(destination))
+	, constant_value(constant_value)
+	{}
+
+Semantics::Instruction::LoadImmediate Semantics::Instruction::LoadImmediate::shift_register_indices(const std::vector<uint32_t> &permutation) const {
+	return LoadImmediate(*this, permutation);
+}
 
 Semantics::Instruction::Instruction(tag_t tag, const data_t &data)
 	: tag(tag)
@@ -3869,6 +3885,32 @@ Semantics::Instruction::Instruction(const LoadImmediate &load_immediate)
 	: tag(load_immediate_tag)
 	, data(load_immediate)
 	{}
+
+const Semantics::Instruction::Base &Semantics::Instruction::get_base() const {
+	switch(tag) {
+		case load_immediate_tag:
+			return get_load_immediate();
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_base: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+Semantics::Instruction::Base &&Semantics::Instruction::get_base() {
+	switch(tag) {
+		case load_immediate_tag:
+			return std::move(get_load_immediate());
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_base: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
 
 bool Semantics::Instruction::is_load_immediate() const {
 	switch(tag) {
@@ -3936,78 +3978,155 @@ std::string Semantics::Instruction::get_tag_repr() const {
 	return get_tag_repr(tag);
 }
 
+Semantics::Instruction Semantics::Instruction::shift_register_indices(const std::vector<uint32_t> &permutation) const {
+	switch(tag) {
+		case load_immediate_tag:
+			return Instruction(get_load_immediate().shift_register_indices(permutation));
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_load_immediate: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
 Semantics::MIPSIO::MIPSIO()
-	: output_size(0)
 	{}
 
-Semantics::MIPSIO::MIPSIO(const std::vector<uint32_t> &working, const std::vector<Instruction> &instructions, const std::vector<uint32_t> &input, uint32_t output_size)
-	: working(working)
+Semantics::MIPSIO::MIPSIO(const std::vector<uint32_t> &workings, const std::vector<Instruction> &instructions, const std::vector<uint32_t> &inputs, const std::vector<uint32_t> &outputs)
+	: workings(workings)
 	, instructions(instructions)
-	, input(input)
-	, output_size(output_size)
+	, inputs(inputs)
+	, outputs(outputs)
 	{}
 
-const std::vector<uint32_t> &Semantics::MIPSIO::get_working() const {
-	return working;
+// | Move-bind and move-compose constructor.
+//
+// Concatenate the instructions of "inputs" with those of
+// "with_inputs", feeding the output of "inputs" into "with_inputs".
+//
+// The output of "inputs" provides all the inputs to "with_inputs".
+//
+// The resulting "inputs" vector is the concatenation of the "inputs" vectors of "inputs".
+//
+// The resulting "outputs" vector is the "outputs" vector of "with_inputs".
+//
+// The resulting "instructions" vector is the concatenation of the
+// "instructions" vectors of the all the inputs (order shouldn't matter
+// here) first, and then the "instructions" vector of "with_inputs"
+// (order matters here).
+//
+// The result "working" vector is determined by that of "inputs" and
+// "with_inputs".  If all the sizes are the same (e.g. you're only
+// dealing with 4-byte registers), then this value is whichever of
+// these two vectors has more elements:
+// - the concatenation of the "working" vectors of "inputs".
+// - the "working" vector of "with_inputs"
+//
+// Once the working units for "inputs" is done executing, then these
+// working units may be re-used or discarded.  So the "working" vector
+// provides something like a lower bound for the result.  Likewise for
+// "with_inputs".
+//
+// Thus, where the concatenated "working" vector from "inputs" is
+// called A, and the "with_inputs" "working" vector is called B, the
+// resulting "working" vector will be equivalent to one that contains
+// exactly these values:
+// - for each unit size S (e.g. 4 bytes) in either A or B, exactly X
+//   copies of S, where X is the larger of the number of copies of S in
+//   A and the number of copies of S in B.
+//
+// The sizes must align.
+Semantics::MIPSIO::MIPSIO(const std::vector<MIPSIO> &inputs, const MIPSIO &with_inputs) {
+	// TODO
+	/*
+	// Set input.
+	for (const MIPSIO &input : std::as_const(inputs)) {
+		this->input.insert(this->input.end(), input.input.cbegin(), input.input.cend());
+	}
+
+	// Set output size.
+	output_size = with_input.output_size;
+
+	// Set instructions.
+	// TODO: adjust inputs!
+	for (const MIPSIO &input : std::as_const(inputs)) {
+		this->instructions.insert(this->instructions.end(), input.instructions.cbegin(), input.instructions.cend());
+	}
+	*/
+}
+
+const std::vector<uint32_t> &Semantics::MIPSIO::get_workings() const {
+	return workings;
 }
 
 const std::vector<Semantics::Instruction> &Semantics::MIPSIO::get_instructions() const {
 	return instructions;
 }
 
-const std::vector<uint32_t> &Semantics::MIPSIO::get_input() const {
-	return input;
+const std::vector<uint32_t> &Semantics::MIPSIO::get_inputs() const {
+	return inputs;
 }
 
-uint32_t Semantics::MIPSIO::get_output_size() const {
-	return output_size;
+const std::vector<uint32_t> &Semantics::MIPSIO::get_outputs() const {
+	return outputs;
 }
 
 // | For convenience, common size sequences are provided.
 
 // Sizes of 0.
-const std::vector<uint32_t>               Semantics::MIPSIO::working_0      {};
+const std::vector<uint32_t>               Semantics::MIPSIO::workings_0     {};
 const std::vector<Semantics::Instruction> Semantics::MIPSIO::instructions_0 {};
-const std::vector<uint32_t>               Semantics::MIPSIO::input_0        {};
-const uint32_t                            Semantics::MIPSIO::output_0       {};
+const std::vector<uint32_t>               Semantics::MIPSIO::inputs_0       {};
+const std::vector<uint32_t>               Semantics::MIPSIO::outputs_0      {};
 
 // Sizes of 1.
-const std::vector<uint32_t>               Semantics::MIPSIO::working_1      {1};
-const std::vector<uint32_t>               Semantics::MIPSIO::input_1        {1};
-const uint32_t                            Semantics::MIPSIO::output_1       {1};
+const std::vector<uint32_t>               Semantics::MIPSIO::workings_1     {1};
+const std::vector<uint32_t>               Semantics::MIPSIO::inputs_1       {1};
+const std::vector<uint32_t>               Semantics::MIPSIO::outputs_1      {1};
 
 // Sizes of 4.
-const std::vector<uint32_t>               Semantics::MIPSIO::working_4      {4};
-const std::vector<uint32_t>               Semantics::MIPSIO::input_4        {4};
-const uint32_t                            Semantics::MIPSIO::output_4       {4};
+const std::vector<uint32_t>               Semantics::MIPSIO::workings_4     {4};
+const std::vector<uint32_t>               Semantics::MIPSIO::inputs_4       {4};
+const std::vector<uint32_t>               Semantics::MIPSIO::outputs_4      {4};
 
 // 2 sizes.
-const std::vector<uint32_t>               Semantics::MIPSIO::working_0_0    {0, 0};
-const std::vector<uint32_t>               Semantics::MIPSIO::input_0_0      {0, 0};
+const std::vector<uint32_t>               Semantics::MIPSIO::workings_0_0   {0, 0};
+const std::vector<uint32_t>               Semantics::MIPSIO::inputs_0_0     {0, 0};
+const std::vector<uint32_t>               Semantics::MIPSIO::outputs_0_0    {0, 0};
 
-const std::vector<uint32_t>               Semantics::MIPSIO::working_0_1    {0, 1};
-const std::vector<uint32_t>               Semantics::MIPSIO::input_0_1      {0, 1};
+const std::vector<uint32_t>               Semantics::MIPSIO::workings_0_1   {0, 1};
+const std::vector<uint32_t>               Semantics::MIPSIO::inputs_0_1     {0, 1};
+const std::vector<uint32_t>               Semantics::MIPSIO::outputs_0_1    {0, 1};
 
-const std::vector<uint32_t>               Semantics::MIPSIO::working_0_4    {0, 4};
-const std::vector<uint32_t>               Semantics::MIPSIO::input_0_4      {0, 4};
+const std::vector<uint32_t>               Semantics::MIPSIO::workings_0_4   {0, 4};
+const std::vector<uint32_t>               Semantics::MIPSIO::inputs_0_4     {0, 4};
+const std::vector<uint32_t>               Semantics::MIPSIO::outputs_0_4    {0, 4};
 
-const std::vector<uint32_t>               Semantics::MIPSIO::working_1_0    {1, 0};
-const std::vector<uint32_t>               Semantics::MIPSIO::input_1_0      {1, 0};
+const std::vector<uint32_t>               Semantics::MIPSIO::workings_1_0   {1, 0};
+const std::vector<uint32_t>               Semantics::MIPSIO::inputs_1_0     {1, 0};
+const std::vector<uint32_t>               Semantics::MIPSIO::outputs_1_0    {1, 0};
 
-const std::vector<uint32_t>               Semantics::MIPSIO::working_1_1    {1, 1};
-const std::vector<uint32_t>               Semantics::MIPSIO::input_1_1      {1, 1};
+const std::vector<uint32_t>               Semantics::MIPSIO::workings_1_1   {1, 1};
+const std::vector<uint32_t>               Semantics::MIPSIO::inputs_1_1     {1, 1};
+const std::vector<uint32_t>               Semantics::MIPSIO::outputs_1_1    {1, 1};
 
-const std::vector<uint32_t>               Semantics::MIPSIO::working_1_4    {1, 4};
-const std::vector<uint32_t>               Semantics::MIPSIO::input_1_4      {1, 4};
+const std::vector<uint32_t>               Semantics::MIPSIO::workings_1_4   {1, 4};
+const std::vector<uint32_t>               Semantics::MIPSIO::inputs_1_4     {1, 4};
+const std::vector<uint32_t>               Semantics::MIPSIO::outputs_1_4    {1, 4};
 
-const std::vector<uint32_t>               Semantics::MIPSIO::working_4_0    {4, 0};
-const std::vector<uint32_t>               Semantics::MIPSIO::input_4_0      {4, 0};
+const std::vector<uint32_t>               Semantics::MIPSIO::workings_4_0   {4, 0};
+const std::vector<uint32_t>               Semantics::MIPSIO::inputs_4_0     {4, 0};
+const std::vector<uint32_t>               Semantics::MIPSIO::outputs_4_0    {4, 0};
 
-const std::vector<uint32_t>               Semantics::MIPSIO::working_4_1    {4, 1};
-const std::vector<uint32_t>               Semantics::MIPSIO::input_4_1      {4, 1};
+const std::vector<uint32_t>               Semantics::MIPSIO::workings_4_1   {4, 1};
+const std::vector<uint32_t>               Semantics::MIPSIO::inputs_4_1     {4, 1};
+const std::vector<uint32_t>               Semantics::MIPSIO::outputs_4_1    {4, 1};
 
-const std::vector<uint32_t>               Semantics::MIPSIO::working_4_4    {4, 4};
-const std::vector<uint32_t>               Semantics::MIPSIO::input_4_4      {4, 4};
+const std::vector<uint32_t>               Semantics::MIPSIO::workings_4_4   {4, 4};
+const std::vector<uint32_t>               Semantics::MIPSIO::inputs_4_4     {4, 4};
+const std::vector<uint32_t>               Semantics::MIPSIO::outputs_4_4    {4, 4};
 
 Semantics::MIPSIO Semantics::analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) const {
 	return std::move(analyze_expression(grammar.expression_storage.at(expression), constant_scope, type_scope, var_scope, combined_scope));
@@ -4040,7 +4159,7 @@ Semantics::MIPSIO Semantics::analyze_expression(const Expression &expression, co
 		}
 
 		// This expression has 0 inputs, 0 working memory units, and 1 output.
-		MIPSIO mips_io(M::working_0, IS { I(I::LoadImmediate(B(), 0, constant_result)) }, M::input_0, M::output_0);
+		MIPSIO mips_io(M::workings_0, IS { I(I::LoadImmediate(B(), 0, constant_result)) }, M::inputs_0, M::outputs_0);
 		return mips_io;
 	}
 

@@ -561,6 +561,12 @@ public:
 	Type analyze_type(const std::string &identifier, const ::Type &type, const IdentifierScope &type_constant_scope, const IdentifierScope &type_type_scope, IdentifierScope &anonymous_storage);
 
 	// | An intermediate unit representation of MIPS instructions.
+	//
+	// "Registers" may be registers or other types of storage, e.g. offsets on the stack.  Which type they are can be analyzed afterward.
+	//
+	// In an instruction, "registers" have an index into the virtually
+	// concatenated vector of workings + inputs + outputs.  e.g. if these
+	// vectors have lengths 2, 8, 8, an index of 3 refers to inputs[1].
 	class Instruction {
 	public:
 		enum tag_e {
@@ -573,14 +579,24 @@ public:
 		class Base {
 		public:
 			Base();
+			Base(bool has_symbol, Symbol symbol);
+			bool has_symbol;
+			Symbol symbol;
+
+			// All subclasses T should defined shift_register_indices:
+			// T shift_register_indices(uint64_t old_workings_length, uint64_t old_inputs_length, uint64_t old_outputs_length, uint64_t new_workings_length, uint64_t new_inputs_length, uint64_t new_outputs_length) const;
 		};
 
 		class LoadImmediate : public Base {
 		public:
 			LoadImmediate();
-			LoadImmediate(const Base &base, uint64_t output, const ConstantValue &constant_value);
-			uint64_t output;
+			LoadImmediate(const Base &base, uint32_t destination, const ConstantValue &constant_value);
+			// Shift register indices constructor.
+			LoadImmediate(const LoadImmediate &load_immediate, const std::vector<uint32_t> &permutation);
+			uint32_t destination;
 			ConstantValue constant_value;
+
+			LoadImmediate shift_register_indices(const std::vector<uint32_t> &permutation) const;
 		};
 
 		using data_t = std::variant<
@@ -594,6 +610,9 @@ public:
 		tag_t tag;
 		data_t data;
 
+		const Base &get_base() const;
+		Base &&get_base();
+
 		explicit Instruction(const LoadImmediate &load_immediate);
 
 		bool is_load_immediate() const;
@@ -606,6 +625,8 @@ public:
 		// | Return "load_immediate".
 		static std::string get_tag_repr(tag_t tag);
 		std::string get_tag_repr() const;
+
+		Instruction shift_register_indices(const std::vector<uint32_t> &permutation) const;
 	};
 
 	// | A MIPS IO monad on output.
@@ -614,71 +635,116 @@ public:
 	class MIPSIO {
 	public:
 		MIPSIO();
-		MIPSIO(const std::vector<uint32_t> &working, const std::vector<Instruction> &instructions, const std::vector<uint32_t> &input, uint32_t output_size);
-		// | Bind constructor.
-		//MIPSIO(const std::vector<MIPSIO> todo);
+		MIPSIO(const std::vector<uint32_t> &workings, const std::vector<Instruction> &instructions, const std::vector<uint32_t> &inputs, const std::vector<uint32_t> &outputs);
+		// | Move-bind and move-compose constructor.
+		//
+		// Concatenate the instructions of "inputs" with those of
+		// "with_inputs", feeding the output of "inputs" into "with_inputs".
+		//
+		// The output of "inputs" provides all the inputs to "with_inputs".
+		//
+		// The resulting "inputs" vector is the concatenation of the "inputs" vectors of "inputs".
+		//
+		// The resulting "outputs" vector is the "outputs" vector of "with_inputs".
+		//
+		// The resulting "instructions" vector is the concatenation of the
+		// "instructions" vectors of the all the inputs (order shouldn't matter
+		// here) first, and then the "instructions" vector of "with_inputs"
+		// (order matters here).
+		//
+		// The result "working" vector is determined by that of "inputs" and
+		// "with_inputs".  If all the sizes are the same (e.g. you're only
+		// dealing with 4-byte registers), then this value is whichever of
+		// these two vectors has more elements:
+		// - the concatenation of the "working" vectors of "inputs".
+		// - the "working" vector of "with_inputs"
+		//
+		// Once the working units for "inputs" is done executing, then these
+		// working units may be re-used or discarded.  So the "working" vector
+		// provides something like a lower bound for the result.  Likewise for
+		// "with_inputs".
+		//
+		// Thus, where the concatenated "working" vector from "inputs" is
+		// called A, and the "with_inputs" "working" vector is called B, the
+		// resulting "working" vector will be equivalent to one that contains
+		// exactly these values:
+		// - for each unit size S (e.g. 4 bytes) in either A or B, exactly X
+		//   copies of S, where X is the larger of the number of copies of S in
+		//   A and the number of copies of S in B.
+		//
+		// The sizes must align.
+		MIPSIO(const std::vector<MIPSIO> &inputs, const MIPSIO &with_inputs);
 
-		const std::vector<uint32_t>    &get_working()      const;
+		const std::vector<uint32_t>    &get_workings()     const;
 		const std::vector<Instruction> &get_instructions() const;
-		const std::vector<uint32_t>    &get_input()        const;
-		uint32_t                        get_output_size()  const;
+		const std::vector<uint32_t>    &get_inputs()       const;
+		const std::vector<uint32_t>    &get_outputs()      const;
 
 		// | For convenience, common size sequences are provided.
 
 		// Sizes of 0.
-		static const std::vector<uint32_t>    working_0;
+		static const std::vector<uint32_t>    workings_0;
 		static const std::vector<Instruction> instructions_0;
-		static const std::vector<uint32_t>    input_0;
-		static const uint32_t                 output_0;
+		static const std::vector<uint32_t>    inputs_0;
+		static const std::vector<uint32_t>    outputs_0;
 
 		// Sizes of 1.
-		static const std::vector<uint32_t>    working_1;
-		static const std::vector<uint32_t>    input_1;
-		static const uint32_t                 output_1;
+		static const std::vector<uint32_t>    workings_1;
+		static const std::vector<uint32_t>    inputs_1;
+		static const std::vector<uint32_t>    outputs_1;
 
 		// Sizes of 4.
-		static const std::vector<uint32_t>    working_4;
-		static const std::vector<uint32_t>    input_4;
-		static const uint32_t                 output_4;
+		static const std::vector<uint32_t>    workings_4;
+		static const std::vector<uint32_t>    inputs_4;
+		static const std::vector<uint32_t>    outputs_4;
 
 		// 2 sizes.
-		static const std::vector<uint32_t>    working_0_0;
-		static const std::vector<uint32_t>    input_0_0;
+		static const std::vector<uint32_t>    workings_0_0;
+		static const std::vector<uint32_t>    inputs_0_0;
+		static const std::vector<uint32_t>    outputs_0_0;
 
-		static const std::vector<uint32_t>    working_0_1;
-		static const std::vector<uint32_t>    input_0_1;
+		static const std::vector<uint32_t>    workings_0_1;
+		static const std::vector<uint32_t>    inputs_0_1;
+		static const std::vector<uint32_t>    outputs_0_1;
 
-		static const std::vector<uint32_t>    working_0_4;
-		static const std::vector<uint32_t>    input_0_4;
+		static const std::vector<uint32_t>    workings_0_4;
+		static const std::vector<uint32_t>    inputs_0_4;
+		static const std::vector<uint32_t>    outputs_0_4;
 
-		static const std::vector<uint32_t>    working_1_0;
-		static const std::vector<uint32_t>    input_1_0;
+		static const std::vector<uint32_t>    workings_1_0;
+		static const std::vector<uint32_t>    inputs_1_0;
+		static const std::vector<uint32_t>    outputs_1_0;
 
-		static const std::vector<uint32_t>    working_1_1;
-		static const std::vector<uint32_t>    input_1_1;
+		static const std::vector<uint32_t>    workings_1_1;
+		static const std::vector<uint32_t>    inputs_1_1;
+		static const std::vector<uint32_t>    outputs_1_1;
 
-		static const std::vector<uint32_t>    working_1_4;
-		static const std::vector<uint32_t>    input_1_4;
+		static const std::vector<uint32_t>    workings_1_4;
+		static const std::vector<uint32_t>    inputs_1_4;
+		static const std::vector<uint32_t>    outputs_1_4;
 
-		static const std::vector<uint32_t>    working_4_0;
-		static const std::vector<uint32_t>    input_4_0;
+		static const std::vector<uint32_t>    workings_4_0;
+		static const std::vector<uint32_t>    inputs_4_0;
+		static const std::vector<uint32_t>    outputs_4_0;
 
-		static const std::vector<uint32_t>    working_4_1;
-		static const std::vector<uint32_t>    input_4_1;
+		static const std::vector<uint32_t>    workings_4_1;
+		static const std::vector<uint32_t>    inputs_4_1;
+		static const std::vector<uint32_t>    outputs_4_1;
 
-		static const std::vector<uint32_t>    working_4_4;
-		static const std::vector<uint32_t>    input_4_4;
+		static const std::vector<uint32_t>    workings_4_4;
+		static const std::vector<uint32_t>    inputs_4_4;
+		static const std::vector<uint32_t>    outputs_4_4;
 
 	protected:
 		// | When joining, working units (e.g. registers) can be freely reused.  A MIPSIO's working units must be isolated from other MIPSIOs.
 		// When input is combined with output, the connected units become working units.
-		std::vector<uint32_t>    working;
+		std::vector<uint32_t>    workings;
 		// | Instructions.  TODO: when you have time, a stack or list-based interface would be more efficient.
 		std::vector<Instruction> instructions;
 		// | The elements represent the sizes of the inputs.
-		std::vector<uint32_t>    input;
+		std::vector<uint32_t>    inputs;
 		// | The size of the output.
-		uint32_t                 output_size;
+		std::vector<uint32_t>    outputs;
 	};
 
 	MIPSIO analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) const;
