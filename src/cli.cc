@@ -412,8 +412,7 @@ void cli::run(const std::vector<std::string> &argv) {
 	// Get the default argument specification.
 	cli::ArgsSpec args_spec(cli::ArgsSpec::default_args_spec);
 
-	// Print CLIErrors, RunErrors, and std::ios_base::failures with friendlier formatting.
-	// TODO: on verbose (-v), don't strip prefix.
+	// Print CLIErrors with friendlier formatting.
 	try {
 		// Parse the arguments.
 		cli::ParsedArgs parsed_args(args_spec.parse(args, prog));
@@ -432,63 +431,6 @@ void cli::run(const std::vector<std::string> &argv) {
 
 		std::cerr << err_msg_noprefix << std::endl;
 		return cli::usage(prog, 2, true);
-	} catch (const cli::RunError &ex) {
-		const std::string err_msg = ex.what();
-		std::string err_msg_noprefix;
-		const std::string::size_type separator_pos = err_msg.find(": ");
-		if (separator_pos == std::string::npos) {
-			err_msg_noprefix = std::string(err_msg);
-		} else {
-			err_msg_noprefix = err_msg.substr(separator_pos + 2);
-		}
-
-		std::cerr << err_msg_noprefix << std::endl;
-		return cli::usage(prog, 3, true);
-	} catch (const std::ios_base::failure &ex) {
-		std::cerr
-			<< "Error: " << const_cast<const char *>(strerror(errno)) << std::endl
-			<< "Details:" << std::endl
-			<< "  IO error: " << ex.what() << std::endl
-			<< "  Code: " << ex.code().value() << std::endl
-			<< "  Message: " << ex.code().message() << std::endl
-			;
-		std::exit(4);
-	} catch (const ::LexerError &ex) {
-		const std::string err_msg = ex.what();
-		std::string err_msg_noprefix;
-		const std::string::size_type separator_pos = err_msg.find(": ");
-		if (separator_pos == std::string::npos) {
-			err_msg_noprefix = std::string(err_msg);
-		} else {
-			err_msg_noprefix = err_msg.substr(separator_pos + 2);
-		}
-
-		std::cerr << err_msg_noprefix << std::endl;
-		std::exit(5);
-	} catch (const ::GrammarError &ex) {
-		const std::string err_msg = ex.what();
-		std::string err_msg_noprefix;
-		const std::string::size_type separator_pos = err_msg.find(": ");
-		if (separator_pos == std::string::npos) {
-			err_msg_noprefix = std::string(err_msg);
-		} else {
-			err_msg_noprefix = err_msg.substr(separator_pos + 2);
-		}
-
-		std::cerr << err_msg_noprefix << std::endl;
-		std::exit(6);
-	} catch (const ::SemanticsError &ex) {
-		const std::string err_msg = ex.what();
-		std::string err_msg_noprefix;
-		const std::string::size_type separator_pos = err_msg.find(": ");
-		if (separator_pos == std::string::npos) {
-			err_msg_noprefix = std::string(err_msg);
-		} else {
-			err_msg_noprefix = err_msg.substr(separator_pos + 2);
-		}
-
-		std::cerr << err_msg_noprefix << std::endl;
-		std::exit(7);
 	}
 }
 
@@ -554,57 +496,129 @@ void cli::run_with_parsed(const ParsedArgs &parsed_args, const ArgsSpec &args_sp
 }
 
 void cli::run_with_parsed(const ParsedArgs &parsed_args, const ArgsSpec &args_spec, const std::vector<std::string> &args, const std::optional<std::string> &prog) {
-	// Handle information options.
-	if       (parsed_args.is("help")) {
-		return cli::usage(prog);
-	} else if(parsed_args.is("version")) {
-		return cli::version(prog);
-	}
-
-	// Get output file.
-	std::string output_path;
-	std::optional<std::string> output_option = parsed_args.find("output");
-	if (!output_option) {
-		std::ostringstream sstr;
-		sstr << "cli::run_with_parsed: missing output path (e.g. -o path/to/output.asm).";
-		throw cli::CLIError(sstr.str());
-	} else {
-		output_path = *output_option;
-	}
-
-	// Get input files.
-	std::vector<std::string> input_paths;
-	std::optional<std::string> input_option = parsed_args.find("input");
-	if (!input_option) {
-		// It could be specified as a positional argument.
-	} else {
-		std::string input_path;
-		input_path = *input_option;
-		input_paths.push_back(input_path);
-	}
-
-	// Add positional arguments as input files.
-	input_paths.insert(input_paths.end(), parsed_args.positional_arguments.cbegin(), parsed_args.positional_arguments.cend());
-
-	// Ensure there is an input path.
-	if (input_paths.size() <= 0) {
-		std::ostringstream sstr;
-		sstr << "cli::run_with_parsed: missing input path (e.g. -i path/to/output.asm).";
-		throw cli::CLIError(sstr.str());
-	}
-
-	// Currently, multiple input paths are unsupported.
-	if (input_paths.size() >= 2) {
-		std::ostringstream sstr;
-		sstr << "cli::run_with_parsed: currently, multiple input paths are unsupported, and multiple input paths were provided:";
-		for (const std::string &input_path : input_paths) {
-			sstr << std::endl << "\t" << input_path;
+	// Print CLIErrors, RunErrors, std::ios_base::failures, etc. with friendlier formatting.
+	try {
+		// Handle information options.
+		if       (parsed_args.is("help")) {
+			return cli::usage(prog);
+		} else if(parsed_args.is("version")) {
+			return cli::version(prog);
 		}
-		throw cli::CLIError(sstr.str());
-	}
-	std::string input_path = std::string(input_paths[0]);
 
-	return cli::run_with_paths(parsed_args, input_path, output_path, args_spec, args, prog);
+		// Get output file.
+		std::string output_path;
+		std::optional<std::string> output_option = parsed_args.find("output");
+		if (!output_option) {
+			std::ostringstream sstr;
+			sstr << "cli::run_with_parsed: missing output path (e.g. -o path/to/output.asm).";
+			throw cli::CLIError(sstr.str());
+		} else {
+			output_path = *output_option;
+		}
+
+		// Get input files.
+		std::vector<std::string> input_paths;
+		std::optional<std::string> input_option = parsed_args.find("input");
+		if (!input_option) {
+			// It could be specified as a positional argument.
+		} else {
+			std::string input_path;
+			input_path = *input_option;
+			input_paths.push_back(input_path);
+		}
+
+		// Add positional arguments as input files.
+		input_paths.insert(input_paths.end(), parsed_args.positional_arguments.cbegin(), parsed_args.positional_arguments.cend());
+
+		// Ensure there is an input path.
+		if (input_paths.size() <= 0) {
+			std::ostringstream sstr;
+			sstr << "cli::run_with_parsed: missing input path (e.g. -i path/to/output.asm).";
+			throw cli::CLIError(sstr.str());
+		}
+
+		// Currently, multiple input paths are unsupported.
+		if (input_paths.size() >= 2) {
+			std::ostringstream sstr;
+			sstr << "cli::run_with_parsed: currently, multiple input paths are unsupported, and multiple input paths were provided:";
+			for (const std::string &input_path : input_paths) {
+				sstr << std::endl << "\t" << input_path;
+			}
+			throw cli::CLIError(sstr.str());
+		}
+		std::string input_path = std::string(input_paths[0]);
+
+		return cli::run_with_paths(parsed_args, input_path, output_path, args_spec, args, prog);
+	} catch (const cli::CLIError &ex) {
+		const std::string err_msg = ex.what();
+		std::string err_msg_noprefix;
+		const std::string::size_type separator_pos = err_msg.find(": ");
+		if (parsed_args.is("verbose") || separator_pos == std::string::npos) {
+			err_msg_noprefix = std::string(err_msg);
+		} else {
+			err_msg_noprefix = err_msg.substr(separator_pos + 2);
+		}
+
+		std::cerr << err_msg_noprefix << std::endl;
+		return cli::usage(prog, 3, true);
+	} catch (const cli::RunError &ex) {
+		const std::string err_msg = ex.what();
+		std::string err_msg_noprefix;
+		const std::string::size_type separator_pos = err_msg.find(": ");
+		if (parsed_args.is("verbose") || separator_pos == std::string::npos) {
+			err_msg_noprefix = std::string(err_msg);
+		} else {
+			err_msg_noprefix = err_msg.substr(separator_pos + 2);
+		}
+
+		std::cerr << err_msg_noprefix << std::endl;
+		return cli::usage(prog, 4, true);
+	} catch (const std::ios_base::failure &ex) {
+		std::cerr
+			<< "Error: " << const_cast<const char *>(strerror(errno)) << std::endl
+			<< "Details:" << std::endl
+			<< "  IO error: " << ex.what() << std::endl
+			<< "  Code: " << ex.code().value() << std::endl
+			<< "  Message: " << ex.code().message() << std::endl
+			;
+		std::exit(5);
+	} catch (const ::LexerError &ex) {
+		const std::string err_msg = ex.what();
+		std::string err_msg_noprefix;
+		const std::string::size_type separator_pos = err_msg.find(": ");
+		if (parsed_args.is("verbose") || separator_pos == std::string::npos) {
+			err_msg_noprefix = std::string(err_msg);
+		} else {
+			err_msg_noprefix = err_msg.substr(separator_pos + 2);
+		}
+
+		std::cerr << err_msg_noprefix << std::endl;
+		std::exit(6);
+	} catch (const ::GrammarError &ex) {
+		const std::string err_msg = ex.what();
+		std::string err_msg_noprefix;
+		const std::string::size_type separator_pos = err_msg.find(": ");
+		if (parsed_args.is("verbose") || separator_pos == std::string::npos) {
+			err_msg_noprefix = std::string(err_msg);
+		} else {
+			err_msg_noprefix = err_msg.substr(separator_pos + 2);
+		}
+
+		std::cerr << err_msg_noprefix << std::endl;
+		std::exit(7);
+	} catch (const ::SemanticsError &ex) {
+		const std::string err_msg = ex.what();
+		std::string err_msg_noprefix;
+		const std::string::size_type separator_pos = err_msg.find(": ");
+		if (parsed_args.is("verbose") || separator_pos == std::string::npos) {
+			err_msg_noprefix = std::string(err_msg);
+		} else {
+			err_msg_noprefix = err_msg.substr(separator_pos + 2);
+		}
+
+		std::cerr << err_msg_noprefix << std::endl;
+		std::exit(8);
+	}
 }
 
 // | Read the lines of a file.
