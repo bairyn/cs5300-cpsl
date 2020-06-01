@@ -3843,6 +3843,109 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 	}
 }
 
+Semantics::Instruction::Base::Base()
+	{}
+
+Semantics::Instruction::LoadImmediate::LoadImmediate()
+	{}
+
+Semantics::Instruction::LoadImmediate::LoadImmediate(const Base &base, uint64_t output, const ConstantValue &constant_value)
+	: Base(base)
+	, output(output)
+	, constant_value(constant_value)
+	{}
+
+Semantics::Instruction::Instruction(tag_t tag, const data_t &data)
+	: tag(tag)
+	, data(data)
+	{}
+
+Semantics::Instruction::Instruction(tag_t tag, data_t &&data)
+	: tag(tag)
+	, data(std::move(data))
+	{}
+
+Semantics::Instruction::Instruction(const LoadImmediate &load_immediate)
+	: tag(load_immediate_tag)
+	, data(load_immediate)
+	{}
+
+bool Semantics::Instruction::is_load_immediate() const {
+	switch(tag) {
+		case load_immediate_tag:
+			return true;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::is_load_immediate: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+// | The tags must be correct, or else an exception will be thrown, including for set_*.
+const Semantics::Instruction::LoadImmediate &Semantics::Instruction::get_load_immediate() const {
+	switch(tag) {
+		case load_immediate_tag:
+			return std::get<LoadImmediate>(data);
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_load_immediate: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_load_immediate: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+Semantics::Instruction::LoadImmediate &&Semantics::Instruction::get_load_immediate() {
+	switch(tag) {
+		case load_immediate_tag:
+			return std::get<LoadImmediate>(std::move(data));
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_load_immediate: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_load_immediate: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+// | Return "load_immediate".
+std::string Semantics::Instruction::get_tag_repr(tag_t tag) {
+	switch(tag) {
+		case load_immediate_tag:
+			return "load_immediate";
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_load_immediate: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+std::string Semantics::Instruction::get_tag_repr() const {
+	return get_tag_repr(tag);
+}
+
+Semantics::MIPSIO::MIPSIO()
+	{}
+
+Semantics::MIPSIO::MIPSIO(const std::vector<int32_t> &input, const std::vector<int32_t> &working, const std::vector<int32_t> &output, const std::vector<Instruction> &instructions)
+	: input(input)
+	, working(working)
+	, output(output)
+	, instructions(instructions)
+	{}
+
 Semantics::MIPSIO Semantics::analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) const {
 	return std::move(analyze_expression(grammar.expression_storage.at(expression), constant_scope, type_scope, var_scope, combined_scope));
 }
@@ -3868,7 +3971,7 @@ Semantics::MIPSIO Semantics::analyze_expression(const Expression &expression, co
 		// This expression has 0 inputs, 0 working memory units, and 1 output.
 		MIPSIO mips_io;
 		mips_io.output.push_back(primitive_type.size);
-		//mips_io.instructions.push_back(Instruction::LoadImmediate);
+		mips_io.instructions.push_back(Instruction(Instruction::LoadImmediate(Instruction::Base(), 0, constant_result)));
 	}
 
 	// Prepare the MIPS IO value.

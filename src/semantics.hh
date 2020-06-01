@@ -564,31 +564,64 @@ public:
 	class Instruction {
 	public:
 		enum tag_e {
-			null_tag = 0,
-			num_tags = 0,
+			null_tag           = 0,
+			load_immediate_tag = 1,
+			num_tags           = 1,
 		};
 		typedef enum tag_e tag_t;
-		// TODO
+
+		class Base {
+		public:
+			Base();
+		};
+
+		class LoadImmediate : public Base {
+		public:
+			LoadImmediate();
+			LoadImmediate(const Base &base, uint64_t output, const ConstantValue &constant_value);
+			uint64_t output;
+			ConstantValue constant_value;
+		};
 
 		using data_t = std::variant<
-			std::monostate
+			std::monostate,
+			LoadImmediate
 		>;
 
 		Instruction();
 		Instruction(tag_t tag, const data_t &data);
 		Instruction(tag_t tag, data_t &&data);
+		tag_t tag;
+		data_t data;
 
-		//explicit Instruction(const );
+		explicit Instruction(const LoadImmediate &load_immediate);
+
+		bool is_load_immediate() const;
+
+		// | The tags must be correct, or else an exception will be thrown, including for set_*.
+		const LoadImmediate &get_load_immediate() const;
+
+		LoadImmediate &&get_load_immediate();
+
+		// | Return "load_immediate".
+		static std::string get_tag_repr(tag_t tag);
+		std::string get_tag_repr() const;
 	};
 
-	// | A MIPS IO monad.
+	// | A MIPS IO monad on output.
 	//
 	// Tracks registers, space, or working memory used and those needed.
 	class MIPSIO {
 	public:
+		MIPSIO();
+		MIPSIO(const std::vector<int32_t> &input, const std::vector<int32_t> &working, const std::vector<int32_t> &output, const std::vector<Instruction> &instructions);
+		// | The elements represent the sizes of the inputs.
 		std::vector<int32_t> input;
-		std::vector<int32_t> output;
+		// | When joining, working units (e.g. registers) can be freely reused.  A MIPSIO's working units must be isolated from other MIPSIOs.
 		std::vector<int32_t> working;
+		// | When input is combined with output, the connected units become working units.
+		std::vector<int32_t> output;
+		// | Instructions.
 		std::vector<Instruction> instructions;
 	};
 
