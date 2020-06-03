@@ -4395,47 +4395,47 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 	if           ( destination_storage.is_global && !destination_storage.dereference) {
 		if (!source_storage.is_global && !source_storage.dereference) {
 			if (addition != 0) {
-				lines.push_back("la   $t8, " + std::to_string(addition) + "(" + source_storage.register_ + ")");
+				lines.push_back("\tla   $t8, " + std::to_string(addition) + "(" + source_storage.register_ + ")");
 				lines.push_back(sized_save + "$t8, ($t9)");
 			} else {
 				lines.push_back(sized_save + source_storage.register_ + ", ($t9)");
 			}
 		} else {
-			lines.push_back("la   $t8, " + std::to_string(addition) + "($t8)");
+			lines.push_back("\tla   $t8, " + std::to_string(addition) + "($t8)");
 			lines.push_back(sized_save + "$t8, ($t9)");
 		}
 	} else if    ( destination_storage.is_global &&  destination_storage.dereference) {
 		if (!source_storage.is_global && !source_storage.dereference) {
 			if (addition != 0) {
-				lines.push_back("la   $t8, " + std::to_string(addition) + "(" + source_storage.register_ + ")");
+				lines.push_back("\tla   $t8, " + std::to_string(addition) + "(" + source_storage.register_ + ")");
 				lines.push_back(sized_save + "$t8, ($t9)");
 			} else {
 				lines.push_back(sized_save + source_storage.register_ + ", ($t9)");
 			}
 		} else {
-			lines.push_back("la   $t8, " + std::to_string(addition) + "($t8)");
+			lines.push_back("\tla   $t8, " + std::to_string(addition) + "($t8)");
 			lines.push_back(sized_save + "$t8, ($t9)");
 		}
 	} else if    (!destination_storage.is_global && !destination_storage.dereference) {
 		if (!source_storage.is_global && !source_storage.dereference) {
 			if (addition != 0) {
-				lines.push_back("la   " + destination_storage.register_ + ", " + std::to_string(addition) + "(" + source_storage.register_ + ")");
+				lines.push_back("\tla   " + destination_storage.register_ + ", " + std::to_string(addition) + "(" + source_storage.register_ + ")");
 			} else {
-				lines.push_back("la   " + destination_storage.register_ + ", " + std::to_string(addition) + "(" + source_storage.register_ + ")");
+				lines.push_back("\tla   " + destination_storage.register_ + ", " + std::to_string(addition) + "(" + source_storage.register_ + ")");
 			}
 		} else {
-			lines.push_back("la   " + destination_storage.register_ + ", " + std::to_string(addition) + "($t8)");
+			lines.push_back("\tla   " + destination_storage.register_ + ", " + std::to_string(addition) + "($t8)");
 		}
 	} else {  // (!destination_storage.is_global &&  destination_storage.dereference) {
 		if (!source_storage.is_global && !source_storage.dereference) {
 			if (addition != 0) {
-				lines.push_back("la   $t8, " + std::to_string(addition) + "(" + source_storage.register_ + ")");
+				lines.push_back("\tla   $t8, " + std::to_string(addition) + "(" + source_storage.register_ + ")");
 				lines.push_back(sized_save + "$t8, ($t9)");
 			} else {
 				lines.push_back(sized_save + source_storage.register_ + ", ($t9)");
 			}
 		} else {
-			lines.push_back("la   $t8, " + std::to_string(addition) + "($t8)");
+			lines.push_back("\tla   $t8, " + std::to_string(addition) + "($t8)");
 			lines.push_back(sized_save + "$t8, ($t9)");
 		}
 	}
@@ -5016,8 +5016,8 @@ void Semantics::MIPSIO::calculate_composed_sizes() {
 	}
 
 	// composed_working_sizes
-	input_output_sizes.insert(input_output_sizes.end(), input_output_sizes.cbegin(), input_output_sizes.cend());
-	input_output_sizes.insert(input_output_sizes.end(), working_sizes.cbegin(), working_sizes.cend());
+	composed_working_sizes.insert(composed_working_sizes.end(), input_output_sizes.cbegin(), input_output_sizes.cend());
+	composed_working_sizes.insert(composed_working_sizes.end(), working_sizes.cbegin(), working_sizes.cend());
 
 	// composed_instructions
 	if (calculate_composed_instructions) {

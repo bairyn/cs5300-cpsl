@@ -882,6 +882,7 @@ public:
 		std::vector<uint32_t>    composed_working_sizes;
 		std::vector<Instruction> composed_instructions;
 		std::vector<uint32_t>    composed_input_sizes;
+		// | (Same as output_sizes.)
 		std::vector<uint32_t>    composed_output_sizes;
 		// | composed_input, composed_working (input_output, (handler) working), composed_output
 		std::vector<uint32_t>    all_composed_storage_sizes;
