@@ -4185,40 +4185,40 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadImmediate::emit
 	// Get the final store operation.
 	Output::Line store_op;
 	if (is_word) {
-		store_op = "sw   ";
+		store_op = "\tsw   ";
 	} else {
-		store_op = "sb   ";
+		store_op = "\tsb   ";
 	}
 
 	// Get the li operation.  Are we loading a label or a number?
 	Output::Line constant_load_op;
 	Output::Line value;
 	if (!constant_value.is_string()) {
-		constant_load_op = "li   ";
+		constant_load_op = "\tli   ";
 		value = constant_value.get_static_repr();
 	} else {
-		constant_load_op = "la   ";
+		constant_load_op = "\tla   ";
 		value = destination_storage.global_address;
 	}
 
 	// Emit the output depending on the destination storage type.
 	if           ( destination_storage.is_global && !destination_storage.dereference) {
-		lines.push_back("la   $t9, " + destination_storage.global_address);
+		lines.push_back("\tla   $t9, " + destination_storage.global_address);
 		if (destination_storage.offset > 0) {
-			lines.push_back("la   $t9, " + std::to_string(destination_storage.offset) + "($t9)");
+			lines.push_back("\tla   $t9, " + std::to_string(destination_storage.offset) + "($t9)");
 		}
 		lines.push_back(constant_load_op + "$t8, " + value);
-		lines.push_back("sw   $t8, ($t9)");
+		lines.push_back("\tsw   $t8, ($t9)");
 	} else if    ( destination_storage.is_global &&  destination_storage.dereference) {
-		lines.push_back("la   $t9, " + destination_storage.global_address);
-		lines.push_back("lw   $t9, " + std::to_string(destination_storage.offset) + "($t9)");
+		lines.push_back("\tla   $t9, " + destination_storage.global_address);
+		lines.push_back("\tlw   $t9, " + std::to_string(destination_storage.offset) + "($t9)");
 		lines.push_back(constant_load_op + "$t8, " + value);
-		lines.push_back("sw   $t8, ($t9)");
+		lines.push_back("\tsw   $t8, ($t9)");
 	} else if    (!destination_storage.is_global && !destination_storage.dereference) {
 		lines.push_back(constant_load_op + destination_storage.register_ + ", " + value);
 	} else {  // (!destination_storage.is_global &&  destination_storage.dereference) {
 		lines.push_back(constant_load_op + "$t9, " + value);
-		lines.push_back("sw   $t9, " + std::to_string(destination_storage.offset) + "(" + destination_storage.register_ + ")");
+		lines.push_back("\tsw   $t9, " + std::to_string(destination_storage.offset) + "(" + destination_storage.register_ + ")");
 	}
 
 	// Return the output.
@@ -4853,7 +4853,8 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::vector<S
 			// Just remove the original input storages.
 			std::vector<Storage> handler_storage;
 			handler_storage.insert(handler_storage.end(), storage.cbegin() + get_composed_output_sizes().size() - get_output_sizes().size(), storage.cend());
-			instructions[0].emit(handler_storage);
+			std::vector<Output::Line> instruction_lines = instructions[0].emit(handler_storage);
+			lines.insert(lines.end(), instruction_lines.cbegin(), instruction_lines.cend());
 		} else {
 			// We have a simple chain of instructions.  Feed the output of one into the next.
 			// Use working storages both as output and input.
@@ -5095,7 +5096,8 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::vector<S
 				}
 
 				// Emit the instruction.
-				instruction.emit(instruction_storage);
+				std::vector<Output::Line> instruction_lines = instruction.emit(instruction_storage);
+				lines.insert(lines.end(), instruction_lines.cbegin(), instruction_lines.cend());
 			}
 		}
 	}
@@ -6064,6 +6066,10 @@ void Semantics::analyze() {
 	const StatementSequence &statement_sequence = grammar.statement_sequence_storage.at(block.statement_sequence);
 	const LexemeKeyword &end_keyword0           = grammar.lexemes.at(block.end_keyword0).get_keyword(); (void) end_keyword0;
 
+	// TODO
+
+	// The string literals have been analyzed by this point.
+	// Add the string literal declarations.
 	// TODO
 }
 
