@@ -986,10 +986,29 @@ inline bool operator>=(const Semantics::Output::SymbolLocation &a, const Semanti
 inline bool operator==(const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b);
 inline bool operator!=(const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b);
 
+inline bool operator< (const Semantics::Output::Line &a, const Semantics::Output::Line &b);
+inline bool operator> (const Semantics::Output::Line &a, const Semantics::Output::Line &b);
+inline bool operator<=(const Semantics::Output::Line &a, const Semantics::Output::Line &b);
+inline bool operator>=(const Semantics::Output::Line &a, const Semantics::Output::Line &b);
+
+inline bool operator==(const Semantics::Output::Line &a, const Semantics::Output::Line &b);
+inline bool operator!=(const Semantics::Output::Line &a, const Semantics::Output::Line &b);
+
 inline Semantics::Output::Line operator+(const Semantics::Output::Line &a, const Semantics::Output::Line &b);
 inline Semantics::Output::Line operator+(const Semantics::Output::Line &a, const Semantics::Symbol       &b);
 inline Semantics::Output::Line operator+(const Semantics::Symbol       &a, const Semantics::Output::Line &b);
 inline Semantics::Output::Line operator+(const Semantics::Symbol       &a, const Semantics::Symbol       &b);
+
+class UnitTests {
+public:
+	static UnitTests unit_tests;
+
+	UnitTests();
+
+	void run();
+
+	void test_mips_io();
+};
 
 // Commented out: these declarations are redundant and would cause some calls to be ambiguous.
 #if 0

@@ -6382,6 +6382,7 @@ void Semantics::analyze() {
 	}
 }
 
+// Symbol.
 inline bool operator< (const Semantics::Symbol &a, const Semantics::Symbol &b) {
 	if        (a.prefix           != b.prefix) {
 		return a.prefix            < b.prefix;
@@ -6400,6 +6401,7 @@ inline bool operator==(const Semantics::Symbol &a, const Semantics::Symbol &b) {
 }
 inline bool operator!=(const Semantics::Symbol &a, const Semantics::Symbol &b) { return !(a == b); }
 
+// SymbolLocation.
 inline bool operator< (const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b) {
 	if        (a.section   != b.section) {
 		return a.section   < b.section;
@@ -6420,6 +6422,24 @@ inline bool operator==(const Semantics::Output::SymbolLocation &a, const Semanti
 }
 inline bool operator!=(const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b) { return !(a == b); }
 
+// Line.
+inline bool operator< (const Semantics::Output::Line &a, const Semantics::Output::Line &b) {
+	if        (a.line    != b.line) {
+		return a.line    < b.line;
+	} else {
+		return a.symbols < b.symbols;
+	}
+}
+inline bool operator> (const Semantics::Output::Line &a, const Semantics::Output::Line &b) { return   b < a;  }
+inline bool operator<=(const Semantics::Output::Line &a, const Semantics::Output::Line &b) { return !(a > b); }
+inline bool operator>=(const Semantics::Output::Line &a, const Semantics::Output::Line &b) { return !(a < b); }
+
+inline bool operator==(const Semantics::Output::Line &a, const Semantics::Output::Line &b) {
+	return a.line == b.line && a.symbols == b.symbols;
+}
+inline bool operator!=(const Semantics::Output::Line &a, const Semantics::Output::Line &b) { return !(a == b); }
+
+// Line addition.
 inline Semantics::Output::Line operator+(const Semantics::Output::Line &a, const Semantics::Output::Line &b) { return a.plus(b); }
 inline Semantics::Output::Line operator+(const Semantics::Output::Line &a, const Semantics::Symbol       &b) { return a.plus(b); }
 inline Semantics::Output::Line operator+(const Semantics::Symbol       &a, const Semantics::Output::Line &b) { return Semantics::Output::Line(a).plus(b); }
@@ -6429,3 +6449,45 @@ inline Semantics::Output::Line operator+(const Semantics::Symbol       &a, const
 inline Semantics::Output::Line operator+(const std::string             &a, const Semantics::Output::Line &b) { return Semantics::Output::Line(a) + b; }
 inline Semantics::Output::Line operator+(const Semantics::Output::Line &a, const std::string             &b) { return a + Semantics::Output::Line(b); }
 #endif /* if 0 */
+
+UnitTests UnitTests::unit_tests;
+
+UnitTests::UnitTests()
+{
+	assert((run(), true));
+}
+
+void UnitTests::run() {
+	test_mips_io();
+}
+
+void UnitTests::test_mips_io() {
+	// Some type aliases to improve readability.
+	using M = Semantics::MIPSIO;
+	using I = Semantics::Instruction;
+	using B = Semantics::Instruction::Base;
+	using ConstantValue = Semantics::ConstantValue;
+	using Output        = Semantics::Output;
+	using Storage       = Semantics::Storage;
+	using Symbol        = Semantics::Symbol;
+
+	M load_4 {{}, {
+		I(I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(4), 0, 0), Symbol())),
+	}};
+	M move_5 {{load_4}, {
+		I(I::LoadFrom(B(), true, 16)),
+	}};
+	const M &mips_io = move_5;
+
+	// Storage(uint32_t max_size, bool is_global, Symbol global_address, const std::string &register_, bool dereference, int32_t offset);
+	std::vector<Output::Line> lines = mips_io.emit({
+		Storage(4, false, Symbol(), "$t2", false, 0),  // Working (load_4 -> move_5).
+		Storage(4, false, Symbol(), "$t3", false, 0),  // Output  (move_5 -> here).
+	});
+
+	std::vector<Output::Line> expected;
+	expected.push_back("\tli   $t2, 4");
+	expected.push_back("\tla   $t3, 16($t2)");
+
+	assert(lines == expected);
+}
