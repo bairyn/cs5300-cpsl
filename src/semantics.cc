@@ -508,6 +508,13 @@ void Semantics::Output::add_line(section_t section, const Line &line) {
 	}
 }
 
+// | Add lines to output, optionally with symbols.
+void Semantics::Output::add_lines(section_t section, const std::vector<Line> &lines) {
+	for (const Line &line : std::as_const(lines)) {
+		add_line(section, line);
+	}
+}
+
 // | Add a symbol to the last line.
 void Semantics::Output::add_symbol_location_current_last_line(section_t section, const Symbol &symbol, std::string::size_type start_pos, std::string::size_type length) {
 	// If the section vector is empty, initialize it.

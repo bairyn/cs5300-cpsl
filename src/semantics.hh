@@ -167,6 +167,8 @@ public:
 		void add_line(section_t section, const std::string &line, const Symbol &symbol, std::string::size_type start_pos = 0, std::string::size_type length = 0);
 		// | Add a line to an output, optionally with symbols.
 		void add_line(section_t section, const Line &line);
+		// | Add lines to output, optionally with symbols.
+		void add_lines(section_t section, const std::vector<Line> &lines);
 		// | Add a symbol to the last line.
 		void add_symbol_location_current_last_line(section_t section, const Symbol &symbol, std::string::size_type start_pos = 0, std::string::size_type length = 0);
 
