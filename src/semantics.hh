@@ -617,7 +617,9 @@ public:
 
 	// | A representation of a storage unit: a register, offset on the stack, global address, etc.
 	//
-	// $t8 and $t9 are reversed in case any working storage units require 2 registers to access.
+	// $t8 and $t9 are reserved in case any working storage units require 2
+	// registers to access.  The maximum number of registers required to access
+	// a working storage unit is 2.
 	//
 	// There are 4 storage types:
 	// 	1: global_address + x
@@ -662,7 +664,8 @@ public:
 		enum tag_e {
 			null_tag           = 0,
 			load_immediate_tag = 1,
-			num_tags           = 1,
+			load_from_tag      = 2,
+			num_tags           = 2,
 		};
 		typedef enum tag_e tag_t;
 
@@ -682,6 +685,7 @@ public:
 			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
 		};
 
+		// | Load an immediate value into a storage unit, e.g. 3 or the address of "string literal".
 		class LoadImmediate : public Base {
 		public:
 			LoadImmediate();
@@ -703,9 +707,29 @@ public:
 			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
 		};
 
+		// | Load from one storage unit to another.
+		class LoadFrom : public Base {
+		public:
+			LoadFrom();
+			LoadFrom(const Base &base, bool is_word, int32_t addition);
+			// | Are we loading a byte or a word?
+			bool is_word;
+			// | destination <- source + addition
+			// (Addition applies to values, not addresses.)
+			int32_t addition;
+
+			std::vector<uint32_t> get_input_sizes() const;
+			std::vector<uint32_t> get_working_sizes() const;
+			std::vector<uint32_t> get_output_sizes() const;
+			std::vector<uint32_t> get_all_sizes() const;
+
+			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
+		};
+
 		using data_t = std::variant<
 			std::monostate,
-			LoadImmediate
+			LoadImmediate,
+			LoadFrom
 		>;
 
 		Instruction();
@@ -718,15 +742,19 @@ public:
 		Base &&get_base();
 
 		explicit Instruction(const LoadImmediate &load_immediate);
+		explicit Instruction(const LoadFrom      &load_from);
 
 		bool is_load_immediate() const;
+		bool is_load_from()      const;
 
 		// | The tags must be correct, or else an exception will be thrown, including for set_*.
 		const LoadImmediate &get_load_immediate() const;
+		const LoadFrom      &get_load_from()      const;
 
 		LoadImmediate &&get_load_immediate();
+		LoadFrom      &&get_load_from();
 
-		// | Return "load_immediate".
+		// | Return "load_immediate" or "load_from".
 		static std::string get_tag_repr(tag_t tag);
 		std::string get_tag_repr() const;
 

@@ -4185,17 +4185,17 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadImmediate::emit
 	// If the constant value is a string, replace "li" with "la", and use the symbol rather than the constant value.
 	//
 	// 4 storage types for destination:
-	// 	1: global_address + x
-	// 	2: x(global_address)
-	// 	3: $reg
-	// 	4: x($reg)
+	// 	1: global_address + x  (Store into this address.)
+	// 	2: x(global_address)   (Store into this dereferenced address.)
+	// 	3: $reg                (Store into this register.)
+	// 	4: x($reg)             (Store into this dereferenced register.)
 	//
 	// 2 source types:
 	// constant_non_string, constant_string
 	//
 	// X <- constant_non_string:
 	// 	1: la   $t9, destination_storage.global_address
-	// 	   la   $t9, destination_storage.offset($t9)     if > 0
+	// 	   la   $t9, destination_storage.offset($t9)     if != 0
 	// 	   li   $t8, constant_non_string
 	// 	   sw   $t8, ($t9)
 	// 	2: la   $t9, destination_storage.global_address
@@ -4228,7 +4228,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadImmediate::emit
 	// Emit the output depending on the destination storage type.
 	if           ( destination_storage.is_global && !destination_storage.dereference) {
 		lines.push_back("\tla   $t9, " + destination_storage.global_address);
-		if (destination_storage.offset > 0) {
+		if (destination_storage.offset != 0) {
 			lines.push_back("\tla   $t9, " + std::to_string(destination_storage.offset) + "($t9)");
 		}
 		lines.push_back(constant_load_op + "$t8, " + value);
@@ -4243,6 +4243,201 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadImmediate::emit
 	} else {  // (!destination_storage.is_global &&  destination_storage.dereference) {
 		lines.push_back(constant_load_op + "$t9, " + value);
 		lines.push_back("\tsw   $t9, " + std::to_string(destination_storage.offset) + "(" + destination_storage.register_ + ")");
+	}
+
+	// Return the output.
+	return lines;
+}
+
+Semantics::Instruction::LoadFrom::LoadFrom()
+	{}
+
+Semantics::Instruction::LoadFrom::LoadFrom(const Base &base, bool is_word, int32_t addition)
+	: Base(base)
+	, is_word(is_word)
+	, addition(addition)
+	{}
+
+std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_input_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1)}; }
+std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_working_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_output_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1)}; }
+std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
+
+std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(const std::vector<Storage> &storages) const {
+	// Check sizes.
+	if (Storage::get_sizes(storages) != get_all_sizes()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::LoadImmediate::emit: the number or sizes of storage units provided does not match what was expected.";
+		throw SemanticsError(sstr.str());
+	}
+	const Storage &source_storage      = storages[0];
+	const Storage &destination_storage = storages[1];
+
+	// Prepare output vector.
+	std::vector<Output::Line> lines;
+
+	// Emit a symbol for this instruction if there is one.
+	if (has_symbol) {
+		lines.push_back({":", symbol});
+	}
+
+	// If !this->is_word, replace sw with sb and lw with lb.
+	//
+	// 4 storage types for destination:
+	// 	1: global_address + x  (Store into this address.)
+	// 	2: x(global_address)   (Store into this dereferenced address.)
+	// 	3: $reg                (Store into this register.)
+	// 	4: x($reg)             (Store into this dereferenced register.)
+	//
+	// 4 storage types for source:
+	// 	1: global_address + x  (Read from this address.)
+	// 	2: x(global_address)   (Read from this dereferenced address.)
+	// 	3: $reg                (Read from this register.)
+	// 	4: x($reg)             (Read from this dereferenced register.)
+	//
+	// 16 cases:
+	//
+	// 1:  global_address + x <- global_address + x
+	// 2:  global_address + x <- x(global_address)
+	// 3:  global_address + x <- $reg
+	// 4:  global_address + x <- x($reg)
+	//
+	// 5:  x(global_address) <- global_address + x
+	// 6:  x(global_address) <- x(global_address)
+	// 7:  x(global_address) <- $reg
+	// 8:  x(global_address) <- x($reg)
+	//
+	// 9:  $reg <- global_address + x
+	// 10: $reg <- x(global_address)
+	// 11: $reg <- $reg
+	// 12: $reg <- x($reg)
+	//
+	// 13: x($reg) <- global_address + x
+	// 14: x($reg) <- x(global_address)
+	// 15: x($reg) <- $reg
+	// 16: x($reg) <- x($reg)
+	//
+	// Equivalent:
+	//
+	// 1: global_address + x <- global_address + x:
+	// 	# Part 1: get destination address.
+	// 	la   $t9, destination_storage.global_address
+	// 	la   $t9, destination_storage.offset($t9)     if != 0
+	//
+	// 	# Part 2: get source address.
+	// 	la   $t8, source_storage.global_address
+	// 	la   $t8, source_storage.offset($t8)          if != 0
+	//
+	// 	# Part 3: load source.
+	// 	lw   $t8, ($t8)
+	// 	la   $t8, addition($t8)                       if != 0
+	//
+	// 	# Part 4: write destination.
+	// 	sw   $t8, ($t9)
+	// 2: global_address + x <- x(global_address):
+	// 	...
+	//
+	// 5-8:
+	// 	Copy #1-4.  3{s/la/lw/; s/if.*$//}
+	//
+	// ...
+
+	Output::Line sized_load;
+	Output::Line sized_save;
+
+	if (is_word) {
+		sized_load = "\tlw   ";
+		sized_save = "\tsw   ";
+	} else {
+		sized_load = "\tlb   ";
+		sized_save = "\tsb   ";
+	}
+
+	// Part 1: get destination address.
+	if           ( destination_storage.is_global && !destination_storage.dereference) {
+		lines.push_back("\tla   $t9, " + destination_storage.global_address);
+		if (destination_storage.offset != 0) {
+			lines.push_back("\tla   $t9, " + std::to_string(destination_storage.offset) + "($t9)");
+		}
+	} else if    ( destination_storage.is_global &&  destination_storage.dereference) {
+		lines.push_back("\tla   $t9, " + destination_storage.global_address);
+		lines.push_back("\tlw   $t9, " + std::to_string(destination_storage.offset) + "($t9)");
+	} else if    (!destination_storage.is_global && !destination_storage.dereference) {
+	} else {  // (!destination_storage.is_global &&  destination_storage.dereference) {
+		lines.push_back("\tla   $t9, " + std::to_string(destination_storage.offset) + "(" + destination_storage.register_ + ")");
+	}
+
+	// Part 2: get source address.
+	if           ( source_storage.is_global && !source_storage.dereference) {
+		lines.push_back("\tla   $t8, " + source_storage.global_address);
+		if (source_storage.offset != 0) {
+			lines.push_back("\tla   $t8, " + std::to_string(source_storage.offset) + "($t8)");
+		}
+	} else if    ( source_storage.is_global &&  source_storage.dereference) {
+		lines.push_back("\tla   $t8, " + source_storage.global_address);
+		lines.push_back("\tlw   $t8, " + std::to_string(source_storage.offset) + "($t8)");
+	} else if    (!source_storage.is_global && !source_storage.dereference) {
+	} else {  // (!source_storage.is_global &&  source_storage.dereference) {
+		lines.push_back("\tla   $t8, " + std::to_string(source_storage.offset) + "(" + source_storage.register_ + ")");
+	}
+
+	// Part 3: load source.  (Don't apply addition yet.)
+	if           ( source_storage.is_global && !source_storage.dereference) {
+		lines.push_back(sized_load + "$t8, ($t8)");
+	} else if    ( source_storage.is_global &&  source_storage.dereference) {
+		lines.push_back(sized_load + "$t8, ($t8)");
+	} else if    (!source_storage.is_global && !source_storage.dereference) {
+	} else {  // (!source_storage.is_global &&  source_storage.dereference) {
+		lines.push_back(sized_load + "$t8, ($t8)");
+	}
+
+	// Part 4: write destination.
+	if           ( destination_storage.is_global && !destination_storage.dereference) {
+		if (!source_storage.is_global && !source_storage.dereference) {
+			if (addition != 0) {
+				lines.push_back("la   $t8, " + std::to_string(addition) + "(" + source_storage.register_ + ")");
+				lines.push_back(sized_save + "$t8, ($t9)");
+			} else {
+				lines.push_back(sized_save + source_storage.register_ + ", ($t9)");
+			}
+		} else {
+			lines.push_back("la   $t8, " + std::to_string(addition) + "($t8)");
+			lines.push_back(sized_save + "$t8, ($t9)");
+		}
+	} else if    ( destination_storage.is_global &&  destination_storage.dereference) {
+		if (!source_storage.is_global && !source_storage.dereference) {
+			if (addition != 0) {
+				lines.push_back("la   $t8, " + std::to_string(addition) + "(" + source_storage.register_ + ")");
+				lines.push_back(sized_save + "$t8, ($t9)");
+			} else {
+				lines.push_back(sized_save + source_storage.register_ + ", ($t9)");
+			}
+		} else {
+			lines.push_back("la   $t8, " + std::to_string(addition) + "($t8)");
+			lines.push_back(sized_save + "$t8, ($t9)");
+		}
+	} else if    (!destination_storage.is_global && !destination_storage.dereference) {
+		if (!source_storage.is_global && !source_storage.dereference) {
+			if (addition != 0) {
+				lines.push_back("la   " + destination_storage.register_ + ", " + std::to_string(addition) + "(" + source_storage.register_ + ")");
+			} else {
+				lines.push_back("la   " + destination_storage.register_ + ", " + std::to_string(addition) + "(" + source_storage.register_ + ")");
+			}
+		} else {
+			lines.push_back("la   " + destination_storage.register_ + ", " + std::to_string(addition) + "($t8)");
+		}
+	} else {  // (!destination_storage.is_global &&  destination_storage.dereference) {
+		if (!source_storage.is_global && !source_storage.dereference) {
+			if (addition != 0) {
+				lines.push_back("la   $t8, " + std::to_string(addition) + "(" + source_storage.register_ + ")");
+				lines.push_back(sized_save + "$t8, ($t9)");
+			} else {
+				lines.push_back(sized_save + source_storage.register_ + ", ($t9)");
+			}
+		} else {
+			lines.push_back("la   $t8, " + std::to_string(addition) + "($t8)");
+			lines.push_back(sized_save + "$t8, ($t9)");
+		}
 	}
 
 	// Return the output.
@@ -4264,10 +4459,17 @@ Semantics::Instruction::Instruction(const LoadImmediate &load_immediate)
 	, data(load_immediate)
 	{}
 
+Semantics::Instruction::Instruction(const LoadFrom &load_from)
+	: tag(load_from_tag)
+	, data(load_from)
+	{}
+
 const Semantics::Instruction::Base &Semantics::Instruction::get_base() const {
 	switch(tag) {
 		case load_immediate_tag:
 			return get_load_immediate();
+		case load_from_tag:
+			return get_load_from();
 
 		case null_tag:
 		default:
@@ -4281,6 +4483,8 @@ Semantics::Instruction::Base &&Semantics::Instruction::get_base() {
 	switch(tag) {
 		case load_immediate_tag:
 			return std::move(get_load_immediate());
+		case load_from_tag:
+			return std::move(get_load_from());
 
 		case null_tag:
 		default:
@@ -4294,6 +4498,8 @@ bool Semantics::Instruction::is_load_immediate() const {
 	switch(tag) {
 		case load_immediate_tag:
 			return true;
+		case load_from_tag:
+			return false;
 
 		case null_tag:
 		default:
@@ -4303,11 +4509,47 @@ bool Semantics::Instruction::is_load_immediate() const {
 	}
 }
 
+bool Semantics::Instruction::is_load_from() const {
+	switch(tag) {
+		case load_immediate_tag:
+			return false;
+		case load_from_tag:
+			return true;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::is_load_from: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
 // | The tags must be correct, or else an exception will be thrown, including for set_*.
 const Semantics::Instruction::LoadImmediate &Semantics::Instruction::get_load_immediate() const {
 	switch(tag) {
 		case load_immediate_tag:
 			return std::get<LoadImmediate>(data);
+		case load_from_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_load_immediate: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_load_immediate: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+const Semantics::Instruction::LoadFrom &Semantics::Instruction::get_load_from() const {
+	switch(tag) {
+		case load_immediate_tag:
+			break;
+		case load_from_tag:
+			return std::get<LoadFrom>(data);
 
 		case null_tag:
 		default:
@@ -4325,6 +4567,8 @@ Semantics::Instruction::LoadImmediate &&Semantics::Instruction::get_load_immedia
 	switch(tag) {
 		case load_immediate_tag:
 			return std::get<LoadImmediate>(std::move(data));
+		case load_from_tag:
+			break;
 
 		case null_tag:
 		default:
@@ -4338,16 +4582,37 @@ Semantics::Instruction::LoadImmediate &&Semantics::Instruction::get_load_immedia
 	throw SemanticsError(sstr.str());
 }
 
-// | Return "load_immediate".
-std::string Semantics::Instruction::get_tag_repr(tag_t tag) {
+Semantics::Instruction::LoadFrom &&Semantics::Instruction::get_load_from() {
 	switch(tag) {
 		case load_immediate_tag:
-			return "load_immediate";
+			break;
+		case load_from_tag:
+			return std::get<LoadFrom>(std::move(data));
 
 		case null_tag:
 		default:
 			std::ostringstream sstr;
 			sstr << "Semantics::Instruction::get_load_immediate: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_load_immediate: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+// | Return "load_immediate" or "load_from".
+std::string Semantics::Instruction::get_tag_repr(tag_t tag) {
+	switch(tag) {
+		case load_immediate_tag:
+			return "load_immediate";
+		case load_from_tag:
+			return "load_from";
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_tag_repr: invalid tag: " << tag;
 			throw SemanticsError(sstr.str());
 	}
 }
@@ -4360,6 +4625,8 @@ std::vector<uint32_t> Semantics::Instruction::get_input_sizes() const {
 	switch(tag) {
 		case load_immediate_tag:
 			return get_load_immediate().get_input_sizes();
+		case load_from_tag:
+			return get_load_from().get_input_sizes();
 
 		case null_tag:
 		default:
@@ -4373,6 +4640,8 @@ std::vector<uint32_t> Semantics::Instruction::get_working_sizes() const {
 	switch(tag) {
 		case load_immediate_tag:
 			return get_load_immediate().get_working_sizes();
+		case load_from_tag:
+			return get_load_from().get_working_sizes();
 
 		case null_tag:
 		default:
@@ -4386,6 +4655,8 @@ std::vector<uint32_t> Semantics::Instruction::get_output_sizes() const {
 	switch(tag) {
 		case load_immediate_tag:
 			return get_load_immediate().get_output_sizes();
+		case load_from_tag:
+			return get_load_from().get_output_sizes();
 
 		case null_tag:
 		default:
@@ -4399,6 +4670,8 @@ std::vector<uint32_t> Semantics::Instruction::get_all_sizes() const {
 	switch(tag) {
 		case load_immediate_tag:
 			return get_load_immediate().get_all_sizes();
+		case load_from_tag:
+			return get_load_from().get_all_sizes();
 
 		case null_tag:
 		default:
@@ -4412,6 +4685,8 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::emit(const std::vec
 	switch(tag) {
 		case load_immediate_tag:
 			return get_load_immediate().emit(storages);
+		case load_from_tag:
+			return get_load_from().emit(storages);
 
 		case null_tag:
 		default:
@@ -6105,7 +6380,6 @@ void Semantics::analyze() {
 		output.add_line(Output::global_vars_section, ":", symbol);
 		output.add_line(Output::global_vars_section, "\t.asciiz " + quoted_string);
 	}
-	// TODO
 }
 
 inline bool operator< (const Semantics::Symbol &a, const Semantics::Symbol &b) {
