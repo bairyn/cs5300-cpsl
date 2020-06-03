@@ -1,6 +1,7 @@
 #include <algorithm>     // std::reverse, std::stable_sort
 #include <cassert>       // assert
-#include <cctype>        // isalnum, isgraph, tolower
+#include <cctype>        // isalnum, isprint, tolower
+#include <cstddef>       // std::size_type
 #include <iomanip>       // std::fill, std::left, std::right, std::setw
 #include <ios>           // std::hex
 #include <limits>        // std::numeric_limits
@@ -8,6 +9,7 @@
 #include <set>           // std::set
 #include <sstream>       // std::ostringstream
 #include <string>        // std::string, std::to_string
+#include <type_traits>   // std::make_unsigned
 #include <utility>       // std::as_const, std::move, std::pair
 #include <vector>        // std::vector
 #include <variant>       // std::get, std::monostate
@@ -56,6 +58,7 @@ std::map<Semantics::Symbol, std::string> Semantics::Symbol::generate_symbol_valu
 		// Is the name available with no modifications?
 		if (used_names.find(start) == used_names.cend()) {
 			// Use it.
+			used_names.insert(start);
 			symbol_values.insert({symbol, start});
 			continue;
 		}
@@ -1849,7 +1852,7 @@ std::string Semantics::ConstantValue::get_static_repr() const {
 			sstr << get_integer();
 			return sstr.str();
 		} case char_tag: {
-			return std::move(quote_char(get_char()));
+			return quote_char(get_char());
 		} case boolean_tag: {
 			if (get_boolean()) {
 				return "1";
@@ -1857,7 +1860,7 @@ std::string Semantics::ConstantValue::get_static_repr() const {
 				return "0";
 			}
 		} case string_tag: {
-			return std::move(quote_string(get_string()));
+			return quote_string(get_string());
 		}
 
 		case null_tag:
@@ -1869,16 +1872,37 @@ std::string Semantics::ConstantValue::get_static_repr() const {
 	}
 }
 
+const std::map<char, std::string> Semantics::ConstantValue::char_escapes {
+	{'\n', "\\n"},
+	{'\r', "\\r"},
+	{'\b', "\\b"},
+	{'\t', "\\t"},
+	{'\f', "\\f"},
+};
+
+const std::map<std::string, char> Semantics::ConstantValue::reverse_char_escapes {
+	{"\\n", '\n'},
+	{"\\r", '\r'},
+	{"\\b", '\b'},
+	{"\\t", '\t'},
+	{"\\f", '\f'},
+};
+
 std::string Semantics::ConstantValue::escape_char(char char_) {
-	if        (isgraph(char_)) {
+	// Is this in char_escapes?
+	std::map<char, std::string>::const_iterator char_escapes_search = char_escapes.find(char_);
+	if (char_escapes_search != char_escapes.cend()) {
+		// It's an escape.
+		return std::string(char_escapes_search->second);
+	} else if (isprint(char_)) {
+		// It's not, but it's printable.
 		return std::string(1, char_);
-	} else if (char_ == '\n') {
-		return "\\n";
 	} else {
+		// Print the hex escape of the non-printable character.
 		std::ostringstream sstr;
 		sstr
 			<< "\\x"
-			<< std::right << std::setfill('0') << std::setw(2) << std::hex << char_
+			<< std::right << std::setfill('0') << std::setw(2) << std::hex << static_cast<std::size_t>(static_cast<std::make_unsigned<std::string::value_type>::type>(char_))
 			;
 		return sstr.str();
 	}
@@ -5226,27 +5250,30 @@ Semantics::Symbol Semantics::string_literal(const std::string &string) {
 const uint64_t Semantics::max_string_requested_label_suffix_length = CPSL_CC_SEMANTICS_MAX_STRING_REQUESTED_LABEL_SUFFIX_LENGTH;
 
 std::string Semantics::labelify(const std::string &string) {
-	std::string label;
+	std::string label_suffix;
 
 	bool last_alnum = false;
 	for (const char &c : std::as_const(string)) {
-		if        (isalnum(c)) {
-			last_alnum = true;
-			label.push_back(tolower(c));
-		} else if (last_alnum) {
-			label.push_back('_');
+		std::string addition;
+
+		if (isalnum(c)) {
+			if (!last_alnum) {
+				last_alnum = true;
+				addition.push_back('_');
+			}
+			addition.push_back(tolower(c));
+		} else {
+			last_alnum = false;
 		}
 
-		if (label.size() > max_string_requested_label_suffix_length) {
+		if (label_suffix.size() + addition.size() > max_string_requested_label_suffix_length) {
 			break;
+		} else {
+			label_suffix += addition;
 		}
 	}
 
-	if (label.size() <= 0) {
-		return "string_literal_empty";
-	} else {
-		return "string_literal_" + label;
-	}
+	return "string_literal" + label_suffix;
 }
 
 bool Semantics::would_addition_overflow(int32_t a, int32_t b) {
@@ -6070,6 +6097,14 @@ void Semantics::analyze() {
 
 	// The string literals have been analyzed by this point.
 	// Add the string literal declarations.
+	for (const std::pair<std::string, Symbol> &string_symbol_pair : std::as_const(string_constants)) {
+		const std::string &string        = string_symbol_pair.first;
+		const Symbol      &symbol        = string_symbol_pair.second;
+		std::string        quoted_string = ConstantValue::quote_string(string);
+
+		output.add_line(Output::global_vars_section, ":", symbol);
+		output.add_line(Output::global_vars_section, "\t.asciiz " + quoted_string);
+	}
 	// TODO
 }
 

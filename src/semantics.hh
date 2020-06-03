@@ -433,6 +433,9 @@ public:
 		// | Get a string representation of the static value.
 		std::string get_static_repr() const;
 
+		static const std::map<char, std::string> char_escapes;
+		static const std::map<std::string, char> reverse_char_escapes;
+
 		static std::string escape_char(char char_);
 		static std::string quote_char(char char_);
 		static std::string quote_string(const std::string &string);
