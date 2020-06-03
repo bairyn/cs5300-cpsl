@@ -970,6 +970,7 @@ protected:
 	Output output;
 };
 
+// Symbol.
 inline bool operator< (const Semantics::Symbol &a, const Semantics::Symbol &b);
 inline bool operator> (const Semantics::Symbol &a, const Semantics::Symbol &b);
 inline bool operator<=(const Semantics::Symbol &a, const Semantics::Symbol &b);
@@ -978,6 +979,7 @@ inline bool operator>=(const Semantics::Symbol &a, const Semantics::Symbol &b);
 inline bool operator==(const Semantics::Symbol &a, const Semantics::Symbol &b);
 inline bool operator!=(const Semantics::Symbol &a, const Semantics::Symbol &b);
 
+// SymbolLocation.
 inline bool operator< (const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b);
 inline bool operator> (const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b);
 inline bool operator<=(const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b);
@@ -986,6 +988,7 @@ inline bool operator>=(const Semantics::Output::SymbolLocation &a, const Semanti
 inline bool operator==(const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b);
 inline bool operator!=(const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b);
 
+// Line.
 inline bool operator< (const Semantics::Output::Line &a, const Semantics::Output::Line &b);
 inline bool operator> (const Semantics::Output::Line &a, const Semantics::Output::Line &b);
 inline bool operator<=(const Semantics::Output::Line &a, const Semantics::Output::Line &b);
@@ -994,10 +997,20 @@ inline bool operator>=(const Semantics::Output::Line &a, const Semantics::Output
 inline bool operator==(const Semantics::Output::Line &a, const Semantics::Output::Line &b);
 inline bool operator!=(const Semantics::Output::Line &a, const Semantics::Output::Line &b);
 
+// Line plus.
 inline Semantics::Output::Line operator+(const Semantics::Output::Line &a, const Semantics::Output::Line &b);
 inline Semantics::Output::Line operator+(const Semantics::Output::Line &a, const Semantics::Symbol       &b);
 inline Semantics::Output::Line operator+(const Semantics::Symbol       &a, const Semantics::Output::Line &b);
 inline Semantics::Output::Line operator+(const Semantics::Symbol       &a, const Semantics::Symbol       &b);
+
+// Storage.
+inline bool operator< (const Semantics::Storage &a, const Semantics::Storage &b);
+inline bool operator> (const Semantics::Storage &a, const Semantics::Storage &b);
+inline bool operator<=(const Semantics::Storage &a, const Semantics::Storage &b);
+inline bool operator>=(const Semantics::Storage &a, const Semantics::Storage &b);
+
+inline bool operator==(const Semantics::Storage &a, const Semantics::Storage &b);
+inline bool operator!=(const Semantics::Storage &a, const Semantics::Storage &b);
 
 class UnitTests {
 public:

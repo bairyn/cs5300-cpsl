@@ -6445,6 +6445,31 @@ inline Semantics::Output::Line operator+(const Semantics::Output::Line &a, const
 inline Semantics::Output::Line operator+(const Semantics::Symbol       &a, const Semantics::Output::Line &b) { return Semantics::Output::Line(a).plus(b); }
 inline Semantics::Output::Line operator+(const Semantics::Symbol       &a, const Semantics::Symbol       &b) { return Semantics::Output::Line(a).plus(b); }
 
+// Storage.
+inline bool operator< (const Semantics::Storage &a, const Semantics::Storage &b) {
+	if        (a.max_size       != b.max_size) {
+		return a.max_size       < b.max_size;
+	} else if (a.is_global      != b.is_global) {
+		return a.is_global      < b.is_global;
+	} else if (a.global_address != b.global_address) {
+		return a.global_address < b.global_address;
+	} else if (a.register_      != b.register_) {
+		return a.register_      < b.register_;
+	} else if (a.dereference    != b.dereference) {
+		return a.dereference    < b.dereference;
+	} else {
+		return a.offset         < b.offset;
+	}
+}
+inline bool operator> (const Semantics::Storage &a, const Semantics::Storage &b) { return   b < a;  }
+inline bool operator<=(const Semantics::Storage &a, const Semantics::Storage &b) { return !(a > b); }
+inline bool operator>=(const Semantics::Storage &a, const Semantics::Storage &b) { return !(a < b); }
+
+inline bool operator==(const Semantics::Storage &a, const Semantics::Storage &b) {
+	return a.max_size == b.max_size && a.is_global == b.is_global && a.global_address == b.global_address & a.register_ == b.register_ && a.dereference == b.dereference && a.offset == b.offset;
+}
+inline bool operator!=(const Semantics::Storage &a, const Semantics::Storage &b) { return !(a == b); }
+
 #if 0
 inline Semantics::Output::Line operator+(const std::string             &a, const Semantics::Output::Line &b) { return Semantics::Output::Line(a) + b; }
 inline Semantics::Output::Line operator+(const Semantics::Output::Line &a, const std::string             &b) { return a + Semantics::Output::Line(b); }
