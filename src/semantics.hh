@@ -650,6 +650,24 @@ public:
 		bool compatible_size(uint32_t size) const;
 
 		static std::vector<uint32_t> get_sizes(const std::vector<Storage> &storage);
+
+		// Type of the register.
+		enum type_e {
+			null_type = 0,
+			global_address_type       = 1,
+			global_dereference_type   = 2,
+			register_direct_type      = 3,
+			register_dereference_type = 4,
+			num_types                 = 4,
+		};
+		typedef type_e type_t;
+		type_t get_type() const;
+
+		// | Note: is_global_address() == true means it's global and *not* a dereference.
+		bool is_global_address()       const;
+		bool is_global_dereference()   const;
+		bool is_register_direct()      const;
+		bool is_register_dereference() const;
 	};
 
 	// | An intermediate unit representation of MIPS instructions.
@@ -665,7 +683,8 @@ public:
 			null_tag           = 0,
 			load_immediate_tag = 1,
 			load_from_tag      = 2,
-			num_tags           = 2,
+			add_from_tag       = 3,
+			num_tags           = 3,
 		};
 		typedef enum tag_e tag_t;
 
@@ -726,10 +745,27 @@ public:
 			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
 		};
 
+		// | Add from two storage units to another.
+		class AddFrom : public Base {
+		public:
+			AddFrom();
+			AddFrom(const Base &base, bool is_word);
+			// | Are we loading a byte or a word?
+			bool is_word;
+
+			std::vector<uint32_t> get_input_sizes() const;
+			std::vector<uint32_t> get_working_sizes() const;
+			std::vector<uint32_t> get_output_sizes() const;
+			std::vector<uint32_t> get_all_sizes() const;
+
+			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
+		};
+
 		using data_t = std::variant<
 			std::monostate,
 			LoadImmediate,
-			LoadFrom
+			LoadFrom,
+			AddFrom
 		>;
 
 		Instruction();
@@ -743,18 +779,22 @@ public:
 
 		explicit Instruction(const LoadImmediate &load_immediate);
 		explicit Instruction(const LoadFrom      &load_from);
+		explicit Instruction(const AddFrom       &add_from);
 
 		bool is_load_immediate() const;
 		bool is_load_from()      const;
+		bool is_add_from()       const;
 
 		// | The tags must be correct, or else an exception will be thrown, including for set_*.
 		const LoadImmediate &get_load_immediate() const;
 		const LoadFrom      &get_load_from()      const;
+		const AddFrom       &get_add_from()       const;
 
 		LoadImmediate &&get_load_immediate();
 		LoadFrom      &&get_load_from();
+		AddFrom       &&get_add_from();
 
-		// | Return "load_immediate" or "load_from".
+		// | Return "load_immediate", "load_from", or "add_from".
 		static std::string get_tag_repr(tag_t tag);
 		std::string get_tag_repr() const;
 

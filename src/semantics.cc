@@ -4110,6 +4110,24 @@ std::vector<uint32_t> Semantics::Storage::get_sizes(const std::vector<Storage> &
 	return sizes;
 }
 
+// Type of the register.
+Semantics::Storage::type_t Semantics::Storage::get_type() const {
+	if           ( is_global && !dereference) {
+		return global_address_type;
+	} else if    ( is_global &&  dereference) {
+		return global_dereference_type;
+	} else if    (!is_global && !dereference) {
+		return register_direct_type;
+	} else {  // (!is_global &&  dereference) {
+		return register_dereference_type;
+	}
+}
+
+bool Semantics::Storage::is_global_address()       const { return get_type() == global_address_type; }
+bool Semantics::Storage::is_global_dereference()   const { return get_type() == global_dereference_type; }
+bool Semantics::Storage::is_register_direct()      const { return get_type() == register_direct_type; }
+bool Semantics::Storage::is_register_dereference() const { return get_type() == register_dereference_type; }
+
 Semantics::Instruction::Base::Base()
 	: has_symbol(false)
 	{}
@@ -4267,7 +4285,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 	// Check sizes.
 	if (Storage::get_sizes(storages) != get_all_sizes()) {
 		std::ostringstream sstr;
-		sstr << "Semantics::Instruction::LoadImmediate::emit: the number or sizes of storage units provided does not match what was expected.";
+		sstr << "Semantics::Instruction::LoadFrom::emit: the number or sizes of storage units provided does not match what was expected.";
 		throw SemanticsError(sstr.str());
 	}
 	const Storage &source_storage      = storages[0];
@@ -4444,6 +4462,166 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 	return lines;
 }
 
+Semantics::Instruction::AddFrom::AddFrom()
+	{}
+
+Semantics::Instruction::AddFrom::AddFrom(const Base &base, bool is_word)
+	: Base(base)
+	, is_word(is_word)
+	{}
+
+std::vector<uint32_t> Semantics::Instruction::AddFrom::get_input_sizes() const { return {static_cast<uint32_t>(2 * (is_word ? 4 : 1))}; }
+std::vector<uint32_t> Semantics::Instruction::AddFrom::get_working_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::AddFrom::get_output_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1)}; }
+std::vector<uint32_t> Semantics::Instruction::AddFrom::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
+
+std::vector<Semantics::Output::Line> Semantics::Instruction::AddFrom::emit(const std::vector<Storage> &storages) const {
+	// TODO
+
+	// Check sizes.
+	if (Storage::get_sizes(storages) != get_all_sizes()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::AddFrom::emit: the number or sizes of storage units provided does not match what was expected.";
+		throw SemanticsError(sstr.str());
+	}
+	const Storage &left_source_storage  = storages[0];
+	const Storage &right_source_storage = storages[1];
+	const Storage &working_storage      = storages[2];
+	const Storage &destination_storage  = storages[3];
+
+	// Prepare output vector.
+	std::vector<Output::Line> lines;
+
+	// Emit a symbol for this instruction if there is one.
+	if (has_symbol) {
+		lines.push_back({":", symbol});
+	}
+
+	// If !this->is_word, replace sw with sb and lw with lb.
+	//
+	// 4 storage types for destination:
+	// 	1: global_address + x  (Store into this address.)
+	// 	2: x(global_address)   (Store into this dereferenced address.)
+	// 	3: $reg                (Store into this register.)
+	// 	4: x($reg)             (Store into this dereferenced register.)
+	//
+	// 4 storage types for a source:
+	// 	1: global_address + x  (Read from this address.)
+	// 	2: x(global_address)   (Read from this dereferenced address.)
+	// 	3: $reg                (Read from this register.)
+	// 	4: x($reg)             (Read from this dereferenced register.)
+
+	Output::Line sized_load;
+	Output::Line sized_save;
+
+	if (is_word) {
+		sized_load = "\tlw   ";
+		sized_save = "\tsw   ";
+	} else {
+		sized_load = "\tlb   ";
+		sized_save = "\tsb   ";
+	}
+
+	// Part 1: get left source address.
+	if           (left_source_storage.is_global_address()) {
+		lines.push_back("\tla   $t8, " + left_source_storage.global_address);
+		if (left_source_storage.offset != 0) {
+			lines.push_back("\tla   $t8, " + std::to_string(left_source_storage.offset) + "($t8)");
+		}
+	} else if    (left_source_storage.is_global_dereference()) {
+		lines.push_back("\tla   $t8, " + left_source_storage.global_address);
+		lines.push_back("\tlw   $t8, " + std::to_string(left_source_storage.offset) + "($t8)");
+	} else if    (left_source_storage.is_register_direct()) {
+	} else {  // (left_source_storage.is_register_dereference()) {
+		lines.push_back("\tla   $t8, " + std::to_string(left_source_storage.offset) + "(" + left_source_storage.register_ + ")");
+	}
+
+	// Part 2: load left source.
+	if (!left_source_storage.is_register_direct()) {
+		lines.push_back(sized_load + "$t8, ($t8)");
+	}
+
+	// Part 3: get right source address.
+	if           (right_source_storage.is_global_address()) {
+		lines.push_back("\tla   $t9, " + right_source_storage.global_address);
+		if (right_source_storage.offset != 0) {
+			lines.push_back("\tla   $t9, " + std::to_string(right_source_storage.offset) + "($t9)");
+		}
+	} else if    (right_source_storage.is_global_dereference()) {
+		lines.push_back("\tla   $t9, " + right_source_storage.global_address);
+		lines.push_back("\tlw   $t9, " + std::to_string(right_source_storage.offset) + "($t9)");
+	} else if    (right_source_storage.is_register_direct()) {
+	} else {  // (right_source_storage.is_register_dereference()) {
+		lines.push_back("\tla   $t9, " + std::to_string(right_source_storage.offset) + "(" + right_source_storage.register_ + ")");
+	}
+
+	// Part 4: load right source.
+	if (!right_source_storage.is_register_direct()) {
+		lines.push_back(sized_load + "$t9, ($t9)");
+	}
+
+	// Part 5: if both $t8 and $t9 are used, $t8 += $t9, to free $t9 for destination.
+	// If $t8 is free but $t9 is used, mark $t8 as being free.
+	std::string destination_address_register;
+	std::string sum_register;
+	if (left_source_storage.is_register_direct()) {
+		// $t8 is free.
+		destination_address_register = "$t8";
+		sum_register                 = "$t9";
+	} else {
+		// Make sure $t9 is free.
+		destination_address_register = "$t9";
+		sum_register                 = "$t8";
+		if (!(right_source_storage.is_register_direct())) {
+			lines.push_back("\taddu $t8, $t8, $t9");
+		}
+	}
+
+	// Part 6: get destination address.
+	if           (destination_storage.is_global_address()) {
+		lines.push_back("\tla   " + destination_address_register + ", " + destination_storage.global_address);
+		if (destination_storage.offset != 0) {
+			lines.push_back("\tla   " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_address_register + ")");
+		}
+	} else if    (destination_storage.is_global_dereference()) {
+		lines.push_back("\tla   " + destination_address_register + ", " + destination_storage.global_address);
+		lines.push_back("\tlw   " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_address_register + ")");
+	} else if    (destination_storage.is_register_direct()) {
+	} else {  // (destination_storage.is_register_dereference()) {
+		lines.push_back("\tla   " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_storage.register_ + ")");
+	}
+
+	// Part 7: write destination.
+	if (destination_storage.is_register_direct()) {
+		if           ( left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
+			lines.push_back("\taddu " + destination_storage.register_ + ", " + left_source_storage.register_ + ", " + right_source_storage.register_);
+		} else if    ( left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
+			lines.push_back("\taddu " + destination_storage.register_ + ", " + left_source_storage.register_ + ", $t9");
+		} else if    (!left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
+			lines.push_back("\taddu " + destination_storage.register_ + ", $t8, " + right_source_storage.register_);
+		} else {  // (!left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
+			lines.push_back("\taddu " + destination_storage.register_ + ", $t8, $t9");
+		}
+	} else {
+		if           ( left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
+			lines.push_back("\taddu " + sum_register + ", " + left_source_storage.register_ + ", " + right_source_storage.register_);
+			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
+		} else if    ( left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
+			lines.push_back("\taddu " + sum_register + ", " + left_source_storage.register_ + ", $t9");
+			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
+		} else if    (!left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
+			lines.push_back("\taddu " + sum_register + ", $t8, " + right_source_storage.register_);
+			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
+		} else {  // (!left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
+			// (Addition already performed before loading the address.)
+			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
+		}
+	}
+
+	// Return the output.
+	return lines;
+}
+
 Semantics::Instruction::Instruction(tag_t tag, const data_t &data)
 	: tag(tag)
 	, data(data)
@@ -4464,12 +4642,19 @@ Semantics::Instruction::Instruction(const LoadFrom &load_from)
 	, data(load_from)
 	{}
 
+Semantics::Instruction::Instruction(const AddFrom &add_from)
+	: tag(add_from_tag)
+	, data(add_from)
+	{}
+
 const Semantics::Instruction::Base &Semantics::Instruction::get_base() const {
 	switch(tag) {
 		case load_immediate_tag:
 			return get_load_immediate();
 		case load_from_tag:
 			return get_load_from();
+		case add_from_tag:
+			return get_add_from();
 
 		case null_tag:
 		default:
@@ -4485,6 +4670,8 @@ Semantics::Instruction::Base &&Semantics::Instruction::get_base() {
 			return std::move(get_load_immediate());
 		case load_from_tag:
 			return std::move(get_load_from());
+		case add_from_tag:
+			return std::move(get_add_from());
 
 		case null_tag:
 		default:
@@ -4499,6 +4686,7 @@ bool Semantics::Instruction::is_load_immediate() const {
 		case load_immediate_tag:
 			return true;
 		case load_from_tag:
+		case add_from_tag:
 			return false;
 
 		case null_tag:
@@ -4515,11 +4703,29 @@ bool Semantics::Instruction::is_load_from() const {
 			return false;
 		case load_from_tag:
 			return true;
+		case add_from_tag:
+			return false;
 
 		case null_tag:
 		default:
 			std::ostringstream sstr;
 			sstr << "Semantics::Instruction::is_load_from: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::Instruction::is_add_from() const {
+	switch(tag) {
+		case load_immediate_tag:
+		case load_from_tag:
+			return false;
+		case add_from_tag:
+			return true;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::is_add_from: invalid tag: " << tag;
 			throw SemanticsError(sstr.str());
 	}
 }
@@ -4530,6 +4736,7 @@ const Semantics::Instruction::LoadImmediate &Semantics::Instruction::get_load_im
 		case load_immediate_tag:
 			return std::get<LoadImmediate>(data);
 		case load_from_tag:
+		case add_from_tag:
 			break;
 
 		case null_tag:
@@ -4550,6 +4757,8 @@ const Semantics::Instruction::LoadFrom &Semantics::Instruction::get_load_from() 
 			break;
 		case load_from_tag:
 			return std::get<LoadFrom>(data);
+		case add_from_tag:
+			break;
 
 		case null_tag:
 		default:
@@ -4563,11 +4772,32 @@ const Semantics::Instruction::LoadFrom &Semantics::Instruction::get_load_from() 
 	throw SemanticsError(sstr.str());
 }
 
+const Semantics::Instruction::AddFrom &Semantics::Instruction::get_add_from() const {
+	switch(tag) {
+		case load_immediate_tag:
+		case load_from_tag:
+			break;
+		case add_from_tag:
+			return std::get<AddFrom>(data);
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_add_from: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_add_from: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
 Semantics::Instruction::LoadImmediate &&Semantics::Instruction::get_load_immediate() {
 	switch(tag) {
 		case load_immediate_tag:
 			return std::get<LoadImmediate>(std::move(data));
 		case load_from_tag:
+		case add_from_tag:
 			break;
 
 		case null_tag:
@@ -4588,6 +4818,8 @@ Semantics::Instruction::LoadFrom &&Semantics::Instruction::get_load_from() {
 			break;
 		case load_from_tag:
 			return std::get<LoadFrom>(std::move(data));
+		case add_from_tag:
+			break;
 
 		case null_tag:
 		default:
@@ -4601,13 +4833,35 @@ Semantics::Instruction::LoadFrom &&Semantics::Instruction::get_load_from() {
 	throw SemanticsError(sstr.str());
 }
 
-// | Return "load_immediate" or "load_from".
+Semantics::Instruction::AddFrom &&Semantics::Instruction::get_add_from() {
+	switch(tag) {
+		case load_immediate_tag:
+		case load_from_tag:
+			break;
+		case add_from_tag:
+			return std::get<AddFrom>(std::move(data));
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_add_from: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_add_from: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+// | Return "load_immediate", "load_from", or "add_from".
 std::string Semantics::Instruction::get_tag_repr(tag_t tag) {
 	switch(tag) {
 		case load_immediate_tag:
 			return "load_immediate";
 		case load_from_tag:
 			return "load_from";
+		case add_from_tag:
+			return "add_from";
 
 		case null_tag:
 		default:
@@ -4627,6 +4881,8 @@ std::vector<uint32_t> Semantics::Instruction::get_input_sizes() const {
 			return get_load_immediate().get_input_sizes();
 		case load_from_tag:
 			return get_load_from().get_input_sizes();
+		case add_from_tag:
+			return get_add_from().get_input_sizes();
 
 		case null_tag:
 		default:
@@ -4642,6 +4898,8 @@ std::vector<uint32_t> Semantics::Instruction::get_working_sizes() const {
 			return get_load_immediate().get_working_sizes();
 		case load_from_tag:
 			return get_load_from().get_working_sizes();
+		case add_from_tag:
+			return get_add_from().get_working_sizes();
 
 		case null_tag:
 		default:
@@ -4657,6 +4915,8 @@ std::vector<uint32_t> Semantics::Instruction::get_output_sizes() const {
 			return get_load_immediate().get_output_sizes();
 		case load_from_tag:
 			return get_load_from().get_output_sizes();
+		case add_from_tag:
+			return get_add_from().get_output_sizes();
 
 		case null_tag:
 		default:
@@ -4672,6 +4932,8 @@ std::vector<uint32_t> Semantics::Instruction::get_all_sizes() const {
 			return get_load_immediate().get_all_sizes();
 		case load_from_tag:
 			return get_load_from().get_all_sizes();
+		case add_from_tag:
+			return get_add_from().get_all_sizes();
 
 		case null_tag:
 		default:
@@ -4687,6 +4949,8 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::emit(const std::vec
 			return get_load_immediate().emit(storages);
 		case load_from_tag:
 			return get_load_from().emit(storages);
+		case add_from_tag:
+			return get_add_from().emit(storages);
 
 		case null_tag:
 		default:
