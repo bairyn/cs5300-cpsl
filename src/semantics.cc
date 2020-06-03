@@ -1,11 +1,13 @@
 #include <algorithm>     // std::reverse, std::stable_sort
 #include <cassert>       // assert
-#include <iomanip>       // std::left, std::right, std::setw
+#include <cctype>        // isalnum, isgraph, tolower
+#include <iomanip>       // std::fill, std::left, std::right, std::setw
+#include <ios>           // std::hex
 #include <limits>        // std::numeric_limits
 #include <optional>      // std::optional
 #include <set>           // std::set
 #include <sstream>       // std::ostringstream
-#include <string>        // std::string
+#include <string>        // std::string, std::to_string
 #include <utility>       // std::as_const, std::move, std::pair
 #include <vector>        // std::vector
 #include <variant>       // std::get, std::monostate
@@ -114,6 +116,98 @@ bool Semantics::Output::SymbolLocation::reverse_cmp(const SymbolLocation &a, con
 	} else {
 		return false;
 	}
+}
+
+Semantics::Output::Line::Line()
+	{}
+
+// | No symbols on this line.
+Semantics::Output::Line::Line(const std::string &line)
+	: line(line)
+	{}
+
+Semantics::Output::Line::Line(std::string &&line)
+	: line(std::move(line))
+	{}
+
+Semantics::Output::Line::Line(const char *c_str)
+	: line(std::string(c_str))
+	{}
+
+// | Line with only a symbol.
+Semantics::Output::Line::Line(const Symbol &symbol)
+	: Line(std::as_const(""), symbol)
+	{}
+
+// | Add a symbol to a line in a new copy.
+Semantics::Output::Line::Line(const Line &line, const Symbol &symbol, std::string::size_type start_pos, std::string::size_type length)
+	: Line(line)
+{
+	symbols.push_back({symbol, {start_pos, length}});
+}
+
+#if 0
+// | Line with a single symbol.
+Semantics::Output::Line::Line(const std::string &line, const Symbol &symbol, std::string::size_type start_pos, std::string::size_type length)
+	: line(line)
+	, symbols(1, {symbol, {start_pos, length}})
+	{}
+
+Semantics::Output::Line::Line(std::string &&line, const Symbol &symbol, std::string::size_type start_pos, std::string::size_type length)
+	: line(std::move(line))
+	, symbols(1, {symbol, {start_pos, length}})
+	{}
+#endif /* #if 0 */
+
+// | Line with zero or more symbols.
+Semantics::Output::Line::Line(const std::string &line, const std::vector<std::pair<Symbol, std::pair<std::string::size_type, std::string::size_type>>> &symbols)
+	: line(line)
+	, symbols(symbols)
+	{}
+
+Semantics::Output::Line::Line(const std::string &line, std::vector<std::pair<Symbol, std::pair<std::string::size_type, std::string::size_type>>> &&symbols)
+	: line(line)
+	, symbols(std::move(symbols))
+	{}
+
+Semantics::Output::Line::Line(std::string &&line, const std::vector<std::pair<Symbol, std::pair<std::string::size_type, std::string::size_type>>> &symbols)
+	: line(std::move(line))
+	, symbols(symbols)
+	{}
+
+Semantics::Output::Line::Line(std::string &&line, std::vector<std::pair<Symbol, std::pair<std::string::size_type, std::string::size_type>>> &&symbols)
+	: line(std::move(line))
+	, symbols(std::move(symbols))
+	{}
+
+// | Add zero or more symbols to a line in a new copy.
+Semantics::Output::Line::Line(const Line &line, const std::vector<std::pair<Symbol, std::pair<std::string::size_type, std::string::size_type>>> &a_symbols)
+	: Line(line)
+{
+	this->symbols.insert(this->symbols.end(), a_symbols.cbegin(), a_symbols.cend());
+}
+
+// Note: operator+ is defined for Line and Line/Symbol using these methods.
+Semantics::Output::Line Semantics::Output::Line::plus(const Line &b) const {
+	Line concatenated_line(std::as_const(*this));
+	std::string::size_type a_length = this->line.size();
+	concatenated_line.line += b.line;
+	for (const std::pair<Symbol, std::pair<std::string::size_type, std::string::size_type>> &b_symbol : std::as_const(b.symbols)) {
+		concatenated_line.symbols.push_back({b_symbol.first, {b_symbol.second.first + a_length, b_symbol.second.second}});
+	}
+	return concatenated_line;
+}
+
+Semantics::Output::Line Semantics::Output::Line::plus(const Symbol &b) const {
+	return this->plus(Line({"", b}));
+}
+
+Semantics::Output::Line Semantics::Output::Line::flip_plus(const Line &a) const {
+	return a.plus(*this);
+}
+
+Semantics::Output::Line Semantics::Output::Line::flip_plus(const Symbol &a) const {
+	return Line(a).plus(*this);
 }
 
 Semantics::Output::Output()
@@ -324,10 +418,12 @@ std::vector<std::string> Semantics::Output::get_normalized_lines_copy(const std:
 	if (is_normalized()) {
 		return std::vector<std::string>(std::as_const(normalized_lines));
 	} else {
-		return std::move(normalize(additional_names).get_normalized_lines_copy(additional_names));
+		return normalize(additional_names).get_normalized_lines_copy(additional_names);
 	}
 }
 
+// Commented out: this definition is redundant and would cause some calls to be ambiguous.
+#if 0
 // | Add a line to an output section.
 void Semantics::Output::add_line(section_t section, const std::string &line) {
 	// If the section vector is empty, initialize it.
@@ -358,11 +454,58 @@ void Semantics::Output::add_line(section_t section, const std::string &line) {
 	// Add the line.
 	sections[section].push_back(line);
 }
+#endif /* #if 0 */
 
 // | Add a line to an output section with a symbol.
 void Semantics::Output::add_line(section_t section, const std::string &line, const Symbol &symbol, std::string::size_type start_pos, std::string::size_type length) {
 	add_line(section, line);
 	add_symbol_location_current_last_line(section, symbol, start_pos, length);
+}
+
+#if 0
+// | Add a line to an output, optionally with symbols.
+void Semantics::Output::add_line(section_t section, const Line &line) {
+	add_line(section, line);
+	for (const std::pair<Symbol, std::pair<std::string::size_type, std::string::size_type>> &symbol : std::as_const(line.symbols)) {
+		add_symbol_location_current_last_line(section, symbol.first, symbol.second.first, symbol.second.second);
+	}
+}
+#endif /* #if 0 */
+
+// | Add a line to an output, optionally with symbols.
+void Semantics::Output::add_line(section_t section, const Line &line) {
+	// If the section vector is empty, initialize it.
+	if (sections.size() <= 0) {
+		for (Output::section_t section = Output::null_section; section <= Output::num_sections; section = static_cast<Output::section_t>(static_cast<int>(section) + 1)) {
+			sections.push_back(std::vector<std::string>());
+		}
+	}
+
+	// Make sure we have the correct number of sections.
+	if (sections.size() != num_sections + 1) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Output::add_line: invalid number of sections: " << sections.size() << " != " << num_sections + 1;
+		throw SemanticsError(sstr.str());
+	}
+
+	// Make sure the section exists.
+	if (section >= sections.size()) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::Output::add_line: error: attempted to add a line to a non-existent output section." << std::endl
+			<< "  section : " << section << std::endl
+			<< "  line    :"  << line.line
+			;
+		throw SemanticsError(sstr.str());
+	}
+
+	// Add the line.
+	sections[section].push_back(line.line);
+
+	// Add the symbols.
+	for (const std::pair<Symbol, std::pair<std::string::size_type, std::string::size_type>> &symbol : std::as_const(line.symbols)) {
+		add_symbol_location_current_last_line(section, symbol.first, symbol.second.first, symbol.second.second);
+	}
 }
 
 // | Add a symbol to the last line.
@@ -1685,6 +1828,69 @@ Semantics::Type Semantics::ConstantValue::get_static_type() const {
 			throw SemanticsError(sstr.str());
 		}
 	}
+}
+
+// | Get a string representation of the static value.
+std::string Semantics::ConstantValue::get_static_repr() const {
+	switch(tag) {
+		case dynamic_tag: {
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::get_static_repr: internal error: cannot obtain the static representation of a dynamic value.";
+			throw SemanticsError(sstr.str());
+		} case integer_tag: {
+			std::ostringstream sstr;
+			sstr << get_integer();
+			return sstr.str();
+		} case char_tag: {
+			return std::move(quote_char(get_char()));
+		} case boolean_tag: {
+			if (get_boolean()) {
+				return "1";
+			} else {
+				return "0";
+			}
+		} case string_tag: {
+			return std::move(quote_string(get_string()));
+		}
+
+		case null_tag:
+		default: {
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::get_static_repr: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+		}
+	}
+}
+
+std::string Semantics::ConstantValue::escape_char(char char_) {
+	if        (isgraph(char_)) {
+		return std::string(1, char_);
+	} else if (char_ == '\n') {
+		return "\\n";
+	} else {
+		std::ostringstream sstr;
+		sstr
+			<< "\\x"
+			<< std::right << std::setfill('0') << std::setw(2) << std::hex << char_
+			;
+		return sstr.str();
+	}
+}
+
+std::string Semantics::ConstantValue::quote_char(char char_) {
+	return "\'" + std::move(escape_char(char_)) + "\'";
+}
+
+std::string Semantics::ConstantValue::quote_string(const std::string &string) {
+	std::string quoted;
+	quoted.push_back('"');
+	for (const char &unescaped : std::as_const(string)) {
+		for (const char &escaped : escape_char(unescaped)) {
+			quoted.push_back(escaped);
+		}
+	}
+	quoted.push_back('"');
+	return std::move(quoted);
 }
 
 Semantics::IdentifierScope::IdentifierBinding::Static::Static()
@@ -3843,6 +4049,36 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 	}
 }
 
+Semantics::Storage::Storage()
+	{}
+
+Semantics::Storage::Storage(uint32_t max_size, bool is_global, Symbol global_address, const std::string &register_, bool dereference, int32_t offset)
+	: max_size(max_size)
+	, is_global(is_global)
+	, global_address(global_address)
+	, register_(register_)
+	, dereference(dereference)
+	, offset(offset)
+	{}
+
+// | Is this size ideal with for this storage?  (Does it equal max_size?)
+bool Semantics::Storage::ideal_size(uint32_t size) const {
+	return size == max_size;
+}
+
+// | Is this size compatible with this storage?  (Is it <= max_size?)
+bool Semantics::Storage::compatible_size(uint32_t size) const {
+	return size <= max_size;
+}
+
+std::vector<uint32_t> Semantics::Storage::get_sizes(const std::vector<Storage> &storage) {
+	std::vector<uint32_t> sizes;
+	for (const Storage &storage_unit : std::as_const(storage)) {
+		sizes.push_back(storage_unit.max_size);
+	}
+	return sizes;
+}
+
 Semantics::Instruction::Base::Base()
 	: has_symbol(false)
 	{}
@@ -3852,23 +4088,134 @@ Semantics::Instruction::Base::Base(bool has_symbol, Symbol symbol)
 	, symbol(symbol)
 	{}
 
+std::vector<uint32_t> Semantics::Instruction::Base::get_input_sizes() const {
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::Base::get_input_sizes: error: Base class method called; only the subclass method should be called.";
+	throw SemanticsError(sstr.str());
+}
+
+std::vector<uint32_t> Semantics::Instruction::Base::get_working_sizes() const {
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::Base::get_working_sizes: error: Base class method called; only the subclass method should be called.";
+	throw SemanticsError(sstr.str());
+}
+
+std::vector<uint32_t> Semantics::Instruction::Base::get_output_sizes() const {
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::Base::get_output_sizes: error: Base class method called; only the subclass method should be called.";
+	throw SemanticsError(sstr.str());
+}
+
+std::vector<uint32_t> Semantics::Instruction::Base::get_all_sizes() const {
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::Base::get_all_sizes: error: Base class method called; only the subclass method should be called.";
+	throw SemanticsError(sstr.str());
+}
+
+std::vector<Semantics::Output::Line> Semantics::Instruction::Base::emit(const std::vector<Storage> &storages) const {
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::Base::emit: error: Base class method called; only the subclass method should be called.";
+	throw SemanticsError(sstr.str());
+}
+
 Semantics::Instruction::LoadImmediate::LoadImmediate()
 	{}
 
-Semantics::Instruction::LoadImmediate::LoadImmediate(const Base &base, uint32_t destination, const ConstantValue &constant_value)
+Semantics::Instruction::LoadImmediate::LoadImmediate(const Base &base, bool is_word, const ConstantValue &constant_value, Symbol string_symbol)
 	: Base(base)
-	, destination(destination)
+	, is_word(is_word)
 	, constant_value(constant_value)
+	, string_symbol(string_symbol)
 	{}
 
-Semantics::Instruction::LoadImmediate::LoadImmediate(const LoadImmediate &load_immediate, const std::vector<uint32_t> &permutation)
-	: Base(load_immediate)
-	, destination(permutation.at(destination))
-	, constant_value(constant_value)
-	{}
+std::vector<uint32_t> Semantics::Instruction::LoadImmediate::get_input_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::LoadImmediate::get_working_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::LoadImmediate::get_output_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1)}; }
+std::vector<uint32_t> Semantics::Instruction::LoadImmediate::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
-Semantics::Instruction::LoadImmediate Semantics::Instruction::LoadImmediate::shift_register_indices(const std::vector<uint32_t> &permutation) const {
-	return LoadImmediate(*this, permutation);
+std::vector<Semantics::Output::Line> Semantics::Instruction::LoadImmediate::emit(const std::vector<Storage> &storages) const {
+	// Check sizes.
+	if (Storage::get_sizes(storages) != get_all_sizes()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::LoadImmediate::emit: the number or sizes of storage units provided does not match what was expected.";
+		throw SemanticsError(sstr.str());
+	}
+	const Storage &destination_storage = storages[0];
+
+	// Prepare output vector.
+	std::vector<Output::Line> lines;
+
+	// Emit a symbol for this instruction if there is one.
+	if (has_symbol) {
+		lines.push_back({":", symbol});
+	}
+
+	// If !this->is_word, replace sw with sb.
+	// If the constant value is a string, replace "li" with "la", and use the symbol rather than the constant value.
+	//
+	// 4 storage types for destination:
+	// 	1: global_address + x
+	// 	2: x(global_address)
+	// 	3: $reg
+	// 	4: x($reg)
+	//
+	// 2 source types:
+	// constant_non_string, constant_string
+	//
+	// X <- constant_non_string:
+	// 	1: la   $t9, destination_storage.global_address
+	// 	   la   $t9, destination_storage.offset($t9)     if > 0
+	// 	   li   $t8, constant_non_string
+	// 	   sw   $t8, ($t9)
+	// 	2: la   $t9, destination_storage.global_address
+	// 	   lw   $t9, destination_storage.offset($t9)     (the only difference from #1: la -> lw, and line is present if offset == 0)
+	// 	   li   $t8, constant_non_string
+	// 	   sw   $t8, ($t9)
+	// 	3: li   REG, constant_non_string
+	// 	4: li   $t9, constant_non_string
+	// 	   sw   $t9, destination_storage.offset(REG)
+
+	// Get the final store operation.
+	Output::Line store_op;
+	if (is_word) {
+		store_op = "sw   ";
+	} else {
+		store_op = "sb   ";
+	}
+
+	// Get the li operation.  Are we loading a label or a number?
+	Output::Line constant_load_op;
+	Output::Line value;
+	if (!constant_value.is_string()) {
+		constant_load_op = "li   ";
+		value = constant_value.get_static_repr();
+	} else {
+		constant_load_op = "la   ";
+		value = destination_storage.global_address;
+	}
+
+	// Emit the output depending on the destination storage type.
+	if           ( destination_storage.is_global && !destination_storage.dereference) {
+		lines.push_back("la   $t9, " + destination_storage.global_address);
+		if (destination_storage.offset > 0) {
+			lines.push_back("la   $t9, " + std::to_string(destination_storage.offset) + "($t9)");
+		}
+		lines.push_back(constant_load_op + "$t8, " + value);
+		lines.push_back("sw   $t8, ($t9)");
+	} else if    ( destination_storage.is_global &&  destination_storage.dereference) {
+		lines.push_back("la   $t9, " + destination_storage.global_address);
+		lines.push_back("lw   $t9, " + std::to_string(destination_storage.offset) + "($t9)");
+		lines.push_back(constant_load_op + "$t8, " + value);
+		lines.push_back("sw   $t8, ($t9)");
+	} else if    (!destination_storage.is_global && !destination_storage.dereference) {
+		lines.push_back(constant_load_op + destination_storage.register_ + ", " + value);
+	} else {  // (!destination_storage.is_global &&  destination_storage.dereference) {
+		lines.push_back(constant_load_op + "$t9, " + value);
+		lines.push_back("sw   $t9, " + std::to_string(destination_storage.offset) + "(" + destination_storage.register_ + ")");
+	}
+
+	// Return the output.
+	return lines;
 }
 
 Semantics::Instruction::Instruction(tag_t tag, const data_t &data)
@@ -3978,99 +4325,776 @@ std::string Semantics::Instruction::get_tag_repr() const {
 	return get_tag_repr(tag);
 }
 
-Semantics::Instruction Semantics::Instruction::shift_register_indices(const std::vector<uint32_t> &permutation) const {
+std::vector<uint32_t> Semantics::Instruction::get_input_sizes() const {
 	switch(tag) {
 		case load_immediate_tag:
-			return Instruction(get_load_immediate().shift_register_indices(permutation));
+			return get_load_immediate().get_input_sizes();
 
 		case null_tag:
 		default:
 			std::ostringstream sstr;
-			sstr << "Semantics::Instruction::get_load_immediate: invalid tag: " << tag;
+			sstr << "Semantics::Instruction::get_input_sizes: invalid tag: " << tag;
 			throw SemanticsError(sstr.str());
 	}
 }
 
+std::vector<uint32_t> Semantics::Instruction::get_working_sizes() const {
+	switch(tag) {
+		case load_immediate_tag:
+			return get_load_immediate().get_working_sizes();
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_working_sizes: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+std::vector<uint32_t> Semantics::Instruction::get_output_sizes() const {
+	switch(tag) {
+		case load_immediate_tag:
+			return get_load_immediate().get_output_sizes();
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_output_sizes: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+std::vector<uint32_t> Semantics::Instruction::get_all_sizes() const {
+	switch(tag) {
+		case load_immediate_tag:
+			return get_load_immediate().get_all_sizes();
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_all_sizes: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+std::vector<Semantics::Output::Line> Semantics::Instruction::emit(const std::vector<Storage> &storages) const {
+	switch(tag) {
+		case load_immediate_tag:
+			return get_load_immediate().emit(storages);
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::emit: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+const bool Semantics::MIPSIO::calculate_composed_instructions = CPSL_CC_MIPSIO_CALCULATE_COMPOSED_INSTRUCTIONS;
+
 Semantics::MIPSIO::MIPSIO()
 	{}
 
-Semantics::MIPSIO::MIPSIO(const std::vector<uint32_t> &workings, const std::vector<Instruction> &instructions, const std::vector<uint32_t> &inputs, const std::vector<uint32_t> &outputs)
-	: workings(workings)
-	, instructions(instructions)
-	, inputs(inputs)
-	, outputs(outputs)
+Semantics::MIPSIO::MIPSIO(const std::vector<MIPSIO> &inputs, const std::vector<Instruction> &instructions)
+	: MIPSIO(
+		std::move(std::vector<MIPSIO>(inputs)),
+		std::move(std::vector<Instruction>(instructions))
+	)
 	{}
 
-// | Move-bind and move-compose constructor.
-//
-// Concatenate the instructions of "inputs" with those of
-// "with_inputs", feeding the output of "inputs" into "with_inputs".
-//
-// The output of "inputs" provides all the inputs to "with_inputs".
-//
-// The resulting "inputs" vector is the concatenation of the "inputs" vectors of "inputs".
-//
-// The resulting "outputs" vector is the "outputs" vector of "with_inputs".
-//
-// The resulting "instructions" vector is the concatenation of the
-// "instructions" vectors of the all the inputs (order shouldn't matter
-// here) first, and then the "instructions" vector of "with_inputs"
-// (order matters here).
-//
-// The result "working" vector is determined by that of "inputs" and
-// "with_inputs".  If all the sizes are the same (e.g. you're only
-// dealing with 4-byte registers), then this value is whichever of
-// these two vectors has more elements:
-// - the concatenation of the "working" vectors of "inputs".
-// - the "working" vector of "with_inputs"
-//
-// Once the working units for "inputs" is done executing, then these
-// working units may be re-used or discarded.  So the "working" vector
-// provides something like a lower bound for the result.  Likewise for
-// "with_inputs".
-//
-// Thus, where the concatenated "working" vector from "inputs" is
-// called A, and the "with_inputs" "working" vector is called B, the
-// resulting "working" vector will be equivalent to one that contains
-// exactly these values:
-// - for each unit size S (e.g. 4 bytes) in either A or B, exactly X
-//   copies of S, where X is the larger of the number of copies of S in
-//   A and the number of copies of S in B.
-//
-// The sizes must align.
-Semantics::MIPSIO::MIPSIO(const std::vector<MIPSIO> &inputs, const MIPSIO &with_inputs) {
-	// TODO
-	/*
-	// Set input.
-	for (const MIPSIO &input : std::as_const(inputs)) {
-		this->input.insert(this->input.end(), input.input.cbegin(), input.input.cend());
+Semantics::MIPSIO::MIPSIO(std::vector<MIPSIO> &&inputs, std::vector<Instruction> &&instructions)
+	: inputs(std::move(inputs))
+	, instructions(std::move(instructions))
+{
+	calculate_handler_sizes();
+	calculate_composed_sizes();
+}
+
+Semantics::MIPSIO::MIPSIO(const std::vector<MIPSIO> &inputs, const std::vector<uint32_t> &working_sizes, const std::vector<Instruction> &instructions, const std::vector<uint32_t> &input_sizes, const std::vector<uint32_t> &output_sizes)
+	: MIPSIO(
+		std::move(std::vector<MIPSIO>(inputs)),
+		std::move(std::vector<uint32_t>(working_sizes)),
+		std::move(std::vector<Instruction>(instructions)),
+		std::move(std::vector<uint32_t>(input_sizes)),
+		std::move(std::vector<uint32_t>(output_sizes))
+	)
+	{}
+
+Semantics::MIPSIO::MIPSIO(std::vector<MIPSIO> &&inputs, std::vector<uint32_t> &&working_sizes, std::vector<Instruction> &&instructions, std::vector<uint32_t> &&input_sizes, std::vector<uint32_t> &&output_sizes)
+	: inputs(std::move(inputs))
+	, input_sizes(std::move(input_sizes))
+	, instructions(std::move(instructions))
+	, working_sizes(std::move(working_sizes))
+	, output_sizes(std::move(output_sizes))
+{
+	calculate_composed_sizes();
+}
+
+// | Calculate working_sizes, input_sizes, and output_sizes.
+void Semantics::MIPSIO::calculate_handler_sizes() {
+	// How many instructions?
+	if (instructions.size() <= 0) {
+		// Nothing to do.
+	} else if (instructions.size() <= 1) {
+		// Single instruction.
+
+		const Instruction &instruction = instructions[0];
+
+		working_sizes = instruction.get_working_sizes();
+		input_sizes   = instruction.get_input_sizes();
+		output_sizes  = instruction.get_output_sizes();
+	} else {
+		// Chain of instructions.
+		//
+		// Just emulate emit() and (in a predictable order) working storage units as needed.
+
+		const std::vector<uint32_t>::size_type  handler_working_index = 0;
+		// Not really a storage; just makes being consistent with emit() a little easier.
+		const std::vector<uint32_t>            &storage = working_sizes;
+		const std::vector<uint32_t>::size_type  output_index = std::numeric_limits<std::vector<uint32_t>::size_type>::max();
+
+		std::set<std::vector<uint32_t>::size_type> last_input_indices;
+		std::set<std::vector<uint32_t>::size_type> last_output_indices;
+		std::vector<uint32_t> last_inputs;
+		std::vector<uint32_t> last_outputs;
+
+		for (std::vector<Instruction>::size_type instruction_index = 0; instruction_index < instructions.size(); ++instruction_index) {
+			const Instruction &instruction = instructions[instruction_index];
+
+			// First or last instruction?
+			if        (instruction_index <= 0) {
+				// First instruction.  Set handler's input sizes.
+				input_sizes = instruction.get_input_sizes();
+
+				// Add working indices.
+				std::set<std::vector<uint32_t>::size_type> used_storage_indices;
+				for (const uint32_t &working_size : instruction.get_working_sizes()) {
+					bool found = false;
+					for (std::vector<uint32_t>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+						const uint32_t &handler_working_storage_unit = storage[handler_working_storage_index];
+						if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend() && last_output_indices.find(handler_working_storage_index) == last_output_indices.cend()) {
+							const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+							if (handler_working_storage_unit == working_size) {
+								used_storage_indices.insert(handler_working_storage_index);
+								found = true;
+								break;
+							}
+						}
+					}
+					if (!found) {
+						for (std::vector<uint32_t>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+							const uint32_t &handler_working_storage_unit = storage[handler_working_storage_index];
+							if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend() && last_output_indices.find(handler_working_storage_index) == last_output_indices.cend()) {
+								const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+								if (handler_working_storage_unit <= working_size) {
+									used_storage_indices.insert(handler_working_storage_index);
+									found = true;
+									break;
+								}
+							}
+						}
+					}
+					if (!found) {
+						working_sizes.push_back(working_size);
+					}
+				}
+
+				// Add output indices.
+				for (const uint32_t &output_size : instruction.get_output_sizes()) {
+					bool found = false;
+					for (std::vector<uint32_t>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+						const uint32_t &handler_working_storage_unit = storage[handler_working_storage_index];
+						if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend() && last_output_indices.find(handler_working_storage_index) == last_output_indices.cend()) {
+							const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+							if (handler_working_storage_unit == output_size) {
+								last_output_indices.insert(handler_working_storage_index);
+								last_outputs.push_back(handler_working_storage_index);
+								found = true;
+								break;
+							}
+						}
+					}
+					if (!found) {
+						for (std::vector<uint32_t>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+							const uint32_t &handler_working_storage_unit = storage[handler_working_storage_index];
+							if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend() && last_output_indices.find(handler_working_storage_index) == last_output_indices.cend()) {
+								const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+								if (handler_working_storage_unit <= output_size) {
+									last_output_indices.insert(handler_working_storage_index);
+									last_outputs.push_back(handler_working_storage_index);
+									found = true;
+									break;
+								}
+							}
+						}
+					}
+					if (!found) {
+						working_sizes.push_back(output_size);
+					}
+				}
+			} else if (instruction_index >= instructions.size() - 1) {
+				// Last instruction.
+				output_sizes = instruction.get_output_sizes();
+
+				// Move the last output as the last input.
+				last_input_indices = std::move(last_output_indices); last_output_indices = std::set<std::vector<uint32_t>::size_type>();
+				last_inputs        = std::move(last_outputs);        last_outputs        = std::vector<uint32_t>();
+
+				// Verify there is a size match.
+				if (last_inputs != instruction.get_input_sizes()) {
+					std::ostringstream sstr;
+					sstr << "Semantics::MIPSIO::calculate_handler_sizes: error: found an input/output size mismatch in the last instruction of a chain of instructions when emulating emitting a MIPSIO.";
+					throw SemanticsError(sstr.str());
+				}
+
+				// Add working indices.
+				std::set<std::vector<uint32_t>::size_type> used_storage_indices;
+				for (const uint32_t &working_size : instruction.get_working_sizes()) {
+					bool found = false;
+					for (std::vector<uint32_t>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+						const uint32_t &handler_working_storage_unit = storage[handler_working_storage_index];
+						if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend() && last_output_indices.find(handler_working_storage_index) == last_output_indices.cend()) {
+							const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+							if (handler_working_storage_unit == working_size) {
+								used_storage_indices.insert(handler_working_storage_index);
+								found = true;
+								break;
+							}
+						}
+					}
+					if (!found) {
+						for (std::vector<uint32_t>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+							const uint32_t &handler_working_storage_unit = storage[handler_working_storage_index];
+							if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend() && last_output_indices.find(handler_working_storage_index) == last_output_indices.cend()) {
+								const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+								if (handler_working_storage_unit <= working_size) {
+									used_storage_indices.insert(handler_working_storage_index);
+									found = true;
+									break;
+								}
+							}
+						}
+					}
+					if (!found) {
+						working_sizes.push_back(working_size);
+					}
+				}
+			} else {
+				// Intermediate instruction.
+
+				// Move the last output as the last input.
+				last_input_indices = std::move(last_output_indices); last_output_indices = std::set<std::vector<uint32_t>::size_type>();
+				last_inputs        = std::move(last_outputs);        last_outputs        = std::vector<uint32_t>();
+
+				// Verify there is a size match.
+				if (last_inputs != instruction.get_input_sizes()) {
+					std::ostringstream sstr;
+					sstr << "Semantics::MIPSIO::calculate_handler_sizes: error: found an input/output size mismatch in a chain of instructions when emulating emitting a MIPSIO.";
+					throw SemanticsError(sstr.str());
+				}
+
+				// Add working indices.
+				std::set<std::vector<uint32_t>::size_type> used_storage_indices;
+				for (const uint32_t &working_size : instruction.get_working_sizes()) {
+					bool found = false;
+					for (std::vector<uint32_t>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+						const uint32_t &handler_working_storage_unit = storage[handler_working_storage_index];
+						if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend() && last_output_indices.find(handler_working_storage_index) == last_output_indices.cend()) {
+							const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+							if (handler_working_storage_unit == working_size) {
+								used_storage_indices.insert(handler_working_storage_index);
+								found = true;
+								break;
+							}
+						}
+					}
+					if (!found) {
+						for (std::vector<uint32_t>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+							const uint32_t &handler_working_storage_unit = storage[handler_working_storage_index];
+							if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend() && last_output_indices.find(handler_working_storage_index) == last_output_indices.cend()) {
+								const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+								if (handler_working_storage_unit <= working_size) {
+									used_storage_indices.insert(handler_working_storage_index);
+									found = true;
+									break;
+								}
+							}
+						}
+					}
+					if (!found) {
+						working_sizes.push_back(working_size);
+					}
+				}
+
+				// Add output indices.
+				for (const uint32_t &output_size : instruction.get_output_sizes()) {
+					bool found = false;
+					for (std::vector<uint32_t>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+						const uint32_t &handler_working_storage_unit = storage[handler_working_storage_index];
+						if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend() && last_output_indices.find(handler_working_storage_index) == last_output_indices.cend()) {
+							const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+							if (handler_working_storage_unit == output_size) {
+								last_output_indices.insert(handler_working_storage_index);
+								last_outputs.push_back(handler_working_storage_index);
+								found = true;
+								break;
+							}
+						}
+					}
+					if (!found) {
+						for (std::vector<uint32_t>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+							const uint32_t &handler_working_storage_unit = storage[handler_working_storage_index];
+							if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend() && last_output_indices.find(handler_working_storage_index) == last_output_indices.cend()) {
+								const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+								if (handler_working_storage_unit <= output_size) {
+									last_output_indices.insert(handler_working_storage_index);
+									last_outputs.push_back(handler_working_storage_index);
+									found = true;
+									break;
+								}
+							}
+						}
+					}
+					if (!found) {
+						working_sizes.push_back(output_size);
+					}
+				}
+			}
+		}
+	}
+}
+
+// | Calculate the other size vectors.
+void Semantics::MIPSIO::calculate_composed_sizes() {
+	// Make sure the count and sizes match.
+
+	std::vector<uint32_t>::const_iterator input_sizes_iterator = this->input_sizes.cbegin();
+	for (const MIPSIO &input : std::as_const(this->inputs)) {
+		for (const uint32_t &output_size : std::as_const(input.output_sizes)) {
+			if (input_sizes_iterator == this->input_sizes.cend()) {
+				std::ostringstream sstr;
+				sstr << "Semantics::MIPSIO::calculate_composed_sizes: internal error: MIPSIO was applied with bind or compose with inputs that provide more outputs than the handler receives.";
+				throw SemanticsError(sstr.str());
+			} else {
+				const uint32_t input_size = *input_sizes_iterator++;
+				if (output_size != input_size) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::MIPSIO::calculate_composed_sizes: internal error: MIPSIO was applied with bind or compose with an output and input size mismatch: "
+						<< "output_size != input_size: "
+						<< output_size << " != " << input_size << "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+			}
+		}
 	}
 
-	// Set output size.
-	output_size = with_input.output_size;
-
-	// Set instructions.
-	// TODO: adjust inputs!
-	for (const MIPSIO &input : std::as_const(inputs)) {
-		this->instructions.insert(this->instructions.end(), input.instructions.cbegin(), input.instructions.cend());
+	if (input_sizes_iterator != this->input_sizes.cend()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::MIPSIO::calculate_composed_sizes: internal error: MIPSIO was applied with bind or compose with inputs that provide fewer outputs than the handler receives.";
+		throw SemanticsError(sstr.str());
 	}
-	*/
+
+	// Calculate all_storage_sizes.
+	all_storage_sizes.insert(all_storage_sizes.end(), input_sizes.cbegin(),   input_sizes.cend());
+	all_storage_sizes.insert(all_storage_sizes.end(), working_sizes.cbegin(), working_sizes.cend());
+	all_storage_sizes.insert(all_storage_sizes.end(), output_sizes.cbegin(),  output_sizes.cend());
+
+	// Calculate composed sizes and instructions.
+
+	// input_output_sizes
+	for (const MIPSIO &input : std::as_const(inputs)) {
+		const std::vector<uint32_t> &next_output_sizes = input.get_composed_output_sizes();
+		input_output_sizes.insert(input_output_sizes.end(), next_output_sizes.cbegin(), next_output_sizes.cend());
+	}
+
+	// composed_working_sizes
+	input_output_sizes.insert(input_output_sizes.end(), input_output_sizes.cbegin(), input_output_sizes.cend());
+	input_output_sizes.insert(input_output_sizes.end(), working_sizes.cbegin(), working_sizes.cend());
+
+	// composed_instructions
+	if (calculate_composed_instructions) {
+		for (const MIPSIO &input : std::as_const(inputs)) {
+			const std::vector<Instruction> &next_instructions = input.get_composed_instructions();
+			composed_instructions.insert(composed_instructions.end(), next_instructions.cbegin(), next_instructions.cend());
+		}
+
+		composed_instructions.insert(composed_instructions.end(), instructions.cbegin(), instructions.cend());
+	}
+
+	// composed_input_sizes
+	if (inputs.size() <= 0) {
+		composed_input_sizes.insert(composed_input_sizes.end(), input_sizes.cbegin(), input_sizes.cend());
+	} else {
+		for (const MIPSIO &input : std::as_const(inputs)) {
+			const std::vector<uint32_t> &next_input_sizes = input.get_composed_input_sizes();
+			composed_input_sizes.insert(composed_input_sizes.end(), next_input_sizes.cbegin(), next_input_sizes.cend());
+		}
+	}
+
+	// composed_output_sizes
+	composed_output_sizes.insert(composed_output_sizes.end(), output_sizes.cbegin(), output_sizes.cend());
+
+	// all_composed_storage_sizes
+	all_composed_storage_sizes.insert(all_composed_storage_sizes.end(), composed_input_sizes.cbegin(),   composed_input_sizes.cend());
+	all_composed_storage_sizes.insert(all_composed_storage_sizes.end(), composed_working_sizes.cbegin(), composed_working_sizes.cend());
+	all_composed_storage_sizes.insert(all_composed_storage_sizes.end(), composed_output_sizes.cbegin(),  composed_output_sizes.cend());
 }
 
-const std::vector<uint32_t> &Semantics::MIPSIO::get_workings() const {
-	return workings;
-}
+const std::vector<Semantics::MIPSIO>      &Semantics::MIPSIO::get_inputs()            const { return inputs; }
 
-const std::vector<Semantics::Instruction> &Semantics::MIPSIO::get_instructions() const {
-	return instructions;
-}
+const std::vector<uint32_t>               &Semantics::MIPSIO::get_working_sizes()     const { return working_sizes; }
+const std::vector<Semantics::Instruction> &Semantics::MIPSIO::get_instructions()      const { return instructions; }
+const std::vector<uint32_t>               &Semantics::MIPSIO::get_input_sizes()       const { return input_sizes; }
+const std::vector<uint32_t>               &Semantics::MIPSIO::get_output_sizes()      const { return output_sizes; }
+const std::vector<uint32_t>               &Semantics::MIPSIO::get_all_storage_sizes() const { return all_storage_sizes; }
 
-const std::vector<uint32_t> &Semantics::MIPSIO::get_inputs() const {
-	return inputs;
-}
+const std::vector<uint32_t>               &Semantics::MIPSIO::get_composed_working_sizes()     const { return composed_working_sizes; }
+//const std::vector<Semantics::Instruction> &Semantics::MIPSIO::get_composed_instructions()      const { return composed_instructions; }
+const std::vector<uint32_t>               &Semantics::MIPSIO::get_composed_input_sizes()       const { return composed_input_sizes; }
+const std::vector<uint32_t>               &Semantics::MIPSIO::get_composed_output_sizes()      const { return composed_output_sizes; }
+const std::vector<uint32_t>               &Semantics::MIPSIO::get_all_composed_storage_sizes() const { return all_composed_storage_sizes; }
 
-const std::vector<uint32_t> &Semantics::MIPSIO::get_outputs() const {
-	return outputs;
+const std::vector<uint32_t>               &Semantics::MIPSIO::get_input_output_sizes() const { return input_output_sizes; }
+
+// | Emit instructions.
+std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::vector<Storage> &storage) const {
+	// Check sizes.
+	if (Storage::get_sizes(storage) != get_all_composed_storage_sizes()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::MIPSIO::emit: error: found that the storage sizes do not match the needed storage sizes when emitting a MIPSO.";
+		throw SemanticsError(sstr.str());
+	}
+
+	// Prepare output vector.
+	std::vector<Output::Line> lines;
+
+	// Storage tracking indices.
+	// Storage: inputs, input outputs (part of working), handler working (part of working), outputs.
+	std::vector<Storage>::size_type       next_input_index      = 0;
+	std::vector<Storage>::size_type       next_input_output     = get_composed_input_sizes().size();
+	const std::vector<Storage>::size_type handler_working_index = next_input_output + get_input_output_sizes().size();
+	const std::vector<Storage>::size_type output_index          = handler_working_index + get_working_sizes().size();  // i.e. get_composed_working_sizes.size()
+	for (const MIPSIO &input : std::as_const(inputs)) {
+		// Inputs output into our working storage.  The working storage units
+		// that occur afterward can be used as the handler's working storage.
+		std::vector<Storage> input_storage;
+
+		// Construct the input's inputs.
+		std::vector<Storage>::size_type num_input_inputs = input.get_composed_input_sizes().size();
+		input_storage.insert(input_storage.begin(), storage.cbegin() + next_input_index, storage.cbegin() + next_input_index + num_input_inputs);
+		next_input_index += num_input_inputs;
+
+		// Construct the input's working storage.
+		//
+		// Just grab an unused working storage of the correct size for each
+		// working storage needed, failing if there aren't enough of the right
+		// size.
+		//
+		// (We can reset these between MIPS IOs.)
+		std::set<std::vector<Storage>::size_type> used_storage_indices;
+		for (const uint32_t &working_size : std::as_const(input.get_composed_working_sizes())) {
+			bool found = false;
+			for (std::vector<Storage>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+				const Storage &handler_working_storage_unit = storage[handler_working_storage_index];
+				if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend()) {
+					const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+					if (handler_working_storage_unit.ideal_size(working_size)) {
+						used_storage_indices.insert(handler_working_storage_index);
+						input_storage.push_back(handler_working_storage_unit);
+						found = true;
+						break;
+					}
+				}
+			}
+			if (!found) {
+				for (std::vector<Storage>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+					const Storage &handler_working_storage_unit = storage[handler_working_storage_index];
+					if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend()) {
+						const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+						if (handler_working_storage_unit.compatible_size(working_size)) {
+							used_storage_indices.insert(handler_working_storage_index);
+							input_storage.push_back(handler_working_storage_unit);
+							found = true;
+							break;
+						}
+					}
+				}
+			}
+			if (!found) {
+				std::ostringstream sstr;
+				sstr << "Semantics::MIPSIO::emit: error: couldn't find enough working storage units when emitting a MIPSIO.";
+				throw SemanticsError(sstr.str());
+			}
+		}
+
+		// Construct the input's outputs.
+		std::vector<Storage>::size_type num_input_outputs = input.get_composed_output_sizes().size();
+		input_storage.insert(input_storage.begin(), storage.cbegin() + next_input_output, storage.cbegin() + next_input_output + num_input_outputs);
+		next_input_output += num_input_outputs;
+
+		// Now emit the input's code.
+		std::vector<Output::Line> input_lines = input.emit(input_storage);
+		lines.insert(lines.end(), input_lines.cbegin(), input_lines.cend());
+	}
+
+	// Now construct the handler's storage and emit the handler's code.
+	if (instructions.size() >= 1) {
+		// Single instruction?
+		if (instructions.size() <= 1) {
+			// Just remove the original input storages.
+			std::vector<Storage> handler_storage;
+			handler_storage.insert(handler_storage.end(), storage.cbegin() + get_composed_output_sizes().size() - get_output_sizes().size(), storage.cend());
+			instructions[0].emit(handler_storage);
+		} else {
+			// We have a simple chain of instructions.  Feed the output of one into the next.
+			// Use working storages both as output and input.
+			std::set<std::vector<Storage>::size_type> last_input_indices;
+			std::set<std::vector<Storage>::size_type> last_output_indices;
+			std::vector<Storage> last_inputs;
+			std::vector<Storage> last_outputs;
+			for (std::vector<Instruction>::size_type instruction_index = 0; instruction_index < instructions.size(); ++instruction_index) {
+				const Instruction &instruction = instructions[instruction_index];
+
+				std::vector<Storage> instruction_storage;
+
+				// First or last instruction?
+				if        (instruction_index <= 0) {
+					// First instruction.  The input is the outputs from all MIPSIO inputs.
+					instruction_storage.insert(instruction_storage.end(), storage.cbegin() + get_composed_input_sizes().size(), storage.cbegin() + handler_working_index);
+
+					// Add working indices.
+					std::set<std::vector<Storage>::size_type> used_storage_indices;
+					for (const uint32_t &working_size : instruction.get_working_sizes()) {
+						bool found = false;
+						for (std::vector<Storage>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+							const Storage &handler_working_storage_unit = storage[handler_working_storage_index];
+							if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend() && last_output_indices.find(handler_working_storage_index) == last_output_indices.cend()) {
+								const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+								if (handler_working_storage_unit.ideal_size(working_size)) {
+									used_storage_indices.insert(handler_working_storage_index);
+									instruction_storage.push_back(handler_working_storage_unit);
+									found = true;
+									break;
+								}
+							}
+						}
+						if (!found) {
+							for (std::vector<Storage>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+								const Storage &handler_working_storage_unit = storage[handler_working_storage_index];
+								if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend() && last_output_indices.find(handler_working_storage_index) == last_output_indices.cend()) {
+									const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+									if (handler_working_storage_unit.compatible_size(working_size)) {
+										used_storage_indices.insert(handler_working_storage_index);
+										instruction_storage.push_back(handler_working_storage_unit);
+										found = true;
+										break;
+									}
+								}
+							}
+						}
+						if (!found) {
+							std::ostringstream sstr;
+							sstr << "Semantics::MIPSIO::emit: error: couldn't find enough working storage units for the handler's first instruction when emitting a MIPSIO.";
+							throw SemanticsError(sstr.str());
+						}
+					}
+
+					// Add output indices.
+					for (const uint32_t &output_size : instruction.get_output_sizes()) {
+						bool found = false;
+						for (std::vector<Storage>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+							const Storage &handler_working_storage_unit = storage[handler_working_storage_index];
+							if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend() && last_output_indices.find(handler_working_storage_index) == last_output_indices.cend()) {
+								const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+								if (handler_working_storage_unit.ideal_size(output_size)) {
+									last_output_indices.insert(handler_working_storage_index);
+									last_outputs.push_back(handler_working_storage_unit);
+									instruction_storage.push_back(handler_working_storage_unit);
+									found = true;
+									break;
+								}
+							}
+						}
+						if (!found) {
+							for (std::vector<Storage>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+								const Storage &handler_working_storage_unit = storage[handler_working_storage_index];
+								if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend() && last_output_indices.find(handler_working_storage_index) == last_output_indices.cend()) {
+									const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+									if (handler_working_storage_unit.compatible_size(output_size)) {
+										last_output_indices.insert(handler_working_storage_index);
+										last_outputs.push_back(handler_working_storage_unit);
+										instruction_storage.push_back(handler_working_storage_unit);
+										found = true;
+										break;
+									}
+								}
+							}
+						}
+						if (!found) {
+							std::ostringstream sstr;
+							sstr << "Semantics::MIPSIO::emit: error: couldn't find enough working storage units for the handler's first instruction's outputs when emitting a MIPSIO.";
+							throw SemanticsError(sstr.str());
+						}
+					}
+				} else if (instruction_index >= instructions.size() - 1) {
+					// Last instruction.
+
+					// Move the last output as the last input.
+					last_input_indices = std::move(last_output_indices); last_output_indices = std::set<std::vector<Storage>::size_type>();
+					last_inputs        = std::move(last_outputs);        last_outputs        = std::vector<Storage>();
+
+					// Verify there is a size match.
+					if (Storage::get_sizes(last_inputs) != instruction.get_input_sizes()) {
+						std::ostringstream sstr;
+						sstr << "Semantics::MIPSIO::emit: error: found an input/output size mismatch in the last instruction of a chain of instructions when emitting a MIPSIO.";
+						throw SemanticsError(sstr.str());
+					}
+
+					// Add the inputs.
+					instruction_storage.insert(instruction_storage.end(), last_inputs.cbegin(), last_inputs.cend());
+
+					// Add working indices.
+					std::set<std::vector<Storage>::size_type> used_storage_indices;
+					for (const uint32_t &working_size : instruction.get_working_sizes()) {
+						bool found = false;
+						for (std::vector<Storage>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+							const Storage &handler_working_storage_unit = storage[handler_working_storage_index];
+							if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend() && last_output_indices.find(handler_working_storage_index) == last_output_indices.cend()) {
+								const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+								if (handler_working_storage_unit.ideal_size(working_size)) {
+									used_storage_indices.insert(handler_working_storage_index);
+									instruction_storage.push_back(handler_working_storage_unit);
+									found = true;
+									break;
+								}
+							}
+						}
+						if (!found) {
+							for (std::vector<Storage>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+								const Storage &handler_working_storage_unit = storage[handler_working_storage_index];
+								if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend() && last_output_indices.find(handler_working_storage_index) == last_output_indices.cend()) {
+									const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+									if (handler_working_storage_unit.compatible_size(working_size)) {
+										used_storage_indices.insert(handler_working_storage_index);
+										instruction_storage.push_back(handler_working_storage_unit);
+										found = true;
+										break;
+									}
+								}
+							}
+						}
+						if (!found) {
+							std::ostringstream sstr;
+							sstr << "Semantics::MIPSIO::emit: error: couldn't find enough working storage units for a handler's instruction when emitting a MIPSIO.";
+							throw SemanticsError(sstr.str());
+						}
+					}
+
+					// Add output indices.
+					instruction_storage.insert(instruction_storage.end(), storage.cbegin() + output_index, storage.cend());
+				} else {
+					// Intermediate instruction.
+
+					// Move the last output as the last input.
+					last_input_indices = std::move(last_output_indices); last_output_indices = std::set<std::vector<Storage>::size_type>();
+					last_inputs        = std::move(last_outputs);        last_outputs        = std::vector<Storage>();
+
+					// Verify there is a size match.
+					if (Storage::get_sizes(last_inputs) != instruction.get_input_sizes()) {
+						std::ostringstream sstr;
+						sstr << "Semantics::MIPSIO::emit: error: found an input/output size mismatch in a chain of instructions when emitting a MIPSIO.";
+						throw SemanticsError(sstr.str());
+					}
+
+					// Add the inputs.
+					instruction_storage.insert(instruction_storage.end(), last_inputs.cbegin(), last_inputs.cend());
+
+					// Add working indices.
+					std::set<std::vector<Storage>::size_type> used_storage_indices;
+					for (const uint32_t &working_size : instruction.get_working_sizes()) {
+						bool found = false;
+						for (std::vector<Storage>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+							const Storage &handler_working_storage_unit = storage[handler_working_storage_index];
+							if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend() && last_output_indices.find(handler_working_storage_index) == last_output_indices.cend()) {
+								const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+								if (handler_working_storage_unit.ideal_size(working_size)) {
+									used_storage_indices.insert(handler_working_storage_index);
+									instruction_storage.push_back(handler_working_storage_unit);
+									found = true;
+									break;
+								}
+							}
+						}
+						if (!found) {
+							for (std::vector<Storage>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+								const Storage &handler_working_storage_unit = storage[handler_working_storage_index];
+								if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend() && last_output_indices.find(handler_working_storage_index) == last_output_indices.cend()) {
+									const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+									if (handler_working_storage_unit.compatible_size(working_size)) {
+										used_storage_indices.insert(handler_working_storage_index);
+										instruction_storage.push_back(handler_working_storage_unit);
+										found = true;
+										break;
+									}
+								}
+							}
+						}
+						if (!found) {
+							std::ostringstream sstr;
+							sstr << "Semantics::MIPSIO::emit: error: couldn't find enough working storage units for a handler's instruction when emitting a MIPSIO.";
+							throw SemanticsError(sstr.str());
+						}
+					}
+
+					// Add output indices.
+					for (const uint32_t &output_size : instruction.get_output_sizes()) {
+						bool found = false;
+						for (std::vector<Storage>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+							const Storage &handler_working_storage_unit = storage[handler_working_storage_index];
+							if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend() && last_output_indices.find(handler_working_storage_index) == last_output_indices.cend()) {
+								const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+								if (handler_working_storage_unit.ideal_size(output_size)) {
+									last_output_indices.insert(handler_working_storage_index);
+									last_outputs.push_back(handler_working_storage_unit);
+									instruction_storage.push_back(handler_working_storage_unit);
+									found = true;
+									break;
+								}
+							}
+						}
+						if (!found) {
+							for (std::vector<Storage>::size_type handler_working_storage_index = handler_working_index; handler_working_storage_index < storage.size() && handler_working_storage_index < output_index; ++handler_working_storage_index) {
+								const Storage &handler_working_storage_unit = storage[handler_working_storage_index];
+								if (used_storage_indices.find(handler_working_storage_index) == used_storage_indices.cend() && last_output_indices.find(handler_working_storage_index) == last_output_indices.cend()) {
+									const bool size_matches = true;  // Storage lacks size information.  TODO: add size information.
+									if (handler_working_storage_unit.compatible_size(output_size)) {
+										last_output_indices.insert(handler_working_storage_index);
+										last_outputs.push_back(handler_working_storage_unit);
+										instruction_storage.push_back(handler_working_storage_unit);
+										found = true;
+										break;
+									}
+								}
+							}
+						}
+						if (!found) {
+							std::ostringstream sstr;
+							sstr << "Semantics::MIPSIO::emit: error: couldn't find enough working storage units for a handler's instruction's outputs when emitting a MIPSIO.";
+							throw SemanticsError(sstr.str());
+						}
+					}
+				}
+
+				// Emit the instruction.
+				instruction.emit(instruction_storage);
+			}
+		}
+	}
+
+	// Return the output.
+	return lines;
 }
 
 // | For convenience, common size sequences are provided.
@@ -4128,11 +5152,11 @@ const std::vector<uint32_t>               Semantics::MIPSIO::workings_4_4   {4, 
 const std::vector<uint32_t>               Semantics::MIPSIO::inputs_4_4     {4, 4};
 const std::vector<uint32_t>               Semantics::MIPSIO::outputs_4_4    {4, 4};
 
-Semantics::MIPSIO Semantics::analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) const {
-	return std::move(analyze_expression(grammar.expression_storage.at(expression), constant_scope, type_scope, var_scope, combined_scope));
+Semantics::MIPSIO Semantics::analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
+	return analyze_expression(grammar.expression_storage.at(expression), constant_scope, type_scope, var_scope, combined_scope);
 }
 
-Semantics::MIPSIO Semantics::analyze_expression(const Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) const {
+Semantics::MIPSIO Semantics::analyze_expression(const Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
 	// Some type aliases to improve readability.
 	using M  = MIPSIO;
 	using I  = Instruction;
@@ -4158,8 +5182,14 @@ Semantics::MIPSIO Semantics::analyze_expression(const Expression &expression, co
 			throw SemanticsError(sstr.str());
 		}
 
+		// Is it a string?
+		Symbol string_symbol;
+		if (primitive_type.is_string()) {
+			string_symbol = string_literal(constant_result.get_string());
+		}
+
 		// This expression has 0 inputs, 0 working memory units, and 1 output.
-		MIPSIO mips_io(M::workings_0, IS { I(I::LoadImmediate(B(), 0, constant_result)) }, M::inputs_0, M::outputs_0);
+		MIPSIO mips_io {{}, {I(I::LoadImmediate(B(), primitive_type.size > 1, constant_result, string_symbol))}};
 		return mips_io;
 	}
 
@@ -4170,6 +5200,44 @@ Semantics::MIPSIO Semantics::analyze_expression(const Expression &expression, co
 
 	// Return the MIPS IO value.
 	return mips_io;
+}
+
+// | Get the symbol to a string literal, tracking it if this is the first time encountering it.
+Semantics::Symbol Semantics::string_literal(const std::string &string) {
+	std::map<std::string, Symbol>::const_iterator string_constants_search = string_constants.find(string);
+	if (string_constants_search == string_constants.cend()) {
+		Symbol string_symbol {labelify(string), "", string_constants.size()};
+		string_constants.insert({string, string_symbol});
+		return string_symbol;
+	} else {
+		return string_constants_search->second;
+	}
+}
+
+const uint64_t Semantics::max_string_requested_label_suffix_length = CPSL_CC_SEMANTICS_MAX_STRING_REQUESTED_LABEL_SUFFIX_LENGTH;
+
+std::string Semantics::labelify(const std::string &string) {
+	std::string label;
+
+	bool last_alnum = false;
+	for (const char &c : std::as_const(string)) {
+		if        (isalnum(c)) {
+			last_alnum = true;
+			label.push_back(tolower(c));
+		} else if (last_alnum) {
+			label.push_back('_');
+		}
+
+		if (label.size() > max_string_requested_label_suffix_length) {
+			break;
+		}
+	}
+
+	if (label.size() <= 0) {
+		return "string_literal_empty";
+	} else {
+		return "string_literal_" + label;
+	}
 }
 
 bool Semantics::would_addition_overflow(int32_t a, int32_t b) {
@@ -4450,11 +5518,6 @@ void Semantics::analyze() {
 						<< "): a non-constant expression was found where a constant expression was expected."
 						;
 					throw SemanticsError(sstr.str());
-				}
-
-				// If this is a string, add it to our collection of strings constants.
-				if (constant_value.is_string()) {
-					string_constants.insert(constant_value.get_string_copy());
 				}
 
 				// Add this constant to the top-level scope.
@@ -4789,6 +5852,7 @@ void Semantics::analyze() {
 						sline << "\t.byte  " << std::right << std::setw(11) << "0";
 						output.add_line(Output::global_vars_section, sline.str());
 					} else {
+						output.add_line(Output::global_vars_section, "\t.align 4");
 						std::ostringstream sline;
 						sline << "\t.space " << std::right << std::setw(11) << var.type.get_size();
 						output.add_line(Output::global_vars_section, sline.str());
@@ -5033,3 +6097,13 @@ inline bool operator==(const Semantics::Output::SymbolLocation &a, const Semanti
 	return a.section == b.section && a.line == b.line && a.start_pos == b.start_pos && a.length == b.length;
 }
 inline bool operator!=(const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b) { return !(a == b); }
+
+inline Semantics::Output::Line operator+(const Semantics::Output::Line &a, const Semantics::Output::Line &b) { return a.plus(b); }
+inline Semantics::Output::Line operator+(const Semantics::Output::Line &a, const Semantics::Symbol       &b) { return a.plus(b); }
+inline Semantics::Output::Line operator+(const Semantics::Symbol       &a, const Semantics::Output::Line &b) { return Semantics::Output::Line(a).plus(b); }
+inline Semantics::Output::Line operator+(const Semantics::Symbol       &a, const Semantics::Symbol       &b) { return Semantics::Output::Line(a).plus(b); }
+
+#if 0
+inline Semantics::Output::Line operator+(const std::string             &a, const Semantics::Output::Line &b) { return Semantics::Output::Line(a) + b; }
+inline Semantics::Output::Line operator+(const Semantics::Output::Line &a, const std::string             &b) { return a + Semantics::Output::Line(b); }
+#endif /* if 0 */

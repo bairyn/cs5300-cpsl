@@ -1,7 +1,7 @@
 #ifndef CPSL_CC_SEMANTICS_HH
 #define CPSL_CC_SEMANTICS_HH
 
-#include <cstdint>    // int32_t, uint64_t
+#include <cstdint>    // int32_t, uint32_t, uint64_t
 #include <map>        // std::map
 #include <optional>   // std::optional
 #include <set>        // std::set
@@ -36,6 +36,8 @@ public:
 
 #define CPSL_CC_SEMANTICS_COMBINE_IDENTIFIER_NAMESPACES true
 #define CPSL_CC_SEMANTICS_MAX_UNIQUE_TRY_ITERATIONS     A_BILLION  // fun
+#define CPSL_CC_MIPSIO_CALCULATE_COMPOSED_INSTRUCTIONS  false  // Unneeded.
+#define CPSL_CC_SEMANTICS_MAX_STRING_REQUESTED_LABEL_SUFFIX_LENGTH 32
 
 class Semantics {
 public:
@@ -89,6 +91,42 @@ public:
 			static bool reverse_cmp(const SymbolLocation &a, const SymbolLocation &b);
 		};
 
+		// | For convenience, a wrapper class for a line of output that can contain symbols.
+		class Line {
+		public:
+			Line();
+			// | No symbols on this line.
+			Line(const std::string &line);
+			Line(std::string &&line);
+			Line(const char *c_str);
+			// | Line with only a symbol.
+			Line(const Symbol &symbol);
+			// | Add a symbol to a line in a new copy.
+			Line(const Line &line, const Symbol &symbol, std::string::size_type start_pos = 0, std::string::size_type length = 0);
+			// Commented out: these declarations are redundant and would cause some calls to be ambiguous.
+#if 0
+			// | Line with a single symbol.
+			Line(const std::string &line, const Symbol &symbol, std::string::size_type start_pos = 0, std::string::size_type length = 0);
+			Line(std::string &&line, const Symbol &symbol, std::string::size_type start_pos = 0, std::string::size_type length = 0);
+#endif /* #if 0 */
+			// | Line with zero or more symbols.
+			Line(const std::string &line, const std::vector<std::pair<Symbol, std::pair<std::string::size_type, std::string::size_type>>> &symbols);
+			Line(const std::string &line, std::vector<std::pair<Symbol, std::pair<std::string::size_type, std::string::size_type>>> &&symbols);
+			Line(std::string &&line, const std::vector<std::pair<Symbol, std::pair<std::string::size_type, std::string::size_type>>> &symbols);
+			Line(std::string &&line, std::vector<std::pair<Symbol, std::pair<std::string::size_type, std::string::size_type>>> &&symbols);
+			// | Add zero or more symbols to a line in a new copy.
+			Line(const Line &line, const std::vector<std::pair<Symbol, std::pair<std::string::size_type, std::string::size_type>>> &symbols);
+			// | Fields.
+			std::string line;
+			std::vector<std::pair<Symbol, std::pair<std::string::size_type, std::string::size_type>>> symbols;
+
+			// Note: operator+ is defined for Line and Line/Symbol using these methods.
+			Line plus(const Line &b) const;
+			Line plus(const Symbol &b) const;
+			Line flip_plus(const Line &a) const;
+			Line flip_plus(const Symbol &a) const;
+		};
+
 		Output();
 
 		// | The lines of output, possibly with unexpanded symbol locations.
@@ -121,9 +159,14 @@ public:
 		std::vector<std::string> get_normalized_lines_copy(const std::set<std::string> &additional_names = std::set<std::string>()) const;
 
 		// | Add a line to an output section.
+		// Commented out: this declaration is redundant and would cause some calls to be ambiguous.
+#if 0
 		void add_line(section_t section, const std::string &line);
+#endif /* #if 0 */
 		// | Add a line to an output section with a symbol.
 		void add_line(section_t section, const std::string &line, const Symbol &symbol, std::string::size_type start_pos = 0, std::string::size_type length = 0);
+		// | Add a line to an output, optionally with symbols.
+		void add_line(section_t section, const Line &line);
 		// | Add a symbol to the last line.
 		void add_symbol_location_current_last_line(section_t section, const Symbol &symbol, std::string::size_type start_pos = 0, std::string::size_type length = 0);
 
@@ -384,6 +427,13 @@ public:
 		// Raise an error if it's not static.
 		Type::Primitive get_static_primitive_type() const;
 		Type            get_static_type() const;
+
+		// | Get a string representation of the static value.
+		std::string get_static_repr() const;
+
+		static std::string escape_char(char char_);
+		static std::string quote_char(char char_);
+		static std::string quote_string(const std::string &string);
 	};
 
 	// | Objects represent a collection of identifiers in scope and what they refer to.
@@ -560,6 +610,41 @@ public:
 	// IdentifierScope passed to this method.
 	Type analyze_type(const std::string &identifier, const ::Type &type, const IdentifierScope &type_constant_scope, const IdentifierScope &type_type_scope, IdentifierScope &anonymous_storage);
 
+	// | A representation of a storage unit: a register, offset on the stack, global address, etc.
+	//
+	// $t8 and $t9 are reversed in case any working storage units require 2 registers to access.
+	//
+	// There are 4 storage types:
+	// 	1: global_address + x
+	// 	2: x(global_address)
+	// 	3: $reg + x
+	// 	4: x($reg)
+	class Storage {
+	public:
+		Storage();
+		Storage(uint32_t max_size, bool is_global, Symbol global_address, const std::string &register_, bool dereference, int32_t offset);
+
+		// | What is the maximum size that this storage can handle?
+		uint32_t    max_size;
+		// | Is this a global address or a register?
+		bool        is_global;
+		// | If global, which symbol refers to the address?
+		Symbol      global_address;
+		// | If this is a register, which string identifies it?
+		std::string register_;
+		// | Dereference this global address or register, or use it directly?
+		bool        dereference;
+		// | If global and/or dereferencing, add this value to the loaded result.  If dereferencing, add before dereferencing.  (Does nothing when neither global or dereferencing.)
+		int32_t     offset;
+
+		// | Is this size ideal with for this storage?  (Does it equal max_size?)
+		bool ideal_size(uint32_t size) const;
+		// | Is this size compatible with this storage?  (Is it <= max_size?)
+		bool compatible_size(uint32_t size) const;
+
+		static std::vector<uint32_t> get_sizes(const std::vector<Storage> &storage);
+	};
+
 	// | An intermediate unit representation of MIPS instructions.
 	//
 	// "Registers" may be registers or other types of storage, e.g. offsets on the stack.  Which type they are can be analyzed afterward.
@@ -580,23 +665,37 @@ public:
 		public:
 			Base();
 			Base(bool has_symbol, Symbol symbol);
+			// | Does this instruction have a label at the beginning of this instruction?
 			bool has_symbol;
 			Symbol symbol;
 
-			// All subclasses T should defined shift_register_indices:
-			// T shift_register_indices(uint64_t old_workings_length, uint64_t old_inputs_length, uint64_t old_outputs_length, uint64_t new_workings_length, uint64_t new_inputs_length, uint64_t new_outputs_length) const;
+			std::vector<uint32_t> get_input_sizes() const;
+			std::vector<uint32_t> get_working_sizes() const;
+			std::vector<uint32_t> get_output_sizes() const;
+			std::vector<uint32_t> get_all_sizes() const;
+
+			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
 		};
 
 		class LoadImmediate : public Base {
 		public:
 			LoadImmediate();
-			LoadImmediate(const Base &base, uint32_t destination, const ConstantValue &constant_value);
-			// Shift register indices constructor.
-			LoadImmediate(const LoadImmediate &load_immediate, const std::vector<uint32_t> &permutation);
-			uint32_t destination;
+			LoadImmediate(const Base &base, bool is_word, const ConstantValue &constant_value, Symbol string_symbol = Symbol());
+			// | Are we loading a byte or a word?
+			bool is_word;
 			ConstantValue constant_value;
+			// | If the constant value is a string (value unused), what is the symbol to its global address?
+			// This symbol doesn't have to refer to a string literal; it can be
+			// an array, for example.  Only the address is used here.  It
+			// should refer to a label, however.
+			Symbol string_symbol;
 
-			LoadImmediate shift_register_indices(const std::vector<uint32_t> &permutation) const;
+			std::vector<uint32_t> get_input_sizes() const;
+			std::vector<uint32_t> get_working_sizes() const;
+			std::vector<uint32_t> get_output_sizes() const;
+			std::vector<uint32_t> get_all_sizes() const;
+
+			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
 		};
 
 		using data_t = std::variant<
@@ -626,7 +725,12 @@ public:
 		static std::string get_tag_repr(tag_t tag);
 		std::string get_tag_repr() const;
 
-		Instruction shift_register_indices(const std::vector<uint32_t> &permutation) const;
+		std::vector<uint32_t> get_input_sizes() const;
+		std::vector<uint32_t> get_working_sizes() const;
+		std::vector<uint32_t> get_output_sizes() const;
+		std::vector<uint32_t> get_all_sizes() const;
+
+		std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
 	};
 
 	// | A MIPS IO monad on output.
@@ -634,51 +738,37 @@ public:
 	// Tracks registers, space, or working memory used and those needed.
 	class MIPSIO {
 	public:
-		MIPSIO();
-		MIPSIO(const std::vector<uint32_t> &workings, const std::vector<Instruction> &instructions, const std::vector<uint32_t> &inputs, const std::vector<uint32_t> &outputs);
-		// | Move-bind and move-compose constructor.
-		//
-		// Concatenate the instructions of "inputs" with those of
-		// "with_inputs", feeding the output of "inputs" into "with_inputs".
-		//
-		// The output of "inputs" provides all the inputs to "with_inputs".
-		//
-		// The resulting "inputs" vector is the concatenation of the "inputs" vectors of "inputs".
-		//
-		// The resulting "outputs" vector is the "outputs" vector of "with_inputs".
-		//
-		// The resulting "instructions" vector is the concatenation of the
-		// "instructions" vectors of the all the inputs (order shouldn't matter
-		// here) first, and then the "instructions" vector of "with_inputs"
-		// (order matters here).
-		//
-		// The result "working" vector is determined by that of "inputs" and
-		// "with_inputs".  If all the sizes are the same (e.g. you're only
-		// dealing with 4-byte registers), then this value is whichever of
-		// these two vectors has more elements:
-		// - the concatenation of the "working" vectors of "inputs".
-		// - the "working" vector of "with_inputs"
-		//
-		// Once the working units for "inputs" is done executing, then these
-		// working units may be re-used or discarded.  So the "working" vector
-		// provides something like a lower bound for the result.  Likewise for
-		// "with_inputs".
-		//
-		// Thus, where the concatenated "working" vector from "inputs" is
-		// called A, and the "with_inputs" "working" vector is called B, the
-		// resulting "working" vector will be equivalent to one that contains
-		// exactly these values:
-		// - for each unit size S (e.g. 4 bytes) in either A or B, exactly X
-		//   copies of S, where X is the larger of the number of copies of S in
-		//   A and the number of copies of S in B.
-		//
-		// The sizes must align.
-		MIPSIO(const std::vector<MIPSIO> &inputs, const MIPSIO &with_inputs);
+		static const bool calculate_composed_instructions;
 
-		const std::vector<uint32_t>    &get_workings()     const;
-		const std::vector<Instruction> &get_instructions() const;
-		const std::vector<uint32_t>    &get_inputs()       const;
-		const std::vector<uint32_t>    &get_outputs()      const;
+		MIPSIO();
+		MIPSIO(const std::vector<MIPSIO> &inputs, const std::vector<Instruction> &instructions);
+		MIPSIO(std::vector<MIPSIO> &&inputs, std::vector<Instruction> &&instructions);
+		// | Override the size vectors rather than calculating them from the instructions.
+		MIPSIO(const std::vector<MIPSIO> &inputs, const std::vector<uint32_t> &working_sizes, const std::vector<Instruction> &instructions, const std::vector<uint32_t> &input_sizes, const std::vector<uint32_t> &output_sizes);
+		MIPSIO(std::vector<MIPSIO> &&inputs, std::vector<uint32_t> &&working_sizes, std::vector<Instruction> &&instructions, std::vector<uint32_t> &&input_sizes, std::vector<uint32_t> &&output_sizes);
+
+		// | Get the inputs.
+		const std::vector<MIPSIO>      &get_inputs() const;
+
+		// | Get the handler's instructions and sizes.
+		const std::vector<uint32_t>    &get_working_sizes()     const;
+		const std::vector<Instruction> &get_instructions()      const;
+		const std::vector<uint32_t>    &get_input_sizes()       const;
+		const std::vector<uint32_t>    &get_output_sizes()      const;
+		const std::vector<uint32_t>    &get_all_storage_sizes() const;
+
+		// | Get the composed instructions and sizes.
+		const std::vector<uint32_t>    &get_composed_working_sizes()     const;
+		const std::vector<Instruction> &get_composed_instructions()      const;
+		const std::vector<uint32_t>    &get_composed_input_sizes()       const;
+		const std::vector<uint32_t>    &get_composed_output_sizes()      const;  // (same as get_output_sizes().)
+		const std::vector<uint32_t>    &get_all_composed_storage_sizes() const;
+
+		// | Get the output sizes of all inputs.
+		const std::vector<uint32_t>    &get_input_output_sizes() const;
+
+		// | Emit instructions.
+		std::vector<Output::Line> emit(const std::vector<Storage> &storage) const;
 
 		// | For convenience, common size sequences are provided.
 
@@ -736,19 +826,44 @@ public:
 		static const std::vector<uint32_t>    outputs_4_4;
 
 	protected:
+		// | inputs: enables binding and composing.
+		std::vector<MIPSIO>      inputs;
+
+		// Handler sizes.
+
 		// | When joining, working units (e.g. registers) can be freely reused.  A MIPSIO's working units must be isolated from other MIPSIOs.
 		// When input is combined with output, the connected units become working units.
-		std::vector<uint32_t>    workings;
-		// | Instructions.  TODO: when you have time, a stack or list-based interface would be more efficient.
+		std::vector<uint32_t>    working_sizes;
+		// | Instructions.
 		std::vector<Instruction> instructions;
 		// | The elements represent the sizes of the inputs.
-		std::vector<uint32_t>    inputs;
+		std::vector<uint32_t>    input_sizes;
 		// | The size of the output.
-		std::vector<uint32_t>    outputs;
+		std::vector<uint32_t>    output_sizes;
+		// | input, working, output.
+		std::vector<uint32_t>    all_storage_sizes;
+
+		// Composed sizes.
+
+		// | input_output, (handler) working
+		std::vector<uint32_t>    composed_working_sizes;
+		std::vector<Instruction> composed_instructions;
+		std::vector<uint32_t>    composed_input_sizes;
+		std::vector<uint32_t>    composed_output_sizes;
+		// | composed_input, composed_working (input_output, (handler) working), composed_output
+		std::vector<uint32_t>    all_composed_storage_sizes;
+
+		std::vector<uint32_t>    input_output_sizes;
+
+		// | Calculate working_sizes, input_sizes, and output_sizes.
+		void calculate_handler_sizes();
+		// | Calculate the other size vectors.
+		void calculate_composed_sizes();
 	};
 
-	MIPSIO analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) const;
-	MIPSIO analyze_expression(const Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) const;
+	// The non-const part is the ability to store strings.
+	MIPSIO analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
+	MIPSIO analyze_expression(const Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
 	// TODO
 	//MIPSIO analyze_statement();
 
@@ -762,6 +877,11 @@ public:
 
 	// TODO
 	//Routine analyze_routine();
+
+	// | Get the symbol to a string literal, tracking it if this is the first time encountering it.
+	Symbol string_literal(const std::string &string);
+	static const uint64_t max_string_requested_label_suffix_length;
+	static std::string labelify(const std::string &string);
 
 	static bool would_addition_overflow(int32_t a, int32_t b);
 	static bool would_multiplication_overflow(int32_t a, int32_t b);
@@ -799,7 +919,7 @@ protected:
 	//
 	// Assembled output can contain a section of labeled string constants that
 	// other parts can refer to.
-	std::set<std::string> string_constants;
+	std::map<std::string, Symbol> string_constants;
 
 	IdentifierScope top_level_constant_scope;
 	IdentifierScope top_level_type_scope;
@@ -831,5 +951,16 @@ inline bool operator>=(const Semantics::Output::SymbolLocation &a, const Semanti
 
 inline bool operator==(const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b);
 inline bool operator!=(const Semantics::Output::SymbolLocation &a, const Semantics::Output::SymbolLocation &b);
+
+inline Semantics::Output::Line operator+(const Semantics::Output::Line &a, const Semantics::Output::Line &b);
+inline Semantics::Output::Line operator+(const Semantics::Output::Line &a, const Semantics::Symbol       &b);
+inline Semantics::Output::Line operator+(const Semantics::Symbol       &a, const Semantics::Output::Line &b);
+inline Semantics::Output::Line operator+(const Semantics::Symbol       &a, const Semantics::Symbol       &b);
+
+// Commented out: these declarations are redundant and would cause some calls to be ambiguous.
+#if 0
+inline Semantics::Output::Line operator+(const std::string             &a, const Semantics::Output::Line &b);
+inline Semantics::Output::Line operator+(const Semantics::Output::Line &a, const std::string             &b);
+#endif /* #if 0 */
 
 #endif /* #ifndef CPSL_CC_SEMANTICS_HH */
