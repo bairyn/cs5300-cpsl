@@ -6748,6 +6748,7 @@ UnitTests::UnitTests()
 
 void UnitTests::run() {
 	test_mips_io();
+	test_mips_io2();
 }
 
 void UnitTests::test_mips_io() {
@@ -6763,15 +6764,53 @@ void UnitTests::test_mips_io() {
 	M load_4 {{}, {
 		I(I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(4), 0, 0), Symbol())),
 	}};
-	M move_5 {{load_4}, {
+	M move_16 {{load_4}, {
 		I(I::LoadFrom(B(), true, 16)),
 	}};
-	const M &mips_io = move_5;
+	const M &mips_io = move_16;
 
 	// Storage(uint32_t max_size, bool is_global, Symbol global_address, const std::string &register_, bool dereference, int32_t offset);
 	std::vector<Output::Line> lines = mips_io.emit({
-		Storage(4, false, Symbol(), "$t2", false, 0),  // Working (load_4 -> move_5).
-		Storage(4, false, Symbol(), "$t3", false, 0),  // Output  (move_5 -> here).
+		Storage(4, false, Symbol(), "$t2", false, 0),  // Working (load_4 -> move_16).
+		Storage(4, false, Symbol(), "$t3", false, 0),  // Output  (move_16 -> here).
+	});
+
+	std::vector<Output::Line> expected;
+	expected.push_back("\tli   $t2, 4");
+	expected.push_back("\tla   $t3, 16($t2)");
+
+	assert(lines == expected);
+}
+
+void UnitTests::test_mips_io2() {
+	// Some type aliases to improve readability.
+	using M = Semantics::MIPSIO;
+	using I = Semantics::Instruction;
+	using B = Semantics::Instruction::Base;
+	using ConstantValue = Semantics::ConstantValue;
+	using Output        = Semantics::Output;
+	using Storage       = Semantics::Storage;
+	using Symbol        = Semantics::Symbol;
+
+	M load_4 {{}, {  // 0 -> 1
+		I(I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(4), 0, 0), Symbol())),
+	}};
+	M move_16 {{load_4}, {  // 0 -> 1; 1
+		I(I::LoadFrom(B(), true, 16)),
+	}};
+	M load_6 {{}, {  // 0 -> 1
+		I(I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(6), 0, 0), Symbol())),
+	}};
+	M add {{move_16, load_6}, {  // 0 -> 1; 2
+		I(I::AddFrom(B(), true)),
+	}};
+	const M &mips_io = add;
+
+	// Storage(uint32_t max_size, bool is_global, Symbol global_address, const std::string &register_, bool dereference, int32_t offset);
+	std::vector<Output::Line> lines = add.emit({
+		Storage(4, false, Symbol(), "$t2", false, 0),  // Working
+		Storage(4, false, Symbol(), "$t3", false, 0),  // Working
+		Storage(4, false, Symbol(), "$t4", false, 0),  // Output  (move_5 -> here).
 	});
 
 	std::vector<Output::Line> expected;

@@ -1061,6 +1061,7 @@ public:
 	void run();
 
 	void test_mips_io();
+	void test_mips_io2();
 };
 
 // Commented out: these declarations are redundant and would cause some calls to be ambiguous.
