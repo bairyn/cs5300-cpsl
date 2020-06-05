@@ -1,7 +1,7 @@
 #include <algorithm>     // std::reverse, std::stable_sort
 #include <cassert>       // assert
 #include <cctype>        // isalnum, isprint, tolower
-#include <cstddef>       // std::size_type
+#include <cstddef>       // std::size_t
 #include <iomanip>       // std::fill, std::left, std::right, std::setw
 #include <ios>           // std::hex
 #include <limits>        // std::numeric_limits
