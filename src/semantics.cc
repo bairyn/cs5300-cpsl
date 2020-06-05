@@ -4470,7 +4470,7 @@ Semantics::Instruction::AddFrom::AddFrom(const Base &base, bool is_word)
 	, is_word(is_word)
 	{}
 
-std::vector<uint32_t> Semantics::Instruction::AddFrom::get_input_sizes() const { return {static_cast<uint32_t>(2 * (is_word ? 4 : 1))}; }
+std::vector<uint32_t> Semantics::Instruction::AddFrom::get_input_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1), static_cast<uint32_t>(is_word ? 4 : 1)}; }
 std::vector<uint32_t> Semantics::Instruction::AddFrom::get_working_sizes() const { return {}; }
 std::vector<uint32_t> Semantics::Instruction::AddFrom::get_output_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1)}; }
 std::vector<uint32_t> Semantics::Instruction::AddFrom::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
