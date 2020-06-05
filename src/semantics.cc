@@ -1,7 +1,7 @@
 #include <algorithm>     // std::reverse, std::stable_sort
 #include <cassert>       // assert
 #include <cctype>        // isalnum, isprint, tolower
-#include <cstddef>       // std::size_type
+#include <cstddef>       // std::size_t
 #include <iomanip>       // std::fill, std::left, std::right, std::setw
 #include <ios>           // std::hex
 #include <limits>        // std::numeric_limits
@@ -4965,46 +4965,56 @@ const bool Semantics::MIPSIO::calculate_composed_instructions = CPSL_CC_MIPSIO_C
 Semantics::MIPSIO::MIPSIO()
 	{}
 
-Semantics::MIPSIO::MIPSIO(const std::vector<MIPSIO> &inputs, const std::vector<Instruction> &instructions)
+Semantics::MIPSIO::MIPSIO(const std::vector<MIPSIO> &inputs, const std::vector<Instruction> &instructions, const std::vector<MIPSIO> &applications, const std::vector<std::vector<uint32_t>::size_type> &permutation)
 	: MIPSIO(
 		std::move(std::vector<MIPSIO>(inputs)),
-		std::move(std::vector<Instruction>(instructions))
+		std::move(std::vector<Instruction>(instructions)),
+		std::move(std::vector<MIPSIO>(applications)),
+		std::move(std::vector<std::vector<uint32_t>::size_type>(permutation))
 	)
 	{}
 
-Semantics::MIPSIO::MIPSIO(std::vector<MIPSIO> &&inputs, std::vector<Instruction> &&instructions)
+Semantics::MIPSIO::MIPSIO(std::vector<MIPSIO> &&inputs, std::vector<Instruction> &&instructions, std::vector<MIPSIO> &&applications, std::vector<std::vector<uint32_t>::size_type> &&permutation)
 	: inputs(std::move(inputs))
 	, instructions(std::move(instructions))
+	, applications(std::move(applications))
+	, permutation(std::move(permutation))
 {
 	calculate_handler_sizes();
 	calculate_composed_sizes();
 }
 
-Semantics::MIPSIO::MIPSIO(const std::vector<MIPSIO> &inputs, const std::vector<uint32_t> &working_sizes, const std::vector<Instruction> &instructions, const std::vector<uint32_t> &input_sizes, const std::vector<uint32_t> &output_sizes)
+Semantics::MIPSIO::MIPSIO(const std::vector<MIPSIO> &inputs, const std::vector<uint32_t> &working_sizes, const std::vector<Instruction> &instructions, const std::vector<MIPSIO> &applications, const std::vector<std::vector<uint32_t>::size_type> &permutation, const std::vector<uint32_t> &input_sizes, const std::vector<uint32_t> &output_sizes)
 	: MIPSIO(
 		std::move(std::vector<MIPSIO>(inputs)),
 		std::move(std::vector<uint32_t>(working_sizes)),
 		std::move(std::vector<Instruction>(instructions)),
+		std::move(std::vector<MIPSIO>(applications)),
+		std::move(std::vector<std::vector<uint32_t>::size_type>(permutation)),
 		std::move(std::vector<uint32_t>(input_sizes)),
 		std::move(std::vector<uint32_t>(output_sizes))
 	)
 	{}
 
-Semantics::MIPSIO::MIPSIO(std::vector<MIPSIO> &&inputs, std::vector<uint32_t> &&working_sizes, std::vector<Instruction> &&instructions, std::vector<uint32_t> &&input_sizes, std::vector<uint32_t> &&output_sizes)
+Semantics::MIPSIO::MIPSIO(std::vector<MIPSIO> &&inputs, std::vector<uint32_t> &&working_sizes, std::vector<Instruction> &&instructions, std::vector<MIPSIO> &&applications, std::vector<std::vector<uint32_t>::size_type> &&permutation, std::vector<uint32_t> &&input_sizes, std::vector<uint32_t> &&output_sizes)
 	: inputs(std::move(inputs))
 	, input_sizes(std::move(input_sizes))
 	, instructions(std::move(instructions))
+	, applications(std::move(applications))
+	, permutation(std::move(permutation))
 	, working_sizes(std::move(working_sizes))
 	, output_sizes(std::move(output_sizes))
 {
 	calculate_composed_sizes();
 }
 
-// | Calculate working_sizes, input_sizes, and output_sizes.
+// | Calculate working_sizes, input_sizes, and output_sizes.  Initialize permutation to an ascending vector and applications to an empty vector.
 void Semantics::MIPSIO::calculate_handler_sizes() {
+	// Calculate handler sizes.
+
 	// How many instructions?
 	if (instructions.size() <= 0) {
-		// Nothing to do.
+		// Nothing to do to calculate sizes; proceed to permutations and applications initialization.
 	} else if (instructions.size() <= 1) {
 		// Single instruction.
 
@@ -5016,7 +5026,7 @@ void Semantics::MIPSIO::calculate_handler_sizes() {
 	} else {
 		// Chain of instructions.
 		//
-		// Just emulate emit() and (in a predictable order) working storage units as needed.
+		// Just emulate emit() and (in a predictable order) working storage units as needed, with an identity permutation.
 
 		const std::vector<uint32_t>::size_type  handler_working_index = 0;
 		// Not really a storage; just makes being consistent with emit() a little easier.
@@ -5232,11 +5242,31 @@ void Semantics::MIPSIO::calculate_handler_sizes() {
 			}
 		}
 	}
+
+	// Initialize permutation and applications.
+	// Commented out: permutations on output is currently unsupported.
+#if 0
+	std::vector<uint32_t>::size_type num_io_sizes = input_sizes.size() + output_sizes.size();
+
+	permutation.reserve(num_io_sizes);
+	for (std::vector<uint32_t>::size_type index = 0; index < num_io_sizes; ++index) {
+		permutation.push_back(index);
+	};
+#endif /* #if 0 */
+
+	std::vector<uint32_t>::size_type num_input_sizes = input_sizes.size();
+
+	permutation.reserve(num_input_sizes);
+	for (std::vector<uint32_t>::size_type index = 0; index < num_input_sizes; ++index) {
+		permutation.push_back(index);
+	};
+
+	// (applications is already initialized to an empty vector.)
 }
 
 // | Calculate the other size vectors.
 void Semantics::MIPSIO::calculate_composed_sizes() {
-	// Make sure the count and sizes match.
+	// Make sure the count and sizes match for input_outputs.
 
 	std::vector<uint32_t>::const_iterator input_sizes_iterator = this->input_sizes.cbegin();
 	for (const MIPSIO &input : std::as_const(this->inputs)) {
@@ -5271,6 +5301,43 @@ void Semantics::MIPSIO::calculate_composed_sizes() {
 	all_storage_sizes.insert(all_storage_sizes.end(), working_sizes.cbegin(), working_sizes.cend());
 	all_storage_sizes.insert(all_storage_sizes.end(), output_sizes.cbegin(),  output_sizes.cend());
 
+	// Make sure permutation.size() <= inputs.size().
+	if (permutation.size() > inputs.size()) {
+		if (permutation.size() < inputs.size()) {
+			std::ostringstream sstr;
+			sstr << "Semantics::MIPSIO::calculate_composed_sizes: error: found that the permutation vector is larger than the inputs vector when calculating composed sizes for a MIPSO: " << permutation.size() << " > " << inputs.size();
+			throw SemanticsError(sstr.str());
+		}
+	}
+
+	// Make sure permutation has no duplicate or out-of-bounds target indices.
+	std::set<std::vector<uint32_t>::size_type> seen_targets;
+	for (const std::vector<uint32_t>::size_type &target_index : std::as_const(permutation)) {
+		const std::vector<uint32_t>::size_type &source_index = &target_index - &permutation[0]; (void) source_index;
+
+		if (target_index > permutation.size()) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::MIPSIO::calculate_composed_sizes: error: found that the permutation vector contains a target index greater than the permutation vector size when calculating composed sizes for a MIPSO: "
+				<< target_index << " > " << permutation.size() << "."
+				;
+			throw SemanticsError(sstr.str());
+		}
+
+		if (seen_targets.find(target_index) != seen_targets.cend()) {
+			std::ostringstream sstr;
+			sstr << "Semantics::MIPSIO::calculate_composed_sizes: error: found that the permutation vector contains a duplicate target index when calculating composed sizes for a MIPSO: " << target_index;
+			throw SemanticsError(sstr.str());
+		} else {
+			seen_targets.insert(target_index);
+		}
+	}
+
+	// Expand permutation.size() as necessary with identity permutation indices.
+	while (permutation.size() < inputs.size()) {
+		permutation.push_back(permutation.size());
+	}
+
 	// Calculate composed sizes and instructions.
 
 	// input_output_sizes
@@ -5293,18 +5360,81 @@ void Semantics::MIPSIO::calculate_composed_sizes() {
 		composed_instructions.insert(composed_instructions.end(), instructions.cbegin(), instructions.cend());
 	}
 
-	// composed_input_sizes
-	if (inputs.size() <= 0) {
-		composed_input_sizes.insert(composed_input_sizes.end(), input_sizes.cbegin(), input_sizes.cend());
+	// composed_output_sizes before overapplication.
+	composed_output_sizes.insert(composed_output_sizes.end(), output_sizes.cbegin(), output_sizes.cend());
+
+	// composed_input_sizes = applications_composed_input_sizes + unapplied_composed_input_sizes.
+
+	// If inputs is empty, the applications are inputs; otherwise, feed applications through as we recurse.
+	const std::vector<MIPSIO> &direct_inputs = inputs.size() > 0 ? inputs : applications;
+
+	// Permute direct_inputs
+	std::vector<MIPSIO> permuted_direct_inputs;
+	if (permutation.size() <= 0) {
+		permuted_direct_inputs.insert(permuted_direct_inputs.end(), direct_inputs.cbegin(), direct_inputs.cend());
 	} else {
-		for (const MIPSIO &input : std::as_const(inputs)) {
-			const std::vector<uint32_t> &next_input_sizes = input.get_composed_input_sizes();
-			composed_input_sizes.insert(composed_input_sizes.end(), next_input_sizes.cbegin(), next_input_sizes.cend());
+		if (permutation.size() < inputs.size()) {
+			std::ostringstream sstr;
+			sstr << "Semantics::MIPSIO::calculate_composed_sizes: internal error: found that the expanded permutation vector is smaller than the inputs vector when calculating composed sizes for a MIPSO: " << permutation.size() << " < " << inputs.size();
+			throw SemanticsError(sstr.str());
+		}
+
+		for (const std::vector<uint32_t>::size_type &target_index : std::as_const(permutation)) {
+			const std::vector<uint32_t>::size_type &source_index = &target_index - &permutation[0];
+
+			if (target_index >= inputs.size()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::MIPSIO::error: error: found that input permutation "
+						<< "permutation[" << source_index << "]=" << target_index << " >= inputs.size()=" << inputs.size()
+						<< " when emitting a MIPSO: the permutation refers to an out-of-bounds or non-input index."
+						;
+					throw SemanticsError(sstr.str());
+			}
+
+			permuted_direct_inputs.push_back(direct_inputs[target_index]);
 		}
 	}
 
-	// composed_output_sizes
-	composed_output_sizes.insert(composed_output_sizes.end(), output_sizes.cbegin(), output_sizes.cend());
+	// Add applications_composed_input_sizes.
+	for (const MIPSIO &application : std::as_const(applications)) {
+		const std::vector<uint32_t> &next_application_input_sizes = application.get_composed_input_sizes();
+		composed_input_sizes.insert(composed_input_sizes.end(), next_application_input_sizes.cbegin(), next_application_input_sizes.cend());
+	}
+
+	// Find input sizes: applied_composed_input_sizes + unapplied_composed_input_sizes.
+	std::vector<uint32_t> preapplied_composed_input_sizes;
+	if (permuted_direct_inputs.size() <= 0) {
+		preapplied_composed_input_sizes.insert(preapplied_composed_input_sizes.end(), input_sizes.cbegin(), input_sizes.cend());
+	} else {
+		for (const MIPSIO &input : std::as_const(permuted_direct_inputs)) {
+			const std::vector<uint32_t> &next_input_sizes = input.get_composed_input_sizes();
+			preapplied_composed_input_sizes.insert(preapplied_composed_input_sizes.end(), next_input_sizes.cbegin(), next_input_sizes.cend());
+		}
+	}
+	// Apply application output sizes to the first composed inputs, adding remaining unapplied input sizes.
+	std::vector<uint32_t>::iterator next_unapplied_composed_input = preapplied_composed_input_sizes.begin();
+	for (const MIPSIO &application : std::as_const(applications)) {
+		const std::vector<uint32_t> &next_output_sizes = application.get_composed_input_sizes();
+		for (const uint32_t &next_output_size : std::as_const(next_output_sizes)) {
+			if (next_unapplied_composed_input != preapplied_composed_input_sizes.end()) {
+				const uint32_t &next_unapplied_composed_input_size = *next_unapplied_composed_input++;
+				if (next_output_size > next_unapplied_composed_input_size) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::MIPSIO::calculate_composed_sizes: error: found that the output of an application argument does not fit into the corresponding input when calculating composed sizes for a MIPSO: "
+						<< "next_output_size > next_unapplied_composed_input_size: "
+						<< next_output_size << " > " << next_unapplied_composed_input_size
+						;
+					throw SemanticsError(sstr.str());
+				}
+			} else {
+				// Overapplication: just copy the outputs.
+				composed_output_sizes.push_back(next_output_size);
+			}
+		}
+	}
+	composed_input_sizes.insert(composed_input_sizes.end(), std::vector<uint32_t>::const_iterator(next_unapplied_composed_input), preapplied_composed_input_sizes.cend());
 
 	// all_composed_storage_sizes
 	all_composed_storage_sizes.insert(all_composed_storage_sizes.end(), composed_input_sizes.cbegin(),   composed_input_sizes.cend());
@@ -5328,9 +5458,18 @@ const std::vector<uint32_t>               &Semantics::MIPSIO::get_all_composed_s
 
 const std::vector<uint32_t>               &Semantics::MIPSIO::get_input_output_sizes() const { return input_output_sizes; }
 
+const std::vector<std::vector<uint32_t>::size_type> &Semantics::MIPSIO::get_permutation() const { return permutation; }
+const std::vector<Semantics::MIPSIO>      &Semantics::MIPSIO::get_applications() const { return applications; }
+
 // | Emit instructions.
 std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::vector<Storage> &storage) const {
+	return emit(storage, {});
+}
+
+// TODO: remaining input applications to *all* inputs?
+std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::vector<Storage> &storage, const std::vector<MIPSIO> &remaining_applications) const {
 	// Check sizes.
+	// TODO: remaining_applications.
 	if (Storage::get_sizes(storage) != get_all_composed_storage_sizes()) {
 		std::ostringstream sstr;
 		sstr << "Semantics::MIPSIO::emit: error: found that the storage sizes do not match the needed storage sizes when emitting a MIPSO.";
@@ -5340,19 +5479,107 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::vector<S
 	// Prepare output vector.
 	std::vector<Output::Line> lines;
 
+	// If inputs is empty, the applications are inputs; otherwise, feed applications through as we recurse.
+	std::vector<MIPSIO> concatenation;
+	if (applications.size() > 0 && remaining_applications.size() > 0) {
+		concatenation.insert(concatenation.end(), applications.cbegin(),           applications.cend());
+		concatenation.insert(concatenation.end(), remaining_applications.cbegin(), remaining_applications.cend());
+	}
+	const std::vector<MIPSIO> &all_applications = applications.size() <= 0 ? remaining_applications : remaining_applications.size() <= 0 ? applications : concatenation;
+
+	const std::vector<MIPSIO> &direct_inputs              = inputs.size() > 0 ? inputs           : all_applications;
+	const std::vector<MIPSIO> &new_remaining_applications = inputs.size() > 0 ? all_applications : std::vector<MIPSIO> {};
+	//std::vector<MIPSIO>::const_iterator next_remaining_application = new_remaining_applications.cbegin();  // TODO: delete line
+
+	// Permute direct_inputs
+	std::vector<MIPSIO> permuted_direct_inputs;
+	if (permutation.size() <= 0) {
+		permuted_direct_inputs.insert(permuted_direct_inputs.end(), direct_inputs.cbegin(), direct_inputs.cend());
+	} else {
+		if (permutation.size() < inputs.size()) {
+			std::ostringstream sstr;
+			sstr << "Semantics::MIPSIO::emit: error: found that the permutation vector is smaller than the inputs vector when emitting a MIPSO: " << permutation.size() << " < " << inputs.size();
+			throw SemanticsError(sstr.str());
+		}
+
+		for (const std::vector<uint32_t>::size_type &target_index : std::as_const(permutation)) {
+			const std::vector<uint32_t>::size_type &source_index = &target_index - &permutation[0];
+
+			if (target_index >= inputs.size()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::MIPSIO::emit: error: found that input permutation "
+						<< "permutation[" << source_index << "]=" << target_index << " >= inputs.size()=" << inputs.size()
+						<< " when emitting a MIPSO: the permutation refers to an out-of-bounds or non-input index."
+						;
+					throw SemanticsError(sstr.str());
+			}
+
+			permuted_direct_inputs.push_back(direct_inputs[target_index]);
+		}
+	}
+
 	// Storage tracking indices.
 	// Storage: inputs, input outputs (part of working), handler working (part of working), outputs.
 	std::vector<Storage>::size_type       next_input_index      = 0;
 	std::vector<Storage>::size_type       next_input_output     = get_composed_input_sizes().size();
 	const std::vector<Storage>::size_type handler_working_index = next_input_output + get_input_output_sizes().size();
 	const std::vector<Storage>::size_type output_index          = handler_working_index + get_working_sizes().size();  // i.e. get_composed_working_sizes.size()
-	for (const MIPSIO &input : std::as_const(inputs)) {
+
+	std::vector<MIPSIO>::size_type  next_application_index        = 0;
+	std::vector<Storage>::size_type next_application_output_index = 0;
+
+	// Emit the inputs.
+	for (const MIPSIO &input : std::as_const(permuted_direct_inputs)) {
 		// Inputs output into our working storage.  The working storage units
 		// that occur afterward can be used as the handler's working storage.
 		std::vector<Storage> input_storage;
 
-		// Construct the input's inputs.
+		// Get the input's inputs.
 		std::vector<Storage>::size_type num_input_inputs = input.get_composed_input_sizes().size();
+
+		// Construct the input's applications.  Consume as many applications as needed and as are available.
+		std::vector<MIPSIO> input_applications;
+		while (input_storage.size() < num_input_inputs && next_application_index < new_remaining_applications.size()) {
+			const MIPSIO   &next_application             = new_remaining_applications[next_application_index];
+			if (next_application_output_index >= next_application.get_composed_output_sizes().size()) {
+				next_application_output_index = 0;
+				++next_application_index;
+				continue;
+			}
+			const uint32_t &next_application_output_size = next_application.get_composed_output_sizes()[next_application_output_size];
+
+			// Per-application operations.
+			if (next_application_output_index <= 0) {
+				// If this application itself requires input, use the beginning of storages for it.
+				if (next_application.get_composed_input_sizes().size() > 0) {
+					// TODO
+					std::ostringstream sstr;
+					sstr << "Semantics::MIPSIO::emit: error: underapplication is currently not supported!";
+					throw SemanticsError(sstr.str());
+				}
+			} else {
+				std::ostringstream sstr;
+				sstr << "Semantics::MIPSIO::emit: error: application with more than one output is currently not supported!";
+				throw SemanticsError(sstr.str());
+			}
+
+			// Check the application's output matches the input size.
+			if (next_application_output_size != input.get_composed_input_sizes()[input_storage.size()]) {
+				std::ostringstream sstr;
+				sstr << "Semantics::MIPSIO::emit: error: found a mismatch in size between an input and application output while emitting a MIPSIO.";
+				throw SemanticsError(sstr.str());
+			}
+
+			// Add the application.
+			// TODO: support case for multiple outputs.
+			input_applications.push_back(next_application);
+			// No need to add to input_storage here, since the applications will be propagated toward the leaves until they fill a hole.
+
+			++next_application_output_index;
+		}
+
+		// Construct the input's inputs.  (The application outputs aren't needed as inputs.  They will be propagated with recursive emit() calls.)
 		input_storage.insert(input_storage.begin(), storage.cbegin() + next_input_index, storage.cbegin() + next_input_index + num_input_inputs);
 		next_input_index += num_input_inputs;
 
@@ -5405,8 +5632,53 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::vector<S
 		next_input_output += num_input_outputs;
 
 		// Now emit the input's code.
-		std::vector<Output::Line> input_lines = input.emit(input_storage);
+		std::vector<Output::Line> input_lines = input.emit(input_storage, input_applications);
 		lines.insert(lines.end(), input_lines.cbegin(), input_lines.cend());
+	}
+
+	// Collect overflow applications.
+	std::vector<MIPSIO> overflow_applications;
+	while (next_application_index < new_remaining_applications.size()) {
+		const MIPSIO   &next_application             = new_remaining_applications[next_application_index];
+		if (next_application_output_index >= next_application.get_composed_output_sizes().size()) {
+			next_application_output_index = 0;
+			++next_application_index;
+			continue;
+		}
+		const uint32_t &next_application_output_size = next_application.get_composed_output_sizes()[next_application_output_size];
+
+		// Per-application operations.
+		if (next_application_output_index <= 0) {
+			// If this application itself requires input, use the beginning of storages for it.
+			if (next_application.get_composed_input_sizes().size() > 0) {
+				// TODO
+				std::ostringstream sstr;
+				sstr << "Semantics::MIPSIO::emit: error: underapplication is currently not supported!";
+				throw SemanticsError(sstr.str());
+			}
+		} else {
+			std::ostringstream sstr;
+			sstr << "Semantics::MIPSIO::emit: error: application with more than one output is currently not supported!";
+			throw SemanticsError(sstr.str());
+		}
+
+		// Check the application's output matches the output size.
+		// TODO
+		std::ostringstream sstr;
+		sstr << "Semantics::MIPSIO::emit: error: overflow application is currently unsupported!";
+		throw SemanticsError(sstr.str());
+		//if (next_application_output_size != input.get_composed_input_sizes()[input_storage.size()]) {
+		//	std::ostringstream sstr;
+		//	sstr << "Semantics::MIPSIO::emit: error: found a mismatch in size between an input and application output while emitting a MIPSIO.";
+		//	throw SemanticsError(sstr.str());
+		//}
+
+		// Add the application.
+		// TODO: support case for multiple outputs.
+		overflow_applications.push_back(next_application);
+		// No need to add to input_storage here, since the applications will be propagated toward the leaves until they fill a hole.
+
+		++next_application_output_index;
 	}
 
 	// Now construct the handler's storage and emit the handler's code.
@@ -5724,8 +5996,129 @@ const std::vector<uint32_t>               Semantics::MIPSIO::workings_4_4   {4, 
 const std::vector<uint32_t>               Semantics::MIPSIO::inputs_4_4     {4, 4};
 const std::vector<uint32_t>               Semantics::MIPSIO::outputs_4_4    {4, 4};
 
-Semantics::MIPSIO Semantics::analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
-	return analyze_expression(grammar.expression_storage.at(expression), constant_scope, type_scope, var_scope, combined_scope);
+// | Duplicate (copy) the output, allowing it to be re-used without
+// calculating it all over again.
+Semantics::MIPSIO Semantics::MIPSIO::dup(const MIPSIO &mips_io) {
+	std::ostringstream sstr;
+	sstr << "Semantics::MIPSIO::dup: error: dup currently unsupported!";
+	throw SemanticsError(sstr.str());
+
+	std::vector<uint32_t> output_sizes = std::as_const(mips_io.get_composed_output_sizes());
+	output_sizes.insert(output_sizes.end(), output_sizes.cbegin(), output_sizes.cend());
+	return MIPSIO(mips_io.inputs, mips_io.working_sizes, mips_io.instructions, mips_io.applications, mips_io.permutation, mips_io.input_sizes, output_sizes);
+}
+
+// | Supply the output of "arguments" as the input to mips_io's "inputs" vector.
+//
+// If the "inputs" vector is empty, then the arguments themselves become the inputs.
+//
+// "apply" supports partial application: if the arguments are fewer
+// than the composed inputs, the remaining composed inputs become the
+// new composed inputs.
+//
+// "apply" supports overapplication: if more input is provided than
+// received, the input is appended to the output.
+//
+// "apply" supports underapplication: if the arguments themselves
+// require input, they are appended to the resulting composed inputs
+// before the inputs provided to the composed MIPSIO "inputs" vector.
+Semantics::MIPSIO Semantics::MIPSIO::apply(const MIPSIO &mips_io, const std::vector<MIPSIO> &arguments) {
+	std::vector<MIPSIO> applications = std::as_const(mips_io.get_applications());
+	applications.insert(applications.end(), arguments.cbegin(), arguments.cend());
+	return MIPSIO(mips_io.inputs, mips_io.working_sizes, mips_io.instructions, applications, mips_io.permutation, mips_io.input_sizes, mips_io.output_sizes);
+}
+
+// | new_input[index] == old_input[permutation[index]]
+Semantics::MIPSIO Semantics::MIPSIO::flip(const Semantics::MIPSIO &mips_io, const std::vector<std::vector<uint32_t>::size_type> &permutation) {
+	// Make sure permutation.size() <= mips_io.inputs.size().
+	if (permutation.size() > mips_io.inputs.size()) {
+		if (permutation.size() < mips_io.inputs.size()) {
+			std::ostringstream sstr;
+			sstr << "Semantics::MIPSIO::flip: error: found that the permutation vector is larger than mips_io's inputs vector when calculating composed sizes for a MIPSO: " << permutation.size() << " > " << mips_io.inputs.size();
+			throw SemanticsError(sstr.str());
+		}
+	}
+
+	// Make sure permutation has no duplicate or out-of-bounds target indices.
+	std::set<std::vector<uint32_t>::size_type> seen_targets;
+	for (const std::vector<uint32_t>::size_type &target_index : std::as_const(permutation)) {
+		const std::vector<uint32_t>::size_type &source_index = &target_index - &permutation[0]; (void) source_index;
+
+		if (target_index > permutation.size()) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::MIPSIO::flip: error: found that the permutation vector contains a target index greater than the permutation vector size when calculating composed sizes for a MIPSO: "
+				<< target_index << " > " << permutation.size() << "."
+				;
+			throw SemanticsError(sstr.str());
+		}
+
+		if (seen_targets.find(target_index) != seen_targets.cend()) {
+			std::ostringstream sstr;
+			sstr << "Semantics::MIPSIO::flip: error: found that the permutation vector contains a duplicate target index when calculating composed sizes for a MIPSO: " << target_index;
+			throw SemanticsError(sstr.str());
+		} else {
+			seen_targets.insert(target_index);
+		}
+	}
+
+	// Expand permutation.size() as necessary with identity permutation indices.
+	std::vector<std::vector<uint32_t>::size_type> expanded_permutation = std::as_const(permutation);
+	while (expanded_permutation.size() < mips_io.inputs.size()) {
+		expanded_permutation.push_back(expanded_permutation.size());
+	}
+
+	// Compose the permutations.
+	std::vector<std::vector<uint32_t>::size_type> composed_permutation;
+	for (const std::vector<uint32_t>::size_type &target_index : std::as_const(expanded_permutation)) {
+		const std::vector<uint32_t>::size_type &source_index = &target_index - &expanded_permutation[0]; (void) source_index;
+
+		// Apply the new permutation *first* to get the index in terms of mips_io, and then apply mips_io.permutation.
+		//
+		// target_index == expanded_permutation[source_index]
+		// composed_index[source_index] == mips_io.permutation[expanded_permutation[source_index]]
+		//
+		// e.g.
+		//
+		// a,b,c,d
+		// d,b,c,a  mips_io.permutation  == {3,1,2,0}  (swap first and last)
+		// b,d,c,a  expanded_permutation == {1,0,2,3}  (swap first and second)
+		//
+		// Backwards:
+		//    composed_permutation[source_index==3]
+		// == expanded_permutation[mips_io.permutation[source_index==3]]
+		// == expanded_permutation[0]
+		// == 1
+		//
+		// Correct:
+		//    composed_permutation[source_index==3]
+		// == mips_io.permutation[target_index==3]
+		// == mips_io.permutation[expanded_permutation[source_index==3]==3]
+		// == mips_io.permutation[expanded_permutation[3]==3]
+		// == mips_io.permutation[3]
+		// == 0
+		//
+		//    new_input[index] == old_input[permutation[index]]
+		// => composed_permutation[source_index] == mips_io.permutation[permutation[index]]
+		composed_permutation.push_back(mips_io.permutation[expanded_permutation[source_index]]);
+	}
+
+	// Construct a modified MIPSIO using the new permutation.
+	return MIPSIO(mips_io.inputs, mips_io.working_sizes, mips_io.instructions, mips_io.applications, composed_permutation, mips_io.input_sizes, mips_io.output_sizes);
+}
+
+// | Keep the instructions but discard the output.
+Semantics::MIPSIO Semantics::MIPSIO::discard(const MIPSIO &mips_io) {
+	// Compose the mips_io with a null MIPSIO except for having unused input sizes.
+	std::ostringstream sstr;
+	sstr << "Semantics::MIPSIO::discard: error: discard currently unsupported!";
+	throw SemanticsError(sstr.str());
+
+	MIPSIO discarder;
+	discarder.inputs = {mips_io};
+	discarder.input_sizes = std::as_const(mips_io.get_composed_output_sizes());
+	discarder.calculate_composed_sizes();
+	return discarder;
 }
 
 Semantics::MIPSIO Semantics::analyze_expression(const Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
@@ -6748,6 +7141,7 @@ UnitTests::UnitTests()
 
 void UnitTests::run() {
 	test_mips_io();
+	test_mips_io2();
 }
 
 void UnitTests::test_mips_io() {
@@ -6779,4 +7173,8 @@ void UnitTests::test_mips_io() {
 	expected.push_back("\tla   $t3, 16($t2)");
 
 	assert(lines == expected);
+}
+
+void UnitTests::test_mips_io2() {
+	// TODO
 }
