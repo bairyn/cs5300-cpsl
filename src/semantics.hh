@@ -809,27 +809,21 @@ public:
 	// | A MIPS IO monad on output.
 	//
 	// Tracks registers, space, or working memory used and those needed.
-	// TODO: consider adding more move semantics.
 	class MIPSIO {
 	public:
 		static const bool calculate_composed_instructions;
 
 		MIPSIO();
-		// | If inputs is non-empty, bind/compose inputs with instructions.
-		//
-		// Full bind/compose: all sizes must be fully specified and must match.
-		//
-		// (Currently, permuted output is unsupported.)
-		MIPSIO(const std::vector<MIPSIO> &inputs, const std::vector<Instruction> &instructions, const std::vector<MIPSIO> &applications = {}, const std::vector<std::vector<uint32_t>::size_type> &permutation = {});
-		MIPSIO(std::vector<MIPSIO> &&inputs, std::vector<Instruction> &&instructions, std::vector<MIPSIO> &&applications = {}, std::vector<std::vector<uint32_t>::size_type> &&permutation = {});
+		MIPSIO(const std::vector<MIPSIO> &inputs, const std::vector<Instruction> &instructions);
+		MIPSIO(std::vector<MIPSIO> &&inputs, std::vector<Instruction> &&instructions);
 		// | Override the size vectors rather than calculating them from the instructions.
-		MIPSIO(const std::vector<MIPSIO> &inputs, const std::vector<uint32_t> &working_sizes, const std::vector<Instruction> &instructions, const std::vector<MIPSIO> &applications, const std::vector<std::vector<uint32_t>::size_type> &permutation, const std::vector<uint32_t> &input_sizes, const std::vector<uint32_t> &output_sizes);
-		MIPSIO(std::vector<MIPSIO> &&inputs, std::vector<uint32_t> &&working_sizes, std::vector<Instruction> &&instructions, std::vector<MIPSIO> &&applications, std::vector<std::vector<uint32_t>::size_type> &&permutation, std::vector<uint32_t> &&input_sizes, std::vector<uint32_t> &&output_sizes);
+		MIPSIO(const std::vector<MIPSIO> &inputs, const std::vector<uint32_t> &working_sizes, const std::vector<Instruction> &instructions, const std::vector<uint32_t> &input_sizes, const std::vector<uint32_t> &output_sizes);
+		MIPSIO(std::vector<MIPSIO> &&inputs, std::vector<uint32_t> &&working_sizes, std::vector<Instruction> &&instructions, std::vector<uint32_t> &&input_sizes, std::vector<uint32_t> &&output_sizes);
 
 		// | Get the inputs.
 		const std::vector<MIPSIO>      &get_inputs() const;
 
-		// | Get the handler's instructions and sizes, before permutation and application.
+		// | Get the handler's instructions and sizes.
 		const std::vector<uint32_t>    &get_working_sizes()     const;
 		const std::vector<Instruction> &get_instructions()      const;
 		const std::vector<uint32_t>    &get_input_sizes()       const;
@@ -840,22 +834,14 @@ public:
 		const std::vector<uint32_t>    &get_composed_working_sizes()     const;
 		const std::vector<Instruction> &get_composed_instructions()      const;
 		const std::vector<uint32_t>    &get_composed_input_sizes()       const;
-		const std::vector<uint32_t>    &get_composed_output_sizes()      const;  // (get_output_sizes() with permutation and application.)
+		const std::vector<uint32_t>    &get_composed_output_sizes()      const;  // (same as get_output_sizes().)
 		const std::vector<uint32_t>    &get_all_composed_storage_sizes() const;
 
 		// | Get the output sizes of all inputs.
 		const std::vector<uint32_t>    &get_input_output_sizes() const;
 
-		// | Get the permutation vector.
-		const std::vector<std::vector<uint32_t>::size_type> &get_permutation() const;
-		// | Get the applications vector.
-		const std::vector<MIPSIO>      &get_applications() const;
-
 		// | Emit instructions.
 		std::vector<Output::Line> emit(const std::vector<Storage> &storage) const;
-	protected:
-		std::vector<Output::Line> emit(const std::vector<Storage> &storage, const std::vector<MIPSIO> &remaining_applications) const;
-	public:
 
 		// | For convenience, common size sequences are provided.
 
@@ -912,85 +898,11 @@ public:
 		static const std::vector<uint32_t>    inputs_4_4;
 		static const std::vector<uint32_t>    outputs_4_4;
 
-		// | Additional MIPSIO constructors and compositors.
-		//
-		// Dup (fanout), flip (permute inputs), partial/over-/under-
-		// application, and discard provide a foundation for reusing output and
-		// threading values through, perhaps similar to Arrows.
-		//
-		// Dup duplicates all the outputs so that they are re-used and so that
-		// instructions aren't duplicated.
-		//
-		// Flip changes the order of the inputs or outputs.
-		//
-		// In overapplication, more inputs are provided than consumed, and they
-		// are appended to the output.
-		//
-		// In partial application, some of the inputs are provided, and the rest become new inputs.
-		//
-		// Discard takes a MIPSIO and keeps the instructions but drops the output, ignoring whatever was stored.
-		//
-		// Example:
-		// 	a;
-		// 	b(a);
-		// 	b1, b2 = dup(b);
-		// 	c;
-		// 	d(c, b1);
-		// 	e(b2, d);
-		// 	f(d, e);
-		//
-		// Can become (pseudocode):
-		//
-		// 	a   = MIPSIO(...);        {}   -> a
-		// 	b   = MIPSIO({a}, ...);   {}   -> b     (or apply, for full-application.)
-		// 	b2 = dup(b);              {}   -> b, b
-		// 	c   = MIPSIO(...);        {}   -> c
-		// 	d1  = MIPSIO(...);        c, b -> d
-		// 	d2  = dup(d1);            c, b -> d, d
-		// 	d3  = apply(d2, c, b2);   {}   -> d, d, b  (overapplication, similar to Control.Arrow.first)
-		// 	d4  = flip(d3);           {}   -> d, b, d
-		// 	e1  = MIPSIO(...);        b, d -> e
-		// 	e2  = flip(e1);           d, b -> e
-		// 	e3  = apply(e2, d4);      {}   -> e, d
-		// 	e4  = flip(e3);           {}   -> d, e
-		// 	f   = MIPSIO({e4}, ...);  {}   -> f
-		//
-		// Keep careful track of the inputs and outputs.  Make sure MIPSIO's aren't repeated unnecessarily.
-
-		// | Duplicate (copy) the output, allowing it to be re-used without
-		// calculating it all over again.
-		static MIPSIO dup(const MIPSIO &mips_io);
-
-		// | Supply the output of "arguments" as the input to mips_io's "inputs" vector.
-		//
-		// If the "inputs" vector is empty, then the arguments themselves become the inputs.
-		//
-		// "apply" supports partial application: if the arguments are fewer
-		// than the composed inputs, the remaining composed inputs become the
-		// new composed inputs.
-		//
-		// "apply" supports overapplication: if more input is provided than
-		// received, the input is appended to the output.
-		//
-		// TODO: underapplication is unimplemented.
-		// "apply" supports underapplication: if the arguments themselves
-		// require input, they are appended to the resulting composed inputs
-		// before the inputs provided to the composed MIPSIO "inputs" vector.
-		//
-		// TODO: a single application with multiple outputs is unimplemented.
-		static MIPSIO apply(const MIPSIO &mips_io, const std::vector<MIPSIO> &arguments);
-
-		// | new_input[index] == old_input[index]
-		static MIPSIO flip(const MIPSIO &mips_io, const std::vector<std::vector<uint32_t>::size_type> &permutation = {1, 0});
-
-		// | Keep the instructions but discard the output.
-		static MIPSIO discard(const MIPSIO &mips_io);
-
 	protected:
 		// | inputs: enables binding and composing.
 		std::vector<MIPSIO>      inputs;
 
-		// Handler sizes.  These reflect the sizes after permutations (flips) and applications are applied.
+		// Handler sizes.
 
 		// | When joining, working units (e.g. registers) can be freely reused.  A MIPSIO's working units must be isolated from other MIPSIOs.
 		// When input is combined with output, the connected units become working units.
@@ -1010,7 +922,7 @@ public:
 		std::vector<uint32_t>    composed_working_sizes;
 		std::vector<Instruction> composed_instructions;
 		std::vector<uint32_t>    composed_input_sizes;
-		// | (output_sizes with permutation and application.)
+		// | (Same as output_sizes.)
 		std::vector<uint32_t>    composed_output_sizes;
 		// | composed_input, composed_working (input_output, (handler) working), composed_output
 		std::vector<uint32_t>    all_composed_storage_sizes;
@@ -1021,19 +933,6 @@ public:
 		void calculate_handler_sizes();
 		// | Calculate the other size vectors.
 		void calculate_composed_sizes();
-
-		// | Transformations.
-		//
-		// The "inputs" vector should represent the pre-permuted values.
-		// Applications apply after the inputs are permuted.
-		//
-		// This is an alternative to unpacking the entire B-tree like structure
-		// to obtain the leaves corresponding to the initial inputless MIPSIOs,
-		// applying the permutations and applications there, and constructing
-		// everything back up again.
-		std::vector<std::vector<uint32_t>::size_type> permutation;
-		// | Applications for each permuted input.
-		std::vector<MIPSIO>                           applications;
 	};
 
 	// The non-const part is the ability to store strings.
@@ -1162,7 +1061,6 @@ public:
 	void run();
 
 	void test_mips_io();
-	void test_mips_io2();
 };
 
 // Commented out: these declarations are redundant and would cause some calls to be ambiguous.
