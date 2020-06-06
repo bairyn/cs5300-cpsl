@@ -11,6 +11,7 @@
 #include <variant>    // std::monostate, std::variant
 
 #include "grammar.hh"
+#include "graph.hh"
 
 extern "C" {
 #include "util.h"     // A_BILLION
@@ -36,7 +37,6 @@ public:
 
 #define CPSL_CC_SEMANTICS_COMBINE_IDENTIFIER_NAMESPACES true
 #define CPSL_CC_SEMANTICS_MAX_UNIQUE_TRY_ITERATIONS     A_BILLION  // fun
-#define CPSL_CC_MIPSIO_CALCULATE_COMPOSED_INSTRUCTIONS  false  // Unneeded.
 #define CPSL_CC_SEMANTICS_MAX_STRING_REQUESTED_LABEL_SUFFIX_LENGTH 32
 
 class Semantics {
@@ -806,133 +806,80 @@ public:
 		std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
 	};
 
-	// | A MIPS IO monad on output.
-	//
-	// Tracks registers, space, or working memory used and those needed.
+	// TODO: fix required_working_sizes: it's connections *plus* max, not max of connections and max.  But for overlay it's fine as is.
 	class MIPSIO {
 	public:
-		static const bool calculate_composed_instructions;
+		class Node;
+		class Connection;
+		class Parallel;
+		using Graph = FullGraph<Node, Connection, Parallel>;
+
+		// | Connecting Nodes with Empty should have equivalent behavior as the Nodes without Empty.
+		class Node {
+		public:
+			Node(Instruction       &&instruction);
+			Node(const Instruction  &instruction);
+			Instruction instruction;
+		};
+
+		// | Connect every output of "left" with every input of "right".
+		class Connection {
+		public:
+			Connection(const Graph &left, const Graph &right);
+
+			// | Has there been at least one non-empty connection somewhere?
+			bool empty;
+
+			std::vector<uint32_t> input_sizes;
+			// | For each size, max count of this set of input/output connection, left's, and right's.
+			std::map<uint32_t, std::vector<uint32_t>::size_type> required_working_sizes;
+			std::vector<uint32_t> output_sizes;
+		};
+
+		// | Collect two independent instruction sequences in parallel.
+		class Parallel {
+		public:
+			Parallel(const Graph &left, const Graph &right);
+
+			// | Has there been at least one non-empty branch somewhere?
+			bool empty;
+
+			// | The input sizes of all branches / pipelines, which must be equal.
+			std::vector<uint32_t> input_sizes;
+			// | For each size in any branch, the maximum count in a branch.
+			std::map<uint32_t, std::vector<uint32_t>::size_type> required_working_sizes;
+			std::vector<uint32_t> output_sizes;
+		};
+
+		static std::map<uint32_t, std::vector<uint32_t>::size_type> count_working_sizes(const std::vector<uint32_t> &expanded_working_sizes);
+		// | The order might be different, but get a vector of working sizes from largest to smallest.
+		static std::vector<uint32_t> expand_working_sizes(const std::map<uint32_t, std::vector<uint32_t>::size_type> &counted_working_sizes);
+		// | Set each size to the maximum count/value in which it occurs.
+		static std::map<uint32_t, std::vector<uint32_t>::size_type> merge_counted_working_sizes(const std::map<uint32_t, std::vector<uint32_t>::size_type> &a, const std::map<uint32_t, std::vector<uint32_t>::size_type> &b);
+		// | merge_counted_working_sizes for any number of counted working sizes vectors.
+		static std::map<uint32_t, std::vector<uint32_t>::size_type> merge_counted_working_sizes(const std::vector<std::map<uint32_t, std::vector<uint32_t>::size_type>> &counted_working_sizes_vector);
 
 		MIPSIO();
-		MIPSIO(const std::vector<MIPSIO> &inputs, const std::vector<Instruction> &instructions);
-		MIPSIO(std::vector<MIPSIO> &&inputs, std::vector<Instruction> &&instructions);
-		// | Override the size vectors rather than calculating them from the instructions.
-		MIPSIO(const std::vector<MIPSIO> &inputs, const std::vector<uint32_t> &working_sizes, const std::vector<Instruction> &instructions, const std::vector<uint32_t> &input_sizes, const std::vector<uint32_t> &output_sizes);
-		MIPSIO(std::vector<MIPSIO> &&inputs, std::vector<uint32_t> &&working_sizes, std::vector<Instruction> &&instructions, std::vector<uint32_t> &&input_sizes, std::vector<uint32_t> &&output_sizes);
+		MIPSIO(Graph       &&nodes);
+		MIPSIO(const Graph  &nodes);
+		Graph nodes;
 
-		// | Get the inputs.
-		const std::vector<MIPSIO>      &get_inputs() const;
+		// | Propagate the storages (e.g. registers) through to the
+		// instructions in the instruction graph, and emit instructions using
+		// those registers.
+		//
+		// After the graph is constructed, the calculated needed input,
+		// working, and storage units can be used to generate a collection of
+		// registers (and, if needed, stack or other space) to pass as
+		// "storages".
+		//
+		// The graph is used calculate requirements for and connect used
+		// registers and other storage units.
+		std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
 
-		// | Get the handler's instructions and sizes.
-		const std::vector<uint32_t>    &get_working_sizes()     const;
-		const std::vector<Instruction> &get_instructions()      const;
-		const std::vector<uint32_t>    &get_input_sizes()       const;
-		const std::vector<uint32_t>    &get_output_sizes()      const;
-		const std::vector<uint32_t>    &get_all_storage_sizes() const;
-
-		// | Get the composed instructions and sizes.
-		const std::vector<uint32_t>    &get_composed_working_sizes()     const;
-		const std::vector<Instruction> &get_composed_instructions()      const;
-		const std::vector<uint32_t>    &get_composed_input_sizes()       const;
-		const std::vector<uint32_t>    &get_composed_output_sizes()      const;  // (same as get_output_sizes().)
-		const std::vector<uint32_t>    &get_all_composed_storage_sizes() const;
-
-		// | Get the output sizes of all inputs.
-		const std::vector<uint32_t>    &get_input_output_sizes() const;
-
-		// | Emit instructions.
-		std::vector<Output::Line> emit(const std::vector<Storage> &storage) const;
-
-		// | For convenience, common size sequences are provided.
-
-		// Sizes of 0.
-		static const std::vector<uint32_t>    workings_0;
-		static const std::vector<Instruction> instructions_0;
-		static const std::vector<uint32_t>    inputs_0;
-		static const std::vector<uint32_t>    outputs_0;
-
-		// Sizes of 1.
-		static const std::vector<uint32_t>    workings_1;
-		static const std::vector<uint32_t>    inputs_1;
-		static const std::vector<uint32_t>    outputs_1;
-
-		// Sizes of 4.
-		static const std::vector<uint32_t>    workings_4;
-		static const std::vector<uint32_t>    inputs_4;
-		static const std::vector<uint32_t>    outputs_4;
-
-		// 2 sizes.
-		static const std::vector<uint32_t>    workings_0_0;
-		static const std::vector<uint32_t>    inputs_0_0;
-		static const std::vector<uint32_t>    outputs_0_0;
-
-		static const std::vector<uint32_t>    workings_0_1;
-		static const std::vector<uint32_t>    inputs_0_1;
-		static const std::vector<uint32_t>    outputs_0_1;
-
-		static const std::vector<uint32_t>    workings_0_4;
-		static const std::vector<uint32_t>    inputs_0_4;
-		static const std::vector<uint32_t>    outputs_0_4;
-
-		static const std::vector<uint32_t>    workings_1_0;
-		static const std::vector<uint32_t>    inputs_1_0;
-		static const std::vector<uint32_t>    outputs_1_0;
-
-		static const std::vector<uint32_t>    workings_1_1;
-		static const std::vector<uint32_t>    inputs_1_1;
-		static const std::vector<uint32_t>    outputs_1_1;
-
-		static const std::vector<uint32_t>    workings_1_4;
-		static const std::vector<uint32_t>    inputs_1_4;
-		static const std::vector<uint32_t>    outputs_1_4;
-
-		static const std::vector<uint32_t>    workings_4_0;
-		static const std::vector<uint32_t>    inputs_4_0;
-		static const std::vector<uint32_t>    outputs_4_0;
-
-		static const std::vector<uint32_t>    workings_4_1;
-		static const std::vector<uint32_t>    inputs_4_1;
-		static const std::vector<uint32_t>    outputs_4_1;
-
-		static const std::vector<uint32_t>    workings_4_4;
-		static const std::vector<uint32_t>    inputs_4_4;
-		static const std::vector<uint32_t>    outputs_4_4;
-
-	protected:
-		// | inputs: enables binding and composing.
-		std::vector<MIPSIO>      inputs;
-
-		// Handler sizes.
-
-		// | When joining, working units (e.g. registers) can be freely reused.  A MIPSIO's working units must be isolated from other MIPSIOs.
-		// When input is combined with output, the connected units become working units.
-		std::vector<uint32_t>    working_sizes;
-		// | Instructions.
-		std::vector<Instruction> instructions;
-		// | The elements represent the sizes of the inputs.
-		std::vector<uint32_t>    input_sizes;
-		// | The size of the output.
-		std::vector<uint32_t>    output_sizes;
-		// | input, working, output.
-		std::vector<uint32_t>    all_storage_sizes;
-
-		// Composed sizes.
-
-		// | input_output, (handler) working
-		std::vector<uint32_t>    composed_working_sizes;
-		std::vector<Instruction> composed_instructions;
-		std::vector<uint32_t>    composed_input_sizes;
-		// | (Same as output_sizes.)
-		std::vector<uint32_t>    composed_output_sizes;
-		// | composed_input, composed_working (input_output, (handler) working), composed_output
-		std::vector<uint32_t>    all_composed_storage_sizes;
-
-		std::vector<uint32_t>    input_output_sizes;
-
-		// | Calculate working_sizes, input_sizes, and output_sizes.
-		void calculate_handler_sizes();
-		// | Calculate the other size vectors.
-		void calculate_composed_sizes();
+		// | Convenience constructors.
+		static MIPSIO copy(const MIPSIO &mips_io);
+		// TODO: connect, parallelize (same input and output sizes), etc.
 	};
 
 	// The non-const part is the ability to store strings.
