@@ -4957,9 +4957,358 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::emit(const std::vec
 	}
 }
 
-std::map<uint32_t, std::vector<uint32_t>::size_type> Semantics::MIPSIO::prepare(const std::set<IO> &capture_outputs) const {
-	// TODO
-	return std::map<uint32_t, std::vector<uint32_t>::size_type>();
+std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_outputs_) const {
+	// Emulate emit(), except don't emit, and add working storage unit requirements when more are needed.
+	std::vector<Storage> working_storages;
+
+	std::map<IO, Storage> capture_outputs;
+	for (const IO &capture_output : std::as_const(capture_outputs_)) {
+		capture_outputs.insert({capture_output, Storage()});
+	}
+
+	// Emulate emit().
+	std::map<Index, std::map<IOIndex, Storage>> expanded_capture_outputs = expand_map<Index, IOIndex, Storage>(capture_outputs);
+
+	std::vector<uint32_t> working_storage_sizes = Storage::get_sizes(working_storages);
+	std::map<IO, Storage::Index> reverse_claimed_working_storages;  // For a node's output, which working storage units is it using?
+	std::map<Storage::Index, IO> claimed_working_storages;          // Which output IO claims a working storage?
+
+	//std::vector<Output::Line> output_lines;
+
+	// DFS from each output vertex.  Don't revisit instructions.  Write outputs
+	// to available working storage units.  After all of a given node's output
+	// index's connected input nodes are emitted, mark the working storage unit
+	// that that node's output index was stored to as available.
+	//
+	// Don't revisit instructions.  Once the last
+	// working storage units that are used as inputs are popped, mark them as
+	// re-usable.
+	std::set<Index>    visited_instructions;
+	std::vector<Index> root_stack;
+	std::vector<Index> children_stack;
+	std::set<Index>    ancestors;  // Detect cycles: DFS can detect already visited notes (e.g. diamond) but not ancestors.
+	for (const std::map<Index, std::map<IOIndex, Storage>>::value_type &output_pair : std::as_const(expanded_capture_outputs)) {
+		root_stack.push_back(output_pair.first);
+	}
+	while (children_stack.size() > 0 || root_stack.size() > 0) {
+		if (children_stack.size() <= 0 && root_stack.size() > 0) {
+			children_stack.push_back(root_stack.back());
+			root_stack.pop_back();
+		}
+
+		const Index        this_node   = children_stack.back();
+		const Instruction &instruction = instructions.at(this_node);
+
+		// If we've already processed (emitted) this node, skip.
+		if (visited_instructions.find(this_node) != visited_instructions.cend()) {
+			children_stack.pop_back();
+		}
+
+		// If this node has unvisited children, push them onto the stack, and
+		// continue to process them before revisiting this node, processing it,
+		// and marking it as visited.
+		bool has_unvisited_children = false;
+
+		for (IOIndex input_index_ = 0; input_index_ < instruction.get_input_sizes().size(); ++input_index_) {
+			const IOIndex input_index = instruction.get_input_sizes().size() - 1 - input_index_;
+			std::map<IO, IO>::const_iterator connections_search = connections.find({this_node, input_index});
+			if (connections_search != connections.cend()) {
+				const Index child_node = connections_search->second.first;
+
+				// Detect cycles.
+				if (ancestors.find(child_node) != ancestors.cend()) {
+					std::ostringstream sstr;
+					sstr << "Semantics::MIPSIO::prepare: error: a cycle was detected in the instruction graph at index " << child_node << " (child of " << this_node << ").";
+					throw SemanticsError(sstr.str());
+				}
+
+				// Add the child.
+				if (visited_instructions.find(child_node) == visited_instructions.cend()) {
+					has_unvisited_children = true;
+					children_stack.push_back(child_node);
+				}
+			}
+		}
+
+		if (has_unvisited_children) {
+			ancestors.insert(this_node);
+			continue;
+		}
+
+		// We've finished emitting all of the children's nodes.  Mark this one as visited and process (emit) it.
+		visited_instructions.insert(this_node);
+		ancestors.erase(this_node);
+		children_stack.pop_back();  // Save an extra iteration.
+
+		// Emit this node.
+
+		// Construct the instruction's input storage.
+		//std::vector<Storage> input_storage;
+		for (IOIndex input_index = 0; input_index < instruction.get_input_sizes().size(); ++input_index) {
+			IO input_io {this_node, input_index};
+
+			// User-supplied input or connection input from another instruction?
+			//const std::map<IO, Storage>::const_iterator input_storages_search = input_storages.find(input_io);
+			const std::map<IO, IO>::const_iterator      connections_search    = connections.find(input_io);
+			//const bool input_storages_found = input_storages_search != input_storages.cend();
+			const bool connections_found    = connections_search    != connections.cend();
+			const bool input_storages_found = !connections_found;
+			/*
+			if        ( input_storages_found &&  connections_found) {
+				// Conflict.
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::MIPSIO::prepare: error: input/connection conflict in instruction graph: connection input was created for a node but the \"input_storages\" argument also contains a reference to the same input." << std::endl
+					<< "\tthis_node (index) : " << this_node << std::endl
+					<< "\tinput_index       : " << input_index
+					;
+				throw SemanticsError(sstr.str());
+			} else if (!input_storages_found && !connections_found) {
+				// No connection, and no input provided!  (Assuming implementation didn't erroneously free the working storage prematurely.)
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::MIPSIO::prepare: error: input missing without connection in instruction graph: the \"input_storages\" argument contains no reference to an instruction, and no output is provided to by another node through a constructed storage." << std::endl
+					<< "\tthis_node (index) : " << this_node << std::endl
+					<< "\tinput_index       : " << input_index
+					;
+				throw SemanticsError(sstr.str());
+			}
+			*/
+
+			if (input_storages_found) {
+				/*
+				input_storage.push_back(input_storages_search->second);
+				if (instruction.get_input_sizes().at(input_index) != input_storages_search->second.max_size) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::MIPSIO::prepare: error: user-provided input size mismatch in instruction graph: the \"input_storages\" argument contains a reference to an instruction's input, but the size is incorrect." << std::endl
+						<< "\tthis_node (index)           : " << this_node << std::endl
+						<< "\tinput_index                 : " << input_index << std::endl
+						<< "\tprovided input storage size : " << instruction.get_input_sizes().at(input_index) << std::endl
+						<< "\tinput storage expected      : " << input_storages_search->second.max_size
+						;
+					throw SemanticsError(sstr.str());
+				}
+				*/
+			} else {
+				const IO output_io = connections_search->second;
+
+				const std::map<IO, Storage::Index>::const_iterator reverse_claimed_working_storages_search = reverse_claimed_working_storages.find(output_io);
+				const bool reverse_claimed_working_storages_found = reverse_claimed_working_storages_search != reverse_claimed_working_storages.cend();
+
+				if (!reverse_claimed_working_storages_found) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::MIPSIO::prepare: internal error: there is a bug because an connected input node should already have been emitted by now but its output storage is not claimed." << std::endl
+						<< "\tthis_node (index)        : " << this_node << std::endl
+						<< "\toutput node              : " << output_io.first << std::endl
+						<< "\toutput node output index : " << output_io.second << std::endl
+						<< "\tinput_index              : " << input_index << std::endl
+						<< "\tinput storage size       : " << instruction.get_input_sizes().at(input_index)
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				const Storage &working_storage = working_storages[reverse_claimed_working_storages_search->second];
+				//input_storage.push_back(working_storage);
+				if (working_storage.max_size != instruction.get_input_sizes().at(input_index)) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::MIPSIO::prepare: error: connection input size mismatch in instruction graph: in the instruction graph, there is a connection between an output and an input of different sizes." << std::endl
+						<< "\tthis_node (index)        : " << this_node << std::endl
+						<< "\toutput node              : " << output_io.first << std::endl
+						<< "\toutput node output index : " << output_io.second << std::endl
+						<< "\tinput_index              : " << input_index << std::endl
+						<< "\toutput storage size      : " << reverse_claimed_working_storages_search->second << std::endl
+						<< "\tinput storage size       : " << instruction.get_input_sizes().at(input_index)
+						;
+					throw SemanticsError(sstr.str());
+				}
+			}
+		}
+
+		// Construct the instruction's output storage.
+		//std::vector<Storage> output_storage;
+		for (IOIndex output_index = 0; output_index < instruction.get_output_sizes().size(); ++output_index) {
+			IO output_io {this_node, output_index};
+
+			// Is there a user-supplied output storage unit, or do we need to claim required working storage?
+			const std::map<IO, Storage>::const_iterator      capture_outputs_search      = capture_outputs.find(output_io);
+			const std::map<IO, std::set<IO>>::const_iterator reversed_connections_search = reversed_connections.find(output_io);  // (To check for conflicts.)
+			const bool capture_outputs_found    = capture_outputs_search      != capture_outputs.cend();
+			const bool reversed_connections_any = reversed_connections_search != reversed_connections.cend() && reversed_connections_search->second.size() > 0;
+			if        ( capture_outputs_found &&  reversed_connections_any) {
+				// Conflict.
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::MIPSIO::prepare: error: output/connection conflict in instruction graph: connection output was created for a node but the \"capture_outputs\" argument also contains a reference to the same output." << std::endl
+					<< "\tthis_node (index) : " << this_node << std::endl
+					<< "\toutput_index      : " << output_index
+					;
+				throw SemanticsError(sstr.str());
+			} else if (!capture_outputs_found && !reversed_connections_any) {
+				// Nothing consumes this output.  This should probably be a warning, but just throw an error for now (TODO: warn, not fail).
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::MIPSIO::prepare: warning: output capture missing without connection in instruction graph: the \"capture_outputs\" argument contains no reference to an instruction's output, and the output is is not provided to other node." << std::endl
+					<< "\tthis_node (index) : " << this_node << std::endl
+					<< "\toutput_index      : " << output_index
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			if (capture_outputs_found) {
+				const Storage &working_storage = capture_outputs_search->second;
+				//output_storage.push_back(working_storage);
+				/*
+				if (working_storage.max_size != instruction.get_output_sizes().at(output_index)) {
+					// Output size mismatch.
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::MIPSIO::prepare: error: user-provided output capture size mismatch in instruction graph: the \"capture_outputs\" argument contains a reference to an instruction's output, but the size is incorrect." << std::endl
+						<< "\tthis_node (index)                    : " << this_node << std::endl
+						<< "\toutput_index                         : " << output_index << std::endl
+						<< "\tprovided output capture storage size : " << working_storage.max_size << std::endl
+						<< "\toutput storage expected              : " << instruction.get_output_sizes().at(output_index)
+						;
+					throw SemanticsError(sstr.str());
+				}
+				*/
+			} else {
+				// Claim the next available working storage.
+				bool found = false;
+				for (Storage::Index working_storage_index = 0; working_storage_index < working_storages.size(); ++working_storage_index) {
+					if (claimed_working_storages.find(working_storage_index) == claimed_working_storages.cend()) {
+						const Storage &working_storage = working_storages[working_storage_index];
+						if (instruction.get_output_sizes().at(output_index) == working_storage.max_size) {
+							// Claim the working storage.
+							reverse_claimed_working_storages.insert({output_io, working_storage_index});
+							claimed_working_storages.insert({working_storage_index, output_io});
+
+							// Add the working storage.
+							//output_storage.push_back(working_storage);
+							found = true;
+
+							break;
+						}
+					}
+				}
+				if (!found) {
+					// Not enough available working storage units!
+
+					// Add and claim a new working storage.
+					reverse_claimed_working_storages.insert({output_io, working_storages.size()});
+					claimed_working_storages.insert({working_storages.size(), output_io});
+					working_storages.push_back(Storage(instruction.get_output_sizes().at(output_index), false, Symbol(), "", false, 0));
+				}
+			}
+		}
+
+		// Construct the instruction's working storage.
+		//std::vector<Storage> instruction_working_storage;
+		// These will be freed right after we emit the instruction, so just
+		// create a temporary claim collection.
+		std::set<Storage::Index> instruction_claimed_working_storages;
+		for (IOIndex working_index = 0; working_index < instruction.get_working_sizes().size(); ++working_index) {
+			// Temporarily claim the next available working storage.
+			bool found = false;
+			for (Storage::Index working_storage_index = 0; working_storage_index < working_storages.size(); ++working_storage_index) {
+				if (claimed_working_storages.find(working_storage_index) == claimed_working_storages.cend() && instruction_claimed_working_storages.find(working_storage_index) == instruction_claimed_working_storages.cend()) {
+					const Storage &working_storage = working_storages[working_storage_index];
+					if (instruction.get_working_sizes().at(working_index) == working_storage.max_size) {
+						// Claim the working storage.
+						instruction_claimed_working_storages.insert(working_storage_index);
+
+						// Add the working storage.
+						//instruction_working_storage.push_back(working_storage);
+						found = true;
+
+						break;
+					}
+				}
+			}
+			if (!found) {
+				// Not enough available working storage units!
+
+				// Add and claim a new working storage.
+				instruction_claimed_working_storages.insert(working_storages.size());
+				working_storages.push_back(Storage(instruction.get_working_sizes().at(working_index), false, Symbol(), "", false, 0));
+			}
+		}
+
+		// Concatenate the instruction's storage.
+		//std::vector<Storage> instruction_storage(std::move(input_storage));
+		//instruction_storage.insert(instruction_storage.end(), instruction_working_storage.cbegin(), instruction_working_storage.cend());
+		//instruction_storage.insert(instruction_storage.end(), output_storage.cbegin(), output_storage.cend());
+
+		// Emit the instruction.
+		//std::vector<Output::Line> instruction_output;
+		//instruction_output = instruction.emit(instruction_storage);
+		//output_lines.insert(output_lines.end(), instruction_output.cbegin(), instruction_output.cend());
+
+		// Finally, free working storages: for each input that's in a working
+		// storage unit (as opposed to being provided by "input_storages"),
+		// check all the other nodes that are using that same output as input.
+		// If there are none, unclaim it.  If all have already been emitted,
+		// then this instruction is the last instruction that needs this
+		// working storage unit: unclaim it.
+		for (IOIndex input_index = 0; input_index < instruction.get_input_sizes().size(); ++input_index) {
+			std::map<IO, IO>::const_iterator connections_search = connections.find({this_node, input_index});
+			if (connections_search != connections.cend()) {
+				// We found a child input node output connection with this
+				// node's input.  Just see if for this particular child input
+				// node's output, there are any other unemitted nodes that
+				// require the same output before we unclaim it.
+				const IO child_with_output = connections_search->second;
+				bool child_output_has_unemitted_output_nodes = false;
+
+				std::map<IO, std::set<IO>>::const_iterator reversed_connections_search = reversed_connections.find(child_with_output);
+				if (reversed_connections_search == reversed_connections.cend()) {
+					// How did we get here?
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::MIPSIO::prepare: internal error: there is a bug in the working storage freeing algorithm, since we're attempting to unlock a working storage that isn't recorded." << std::endl
+						<< "\tthis_node (index) : " << this_node << std::endl
+						<< "\tinput_index       : " << input_index
+						;
+					throw SemanticsError(sstr.str());
+				} else {
+					for (const IO &node_with_input : std::as_const(reversed_connections_search->second)) {
+						const Index output_node = node_with_input.first;
+						if (visited_instructions.find(output_node) == visited_instructions.cend()) {
+							// There is another output node that has not yet been emitted.
+							child_output_has_unemitted_output_nodes = true;
+							break;
+						}
+					}
+				}
+
+				if (!child_output_has_unemitted_output_nodes) {
+					// Unclaim this output.
+					const Storage::Index claimed_storage = reverse_claimed_working_storages.at(child_with_output);
+					reverse_claimed_working_storages.erase(child_with_output);
+					claimed_working_storages.erase(claimed_storage);
+				}
+			}
+		}
+	}
+
+	// Make sure there were no unvisited lines.
+	if (visited_instructions.size() < instructions.size()) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::MIPSIO::prepare: error: this algorithm requires all nodes to be reached at least once." << std::endl
+			<< "\tvisited : " << visited_instructions.size() << std::endl
+			<< "\tnodes   : " << instructions.size()
+			;
+		throw SemanticsError(sstr.str());
+	}
+
+	// Return the emitted output.
+	//return output_lines;
+
+	// Return the working storages we found we needed.
+	return Storage::get_sizes(working_storages);
 }
 
 std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, Storage> &input_storages, const std::vector<Storage> &working_storages, const std::map<IO, Storage> &capture_outputs) const {
@@ -6379,6 +6728,8 @@ void UnitTests::test_mips_io() {
 
 	assert(lines == expected);
 
+	assert(basic.prepare({{1,0}}) == std::vector<uint32_t>({4}));
+
 	// TODO
 #if 0
 	// Some type aliases to improve readability.
@@ -6466,6 +6817,8 @@ void UnitTests::test_mips_io2() {
 	expected.push_back("\taddu $t0, $t3, $t2");
 
 	assert(lines == expected);
+
+	assert(basic.prepare({{3,0}}) == std::vector<uint32_t>({4, 4}));
 
 #if 0
 	// Some type aliases to improve readability.

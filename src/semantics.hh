@@ -834,7 +834,7 @@ public:
 		std::map<IO, std::set<IO>> reversed_connections;  // connections[output] == {all inputs that this output supplies}.
 
 		// | In order to emit these MIPSIO instructions that write these outputs, how many working storages are needed?
-		std::map<uint32_t, std::vector<uint32_t>::size_type> prepare(const std::set<IO> &capture_outputs) const;
+		std::vector<uint32_t> prepare(const std::set<IO> &capture_outputs) const;
 		// | Emit the collections of instructions using the provided storages.
 		//
 		// There must be a path between every node and capture_outputs, or an
