@@ -4957,6 +4957,14 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::emit(const std::vec
 	}
 }
 
+std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::map<IO, Storage> &capture_outputs) const {
+	std::set<IO> capture_outputs_;
+	for (const std::map<IO, Storage>::value_type &capture_output_pair : std::as_const(capture_outputs)) {
+		capture_outputs_.insert(capture_output_pair.first);
+	}
+	return prepare(capture_outputs_);
+}
+
 std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_outputs_) const {
 	// Emulate emit(), except don't emit, and add working storage unit requirements when more are needed.
 	std::vector<Storage> working_storages;

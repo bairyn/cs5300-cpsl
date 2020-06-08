@@ -835,6 +835,7 @@ public:
 
 		// | In order to emit these MIPSIO instructions that write these outputs, how many working storages are needed?
 		std::vector<uint32_t> prepare(const std::set<IO> &capture_outputs) const;
+		std::vector<uint32_t> prepare(const std::map<IO, Storage> &capture_outputs) const;
 		// | Emit the collections of instructions using the provided storages.
 		//
 		// There must be a path between every node and capture_outputs, or an
