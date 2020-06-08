@@ -704,11 +704,13 @@ public:
 			null_tag           = 0,
 			load_immediate_tag = 1,
 			load_from_tag      = 2,
-			add_from_tag       = 3,
-			sub_from_tag       = 4,
-			mult_from_tag      = 5,
-			div_from_tag       = 6,
-			num_tags           = 6,
+			and_from_tag       = 3,
+			or_from_tag        = 4,
+			add_from_tag       = 5,
+			sub_from_tag       = 6,
+			mult_from_tag      = 7,
+			div_from_tag       = 8,
+			num_tags           = 8,
 		};
 		typedef enum tag_e tag_t;
 
@@ -760,6 +762,38 @@ public:
 			// | destination <- source + addition
 			// (Addition applies to values, not addresses.)
 			int32_t addition;
+
+			std::vector<uint32_t> get_input_sizes() const;
+			std::vector<uint32_t> get_working_sizes() const;
+			std::vector<uint32_t> get_output_sizes() const;
+			std::vector<uint32_t> get_all_sizes() const;
+
+			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
+		};
+
+		// | And from two storage units to another.
+		class AndFrom : public Base {
+		public:
+			AndFrom();
+			AndFrom(const Base &base, bool is_word);
+			// | Are we loading a byte or a word?
+			bool is_word;
+
+			std::vector<uint32_t> get_input_sizes() const;
+			std::vector<uint32_t> get_working_sizes() const;
+			std::vector<uint32_t> get_output_sizes() const;
+			std::vector<uint32_t> get_all_sizes() const;
+
+			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
+		};
+
+		// | Or from two storage units to another.
+		class OrFrom : public Base {
+		public:
+			OrFrom();
+			OrFrom(const Base &base, bool is_word);
+			// | Are we loading a byte or a word?
+			bool is_word;
 
 			std::vector<uint32_t> get_input_sizes() const;
 			std::vector<uint32_t> get_working_sizes() const;
@@ -837,8 +871,10 @@ public:
 			std::monostate,
 			LoadImmediate,
 			LoadFrom,
-			SubFrom,
+			AndFrom,
+			OrFrom,
 			AddFrom,
+			SubFrom,
 			MultFrom,
 			DivFrom
 		>;
@@ -855,6 +891,8 @@ public:
 
 		Instruction(const LoadImmediate &load_immediate);
 		Instruction(const LoadFrom      &load_from);
+		Instruction(const AndFrom       &and_from);
+		Instruction(const OrFrom        &or_from);
 		Instruction(const AddFrom       &add_from);
 		Instruction(const SubFrom       &sub_from);
 		Instruction(const MultFrom      &sub_from);
@@ -862,6 +900,8 @@ public:
 
 		bool is_load_immediate() const;
 		bool is_load_from()      const;
+		bool is_and_from()       const;
+		bool is_or_from()        const;
 		bool is_add_from()       const;
 		bool is_sub_from()       const;
 		bool is_mult_from()      const;
@@ -870,6 +910,8 @@ public:
 		// | The tags must be correct, or else an exception will be thrown, including for set_*.
 		const LoadImmediate &get_load_immediate() const;
 		const LoadFrom      &get_load_from()      const;
+		const AndFrom       &get_and_from()       const;
+		const OrFrom        &get_or_from()        const;
 		const AddFrom       &get_add_from()       const;
 		const SubFrom       &get_sub_from()       const;
 		const MultFrom      &get_mult_from()      const;
@@ -877,6 +919,8 @@ public:
 
 		LoadImmediate &&get_load_immediate();
 		LoadFrom      &&get_load_from();
+		AndFrom       &&get_and_from();
+		OrFrom        &&get_or_from();
 		AddFrom       &&get_add_from();
 		SubFrom       &&get_sub_from();
 		MultFrom      &&get_mult_from();
@@ -884,12 +928,14 @@ public:
 
 		LoadImmediate &get_load_immediate_mutable();
 		LoadFrom      &get_load_from_mutable();
+		AndFrom       &get_and_from_mutable();
+		OrFrom        &get_or_from_mutable();
 		AddFrom       &get_add_from_mutable();
 		SubFrom       &get_sub_from_mutable();
 		MultFrom      &get_mult_from_mutable();
 		DivFrom       &get_div_from_mutable();
 
-		// | Return "load_immediate", "load_from", or "add_from", etc.
+		// | Return "load_immediate", "load_from", or "and_from", etc.
 		static std::string get_tag_repr(tag_t tag);
 		std::string get_tag_repr() const;
 
