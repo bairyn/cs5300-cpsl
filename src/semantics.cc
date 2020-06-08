@@ -6416,7 +6416,61 @@ void UnitTests::test_mips_io() {
 }
 
 void UnitTests::test_mips_io2() {
-	// TODO
+	// Some type aliases to improve readability.
+	using M = Semantics::MIPSIO;
+	using I = Semantics::Instruction;
+	using B = Semantics::Instruction::Base;
+	using ConstantValue = Semantics::ConstantValue;
+	using Output        = Semantics::Output;
+	using Storage       = Semantics::Storage;
+	using Symbol        = Semantics::Symbol;
+
+	using ConstantValue = Semantics::ConstantValue;
+	using Output        = Semantics::Output;
+	using Storage       = Semantics::Storage;
+	using Symbol        = Semantics::Symbol;
+	M basic;
+	basic.instructions.push_back(I(I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(4), 0, 0), Symbol())));
+	basic.instructions.push_back(I(I::LoadFrom(B(), true, 16)));
+	basic.instructions.push_back(I(I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(6), 0, 0), Symbol())));
+	basic.instructions.push_back(I(I::AddFrom(B(), true)));
+
+	// Input to LoadFrom.
+	basic.connections.insert(         {{1, 0},  {0, 0} });
+	basic.reversed_connections.insert({{0, 0}, {{1, 0}}});
+
+	// Input to AddFrom.
+	basic.connections.insert(         {{3, 0},  {1, 0} });
+	basic.reversed_connections.insert({{1, 0}, {{3, 0}}});
+
+	basic.connections.insert(         {{3, 1},  {2, 0} });
+	basic.reversed_connections.insert({{2, 0}, {{3, 1}}});
+
+	std::vector<Output::Line> lines = basic.emit(
+		// Inputs.
+		{
+		},
+		// Working.
+		{
+			// Storage(uint32_t max_size, bool is_global, Symbol global_address, const std::string &register_, bool dereference, int32_t offset);
+			Storage(4, false, Symbol(), "$t2", false, 0),
+			Storage(4, false, Symbol(), "$t3", false, 0),
+			Storage(4, false, Symbol(), "$t4", false, 0),
+		},
+		// Outputs.
+		{
+			{{3, 0}, Storage(4, false, Symbol(), "$t0", false, 0)},
+		}
+	);
+
+	std::vector<Output::Line> expected;
+	expected.push_back("\tli   $t2, 4");
+	expected.push_back("\tla   $t3, 16($t2)");
+	expected.push_back("\tli   $t2, 6");
+	expected.push_back("\taddu $t0, $t3, $t2");
+
+	assert(lines == expected);
+
 #if 0
 	// Some type aliases to improve readability.
 	using M = Semantics::MIPSIO;
