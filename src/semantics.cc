@@ -6916,5 +6916,5 @@ void UnitTests::test_mips_io2() {
 
 	assert(lines == expected);
 
-	assert(simple.prepare({{1, 0}}) == std::vector<uint32_t>({4, 4}));
+	assert(simple.prepare(capture_outputs) == std::vector<uint32_t>({4, 4}));
 }
