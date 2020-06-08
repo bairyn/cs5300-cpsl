@@ -601,7 +601,7 @@ public:
 		// identifier scope for each expression.
 		const IdentifierScope &expression_constant_scope
 	) const;
-	ConstantValue is_expression_constant(const Expression &expression, const IdentifierScope &expression_constant_scope) const;
+	ConstantValue is_expression_constant(const ::Expression &expression, const IdentifierScope &expression_constant_scope) const;
 
 	// | From the parse tree Type, construct a Semantics::Type that represents the type.
 	//
@@ -886,9 +886,21 @@ public:
 		Index merge(const MIPSIO &other);
 	};
 
+	class Expression {
+	public:
+		MIPSIO instructions;
+		Type output_type;
+		MIPSIO::Index output_index;
+		Expression();  // (No instructions; null type.)
+		Expression(const MIPSIO  &instructions, const Type  &output_type, MIPSIO::Index output_index);
+		Expression(const MIPSIO  &instructions,       Type &&output_type, MIPSIO::Index output_index);
+		Expression(      MIPSIO &&instructions, const Type  &output_type, MIPSIO::Index output_index);
+		Expression(      MIPSIO &&instructions,       Type &&output_type, MIPSIO::Index output_index);
+	};
+
 	// The non-const part is the ability to store strings.
 	MIPSIO analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
-	MIPSIO analyze_expression(const Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
+	MIPSIO analyze_expression(const ::Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
 	// TODO
 	//MIPSIO analyze_statement();
 

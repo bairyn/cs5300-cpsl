@@ -2516,7 +2516,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 	}
 
 	// Lookup the expression from the grammar tree.
-	const Expression &expression_symbol = grammar.expression_storage[expression];
+	const ::Expression &expression_symbol = grammar.expression_storage[expression];
 
 	// Prepare the calculated constant value.
 	ConstantValue expression_constant_value;
@@ -2524,11 +2524,11 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 	// Branch according to the expression type.
 	switch (expression_symbol.branch) {
 		// These 16 branches are static iff all subexpressions are static.
-		case Expression::pipe_branch: {
-			const Expression::Pipe &pipe           = grammar.expression_pipe_storage.at(expression_symbol.data);
-			const Expression       &expression0    = grammar.expression_storage.at(pipe.expression0); (void) expression0;
-			const LexemeOperator   &pipe_operator0 = grammar.lexemes.at(pipe.pipe_operator0).get_operator();
-			const Expression       &expression1    = grammar.expression_storage.at(pipe.expression1); (void) expression1;
+		case ::Expression::pipe_branch: {
+			const ::Expression::Pipe &pipe           = grammar.expression_pipe_storage.at(expression_symbol.data);
+			const ::Expression       &expression0    = grammar.expression_storage.at(pipe.expression0); (void) expression0;
+			const LexemeOperator     &pipe_operator0 = grammar.lexemes.at(pipe.pipe_operator0).get_operator();
+			const ::Expression       &expression1    = grammar.expression_storage.at(pipe.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
 			// (Normally we'd operate on the left side first, but since order
@@ -2592,11 +2592,11 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} case Expression::ampersand_branch: {
-			const Expression::Ampersand &ampersand           = grammar.expression_ampersand_storage.at(expression_symbol.data);
-			const Expression            &expression0         = grammar.expression_storage.at(ampersand.expression0); (void) expression0;
-			const LexemeOperator        &ampersand_operator0 = grammar.lexemes.at(ampersand.ampersand_operator0).get_operator();
-			const Expression            &expression1         = grammar.expression_storage.at(ampersand.expression1); (void) expression1;
+		} case ::Expression::ampersand_branch: {
+			const ::Expression::Ampersand &ampersand           = grammar.expression_ampersand_storage.at(expression_symbol.data);
+			const ::Expression            &expression0         = grammar.expression_storage.at(ampersand.expression0); (void) expression0;
+			const LexemeOperator          &ampersand_operator0 = grammar.lexemes.at(ampersand.ampersand_operator0).get_operator();
+			const ::Expression            &expression1         = grammar.expression_storage.at(ampersand.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue right = is_expression_constant(ampersand.expression1, expression_constant_scope);
@@ -2656,11 +2656,11 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} case Expression::equals_branch: {
-			const Expression::Equals &equals           = grammar.expression_equals_storage.at(expression_symbol.data);
-			const Expression         &expression0      = grammar.expression_storage.at(equals.expression0); (void) expression0;
-			const LexemeOperator     &equals_operator0 = grammar.lexemes.at(equals.equals_operator0).get_operator();
-			const Expression         &expression1      = grammar.expression_storage.at(equals.expression1); (void) expression1;
+		} case ::Expression::equals_branch: {
+			const ::Expression::Equals &equals           = grammar.expression_equals_storage.at(expression_symbol.data);
+			const ::Expression         &expression0      = grammar.expression_storage.at(equals.expression0); (void) expression0;
+			const LexemeOperator       &equals_operator0 = grammar.lexemes.at(equals.equals_operator0).get_operator();
+			const ::Expression         &expression1      = grammar.expression_storage.at(equals.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue right = is_expression_constant(equals.expression1, expression_constant_scope);
@@ -2710,11 +2710,11 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} case Expression::lt_or_gt_branch: {
-			const Expression::LtOrGt &lt_or_gt           = grammar.expression_lt_or_gt_storage.at(expression_symbol.data);
-			const Expression         &expression0        = grammar.expression_storage.at(lt_or_gt.expression0); (void) expression0;
-			const LexemeOperator     &lt_or_gt_operator0 = grammar.lexemes.at(lt_or_gt.lt_or_gt_operator0).get_operator();
-			const Expression         &expression1        = grammar.expression_storage.at(lt_or_gt.expression1); (void) expression1;
+		} case ::Expression::lt_or_gt_branch: {
+			const ::Expression::LtOrGt &lt_or_gt           = grammar.expression_lt_or_gt_storage.at(expression_symbol.data);
+			const ::Expression         &expression0        = grammar.expression_storage.at(lt_or_gt.expression0); (void) expression0;
+			const LexemeOperator       &lt_or_gt_operator0 = grammar.lexemes.at(lt_or_gt.lt_or_gt_operator0).get_operator();
+			const ::Expression         &expression1        = grammar.expression_storage.at(lt_or_gt.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue right = is_expression_constant(lt_or_gt.expression1, expression_constant_scope);
@@ -2764,11 +2764,11 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} case Expression::le_branch: {
-			const Expression::Le &le           = grammar.expression_le_storage.at(expression_symbol.data);
-			const Expression     &expression0  = grammar.expression_storage.at(le.expression0); (void) expression0;
-			const LexemeOperator &le_operator0 = grammar.lexemes.at(le.le_operator0).get_operator();
-			const Expression     &expression1  = grammar.expression_storage.at(le.expression1); (void) expression1;
+		} case ::Expression::le_branch: {
+			const ::Expression::Le &le           = grammar.expression_le_storage.at(expression_symbol.data);
+			const ::Expression     &expression0  = grammar.expression_storage.at(le.expression0); (void) expression0;
+			const LexemeOperator   &le_operator0 = grammar.lexemes.at(le.le_operator0).get_operator();
+			const ::Expression     &expression1  = grammar.expression_storage.at(le.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue right = is_expression_constant(le.expression1, expression_constant_scope);
@@ -2818,11 +2818,11 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} case Expression::ge_branch: {
-			const Expression::Ge &ge           = grammar.expression_ge_storage.at(expression_symbol.data);
-			const Expression     &expression0  = grammar.expression_storage.at(ge.expression0); (void) expression0;
-			const LexemeOperator &ge_operator0 = grammar.lexemes.at(ge.ge_operator0).get_operator();
-			const Expression     &expression1  = grammar.expression_storage.at(ge.expression1); (void) expression1;
+		} case ::Expression::ge_branch: {
+			const ::Expression::Ge &ge           = grammar.expression_ge_storage.at(expression_symbol.data);
+			const ::Expression     &expression0  = grammar.expression_storage.at(ge.expression0); (void) expression0;
+			const LexemeOperator   &ge_operator0 = grammar.lexemes.at(ge.ge_operator0).get_operator();
+			const ::Expression     &expression1  = grammar.expression_storage.at(ge.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue right = is_expression_constant(ge.expression1, expression_constant_scope);
@@ -2872,11 +2872,11 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} case Expression::lt_branch: {
-			const Expression::Lt &lt           = grammar.expression_lt_storage.at(expression_symbol.data);
-			const Expression     &expression0  = grammar.expression_storage.at(lt.expression0); (void) expression0;
-			const LexemeOperator &lt_operator0 = grammar.lexemes.at(lt.lt_operator0).get_operator();
-			const Expression     &expression1  = grammar.expression_storage.at(lt.expression1); (void) expression1;
+		} case ::Expression::lt_branch: {
+			const ::Expression::Lt &lt           = grammar.expression_lt_storage.at(expression_symbol.data);
+			const ::Expression     &expression0  = grammar.expression_storage.at(lt.expression0); (void) expression0;
+			const LexemeOperator   &lt_operator0 = grammar.lexemes.at(lt.lt_operator0).get_operator();
+			const ::Expression     &expression1  = grammar.expression_storage.at(lt.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue right = is_expression_constant(lt.expression1, expression_constant_scope);
@@ -2926,11 +2926,11 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} case Expression::gt_branch: {
-			const Expression::Gt &gt           = grammar.expression_gt_storage.at(expression_symbol.data);
-			const Expression     &expression0  = grammar.expression_storage.at(gt.expression0); (void) expression0;
-			const LexemeOperator &gt_operator0 = grammar.lexemes.at(gt.gt_operator0).get_operator();
-			const Expression     &expression1  = grammar.expression_storage.at(gt.expression1); (void) expression1;
+		} case ::Expression::gt_branch: {
+			const ::Expression::Gt &gt           = grammar.expression_gt_storage.at(expression_symbol.data);
+			const ::Expression     &expression0  = grammar.expression_storage.at(gt.expression0); (void) expression0;
+			const LexemeOperator   &gt_operator0 = grammar.lexemes.at(gt.gt_operator0).get_operator();
+			const ::Expression     &expression1  = grammar.expression_storage.at(gt.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue right = is_expression_constant(gt.expression1, expression_constant_scope);
@@ -2980,11 +2980,11 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} case Expression::plus_branch: {
-			const Expression::Plus &plus           = grammar.expression_plus_storage.at(expression_symbol.data);
-			const Expression       &expression0    = grammar.expression_storage.at(plus.expression0); (void) expression0;
-			const LexemeOperator   &plus_operator0 = grammar.lexemes.at(plus.plus_operator0).get_operator();
-			const Expression       &expression1    = grammar.expression_storage.at(plus.expression1); (void) expression1;
+		} case ::Expression::plus_branch: {
+			const ::Expression::Plus &plus           = grammar.expression_plus_storage.at(expression_symbol.data);
+			const ::Expression       &expression0    = grammar.expression_storage.at(plus.expression0); (void) expression0;
+			const LexemeOperator     &plus_operator0 = grammar.lexemes.at(plus.plus_operator0).get_operator();
+			const ::Expression       &expression1    = grammar.expression_storage.at(plus.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue right = is_expression_constant(plus.expression1, expression_constant_scope);
@@ -3064,11 +3064,11 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} case Expression::minus_branch: {
-			const Expression::Minus &minus           = grammar.expression_minus_storage.at(expression_symbol.data);
-			const Expression        &expression0     = grammar.expression_storage.at(minus.expression0); (void) expression0;
-			const LexemeOperator    &minus_operator0 = grammar.lexemes.at(minus.minus_operator0).get_operator();
-			const Expression        &expression1     = grammar.expression_storage.at(minus.expression1); (void) expression1;
+		} case ::Expression::minus_branch: {
+			const ::Expression::Minus &minus           = grammar.expression_minus_storage.at(expression_symbol.data);
+			const ::Expression        &expression0     = grammar.expression_storage.at(minus.expression0); (void) expression0;
+			const LexemeOperator      &minus_operator0 = grammar.lexemes.at(minus.minus_operator0).get_operator();
+			const ::Expression        &expression1     = grammar.expression_storage.at(minus.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue right = is_expression_constant(minus.expression1, expression_constant_scope);
@@ -3148,11 +3148,11 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} case Expression::times_branch: {
-			const Expression::Times &times           = grammar.expression_times_storage.at(expression_symbol.data);
-			const Expression        &expression0     = grammar.expression_storage.at(times.expression0); (void) expression0;
-			const LexemeOperator    &times_operator0 = grammar.lexemes.at(times.times_operator0).get_operator();
-			const Expression        &expression1     = grammar.expression_storage.at(times.expression1); (void) expression1;
+		} case ::Expression::times_branch: {
+			const ::Expression::Times &times           = grammar.expression_times_storage.at(expression_symbol.data);
+			const ::Expression        &expression0     = grammar.expression_storage.at(times.expression0); (void) expression0;
+			const LexemeOperator      &times_operator0 = grammar.lexemes.at(times.times_operator0).get_operator();
+			const ::Expression        &expression1     = grammar.expression_storage.at(times.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue right = is_expression_constant(times.expression1, expression_constant_scope);
@@ -3232,11 +3232,11 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} case Expression::slash_branch: {
-			const Expression::Slash &slash           = grammar.expression_slash_storage.at(expression_symbol.data);
-			const Expression        &expression0     = grammar.expression_storage.at(slash.expression0); (void) expression0;
-			const LexemeOperator    &slash_operator0 = grammar.lexemes.at(slash.slash_operator0).get_operator();
-			const Expression        &expression1     = grammar.expression_storage.at(slash.expression1); (void) expression1;
+		} case ::Expression::slash_branch: {
+			const ::Expression::Slash &slash           = grammar.expression_slash_storage.at(expression_symbol.data);
+			const ::Expression        &expression0     = grammar.expression_storage.at(slash.expression0); (void) expression0;
+			const LexemeOperator      &slash_operator0 = grammar.lexemes.at(slash.slash_operator0).get_operator();
+			const ::Expression        &expression1     = grammar.expression_storage.at(slash.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue right = is_expression_constant(slash.expression1, expression_constant_scope);
@@ -3336,11 +3336,11 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} case Expression::percent_branch: {
-			const Expression::Percent &percent           = grammar.expression_percent_storage.at(expression_symbol.data);
-			const Expression          &expression0       = grammar.expression_storage.at(percent.expression0); (void) expression0;
-			const LexemeOperator      &percent_operator0 = grammar.lexemes.at(percent.percent_operator0).get_operator();
-			const Expression          &expression1       = grammar.expression_storage.at(percent.expression1); (void) expression1;
+		} case ::Expression::percent_branch: {
+			const ::Expression::Percent &percent           = grammar.expression_percent_storage.at(expression_symbol.data);
+			const ::Expression          &expression0       = grammar.expression_storage.at(percent.expression0); (void) expression0;
+			const LexemeOperator        &percent_operator0 = grammar.lexemes.at(percent.percent_operator0).get_operator();
+			const ::Expression          &expression1       = grammar.expression_storage.at(percent.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue right = is_expression_constant(percent.expression1, expression_constant_scope);
@@ -3421,10 +3421,10 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} case Expression::tilde_branch: {
-			const Expression::Tilde &tilde           = grammar.expression_tilde_storage.at(expression_symbol.data);
-			const LexemeOperator    &tilde_operator0 = grammar.lexemes.at(tilde.tilde_operator0).get_operator();
-			const Expression        &expression0     = grammar.expression_storage.at(tilde.expression); (void) expression0;
+		} case ::Expression::tilde_branch: {
+			const ::Expression::Tilde &tilde           = grammar.expression_tilde_storage.at(expression_symbol.data);
+			const LexemeOperator      &tilde_operator0 = grammar.lexemes.at(tilde.tilde_operator0).get_operator();
+			const ::Expression        &expression0     = grammar.expression_storage.at(tilde.expression); (void) expression0;
 
 			// Is the subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue value = is_expression_constant(tilde.expression, expression_constant_scope);
@@ -3464,10 +3464,10 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} case Expression::unary_minus_branch: {
-			const Expression::UnaryMinus &unary_minus     = grammar.expression_unary_minus_storage.at(expression_symbol.data);
-			const LexemeOperator         &minus_operator0 = grammar.lexemes.at(unary_minus.minus_operator0).get_operator();
-			const Expression             &expression0     = grammar.expression_storage.at(unary_minus.expression); (void) expression0;
+		} case ::Expression::unary_minus_branch: {
+			const ::Expression::UnaryMinus &unary_minus     = grammar.expression_unary_minus_storage.at(expression_symbol.data);
+			const LexemeOperator           &minus_operator0 = grammar.lexemes.at(unary_minus.minus_operator0).get_operator();
+			const ::Expression             &expression0     = grammar.expression_storage.at(unary_minus.expression); (void) expression0;
 
 			// Is the subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue value = is_expression_constant(unary_minus.expression, expression_constant_scope);
@@ -3525,11 +3525,11 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
-		} case Expression::parentheses_branch: {
-			const Expression::Parentheses &parentheses                = grammar.expression_parentheses_storage.at(expression_symbol.data);
-			const LexemeOperator          &leftparenthesis_operator0  = grammar.lexemes.at(parentheses.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
-			const Expression              &expression0                = grammar.expression_storage.at(parentheses.expression); (void) expression0;
-			const LexemeOperator          &rightparenthesis_operator0 = grammar.lexemes.at(parentheses.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+		} case ::Expression::parentheses_branch: {
+			const ::Expression::Parentheses &parentheses                = grammar.expression_parentheses_storage.at(expression_symbol.data);
+			const LexemeOperator            &leftparenthesis_operator0  = grammar.lexemes.at(parentheses.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
+			const ::Expression              &expression0                = grammar.expression_storage.at(parentheses.expression); (void) expression0;
+			const LexemeOperator            &rightparenthesis_operator0 = grammar.lexemes.at(parentheses.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
 
 			// Is the subexpression dynamic?  If so, this expression is also dynamic.
 			ConstantValue value = is_expression_constant(parentheses.expression, expression_constant_scope);
@@ -3545,52 +3545,52 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 		}
 
 		// These 5 branches are dynamic.
-		case Expression::call_branch: {
-			const Expression::Call      &call                        = grammar.expression_call_storage.at(expression_symbol.data);
-			const LexemeIdentifier      &call_identifier             = grammar.lexemes.at(call.identifier).get_identifier(); (void) call_identifier;
-			const LexemeOperator        &leftparenthesis_operator0   = grammar.lexemes.at(call.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
-			const ExpressionSequenceOpt &expression_sequence_opt     = grammar.expression_sequence_opt_storage.at(call.expression_sequence_opt); (void) expression_sequence_opt;
-			const LexemeOperator        &rightparenthesis_operator0  = grammar.lexemes.at(call.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+		case ::Expression::call_branch: {
+			const ::Expression::Call      &call                        = grammar.expression_call_storage.at(expression_symbol.data);
+			const LexemeIdentifier        &call_identifier             = grammar.lexemes.at(call.identifier).get_identifier(); (void) call_identifier;
+			const LexemeOperator          &leftparenthesis_operator0   = grammar.lexemes.at(call.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
+			const ExpressionSequenceOpt   &expression_sequence_opt     = grammar.expression_sequence_opt_storage.at(call.expression_sequence_opt); (void) expression_sequence_opt;
+			const LexemeOperator          &rightparenthesis_operator0  = grammar.lexemes.at(call.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
 
 			expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, call.identifier, call.rightparenthesis_operator0 + 1);
 
 			break;
-		} case Expression::chr_branch: {
-			const Expression::Chr &chr                        = grammar.expression_chr_storage.at(expression_symbol.data);
-			const LexemeKeyword   &chr_keyword0               = grammar.lexemes.at(chr.chr_keyword0).get_keyword(); (void) chr_keyword0;
-			const LexemeOperator  &leftparenthesis_operator0  = grammar.lexemes.at(chr.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
-			const Expression      &expression0                = grammar.expression_storage.at(chr.expression); (void) expression0;
-			const LexemeOperator  &rightparenthesis_operator0 = grammar.lexemes.at(chr.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+		} case ::Expression::chr_branch: {
+			const ::Expression::Chr &chr                        = grammar.expression_chr_storage.at(expression_symbol.data);
+			const LexemeKeyword     &chr_keyword0               = grammar.lexemes.at(chr.chr_keyword0).get_keyword(); (void) chr_keyword0;
+			const LexemeOperator    &leftparenthesis_operator0  = grammar.lexemes.at(chr.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
+			const ::Expression      &expression0                = grammar.expression_storage.at(chr.expression); (void) expression0;
+			const LexemeOperator    &rightparenthesis_operator0 = grammar.lexemes.at(chr.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
 
 			expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, chr.chr_keyword0, chr.rightparenthesis_operator0 + 1);
 
 			break;
-		} case Expression::ord_branch: {
-			const Expression::Ord &ord                        = grammar.expression_ord_storage.at(expression_symbol.data);
-			const LexemeKeyword   &ord_keyword0               = grammar.lexemes.at(ord.ord_keyword0).get_keyword(); (void) ord_keyword0;
-			const LexemeOperator  &leftparenthesis_operator0  = grammar.lexemes.at(ord.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
-			const Expression      &expression0                = grammar.expression_storage.at(ord.expression); (void) expression0;
-			const LexemeOperator  &rightparenthesis_operator0 = grammar.lexemes.at(ord.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+		} case ::Expression::ord_branch: {
+			const ::Expression::Ord &ord                        = grammar.expression_ord_storage.at(expression_symbol.data);
+			const LexemeKeyword     &ord_keyword0               = grammar.lexemes.at(ord.ord_keyword0).get_keyword(); (void) ord_keyword0;
+			const LexemeOperator    &leftparenthesis_operator0  = grammar.lexemes.at(ord.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
+			const ::Expression      &expression0                = grammar.expression_storage.at(ord.expression); (void) expression0;
+			const LexemeOperator    &rightparenthesis_operator0 = grammar.lexemes.at(ord.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
 
 			expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, ord.ord_keyword0, ord.rightparenthesis_operator0 + 1);
 
 			break;
-		} case Expression::pred_branch: {
-			const Expression::Pred &pred                       = grammar.expression_pred_storage.at(expression_symbol.data);
-			const LexemeKeyword    &pred_keyword0              = grammar.lexemes.at(pred.pred_keyword0).get_keyword(); (void) pred_keyword0;
-			const LexemeOperator   &leftparenthesis_operator0  = grammar.lexemes.at(pred.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
-			const Expression       &expression0                = grammar.expression_storage.at(pred.expression); (void) expression0;
-			const LexemeOperator   &rightparenthesis_operator0 = grammar.lexemes.at(pred.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+		} case ::Expression::pred_branch: {
+			const ::Expression::Pred &pred                       = grammar.expression_pred_storage.at(expression_symbol.data);
+			const LexemeKeyword      &pred_keyword0              = grammar.lexemes.at(pred.pred_keyword0).get_keyword(); (void) pred_keyword0;
+			const LexemeOperator     &leftparenthesis_operator0  = grammar.lexemes.at(pred.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
+			const ::Expression       &expression0                = grammar.expression_storage.at(pred.expression); (void) expression0;
+			const LexemeOperator     &rightparenthesis_operator0 = grammar.lexemes.at(pred.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
 
 			expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, pred.pred_keyword0, pred.rightparenthesis_operator0 + 1);
 
 			break;
-		} case Expression::succ_branch: {
-			const Expression::Succ &succ                       = grammar.expression_succ_storage.at(expression_symbol.data);
-			const LexemeKeyword    &succ_keyword0              = grammar.lexemes.at(succ.succ_keyword0).get_keyword(); (void) succ_keyword0;
-			const LexemeOperator   &leftparenthesis_operator0  = grammar.lexemes.at(succ.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
-			const Expression       &expression0                = grammar.expression_storage.at(succ.expression); (void) expression0;
-			const LexemeOperator   &rightparenthesis_operator0 = grammar.lexemes.at(succ.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+		} case ::Expression::succ_branch: {
+			const ::Expression::Succ &succ                       = grammar.expression_succ_storage.at(expression_symbol.data);
+			const LexemeKeyword      &succ_keyword0              = grammar.lexemes.at(succ.succ_keyword0).get_keyword(); (void) succ_keyword0;
+			const LexemeOperator     &leftparenthesis_operator0  = grammar.lexemes.at(succ.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
+			const ::Expression       &expression0                = grammar.expression_storage.at(succ.expression); (void) expression0;
+			const LexemeOperator     &rightparenthesis_operator0 = grammar.lexemes.at(succ.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
 
 			expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, succ.succ_keyword0, succ.rightparenthesis_operator0 + 1);
 
@@ -3600,11 +3600,11 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 		// lvalue_branch may or may not be dynamic, depending on whether it is
 		// a simple identifier (without .foo or [bar]) that refers to a known
 		// constant value in the scope of the expression.
-		case Expression::lvalue_branch: {
-			const Expression::Lvalue       &lvalue                      = grammar.expression_lvalue_storage.at(expression_symbol.data);
-			const Lvalue                   &lvalue_symbol               = grammar.lvalue_storage.at(lvalue.lvalue);
-			const LexemeIdentifier         &lexeme_identifier           = grammar.lexemes.at(lvalue_symbol.identifier).get_identifier();
-			const LvalueAccessorClauseList &lvalue_accessor_clause_list = grammar.lvalue_accessor_clause_list_storage.at(lvalue_symbol.lvalue_accessor_clause_list);
+		case ::Expression::lvalue_branch: {
+			const ::Expression::Lvalue       &lvalue                      = grammar.expression_lvalue_storage.at(expression_symbol.data);
+			const Lvalue                     &lvalue_symbol               = grammar.lvalue_storage.at(lvalue.lvalue);
+			const LexemeIdentifier           &lexeme_identifier           = grammar.lexemes.at(lvalue_symbol.identifier).get_identifier();
+			const LvalueAccessorClauseList   &lvalue_accessor_clause_list = grammar.lvalue_accessor_clause_list_storage.at(lvalue_symbol.lvalue_accessor_clause_list);
 
 			// According to the documentation, only lvalues without
 			// accessors can be constant (static) expressions.  So check the
@@ -3643,7 +3643,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 							case LvalueAccessorClause::array_branch: {
 								const LvalueAccessorClause::Array &array                  = grammar.lvalue_accessor_clause_array_storage.at(last_lvalue_accessor_clause.data);
 								const LexemeOperator              &leftbracket_operator0  = grammar.lexemes.at(array.leftbracket_operator0).get_operator(); (void) leftbracket_operator0;
-								const Expression                  &expression0            = grammar.expression_storage.at(array.expression); (void) expression0;
+								const ::Expression                &expression0            = grammar.expression_storage.at(array.expression); (void) expression0;
 								const LexemeOperator              &rightbracket_operator0 = grammar.lexemes.at(array.rightbracket_operator0).get_operator(); (void) rightbracket_operator0;
 
 								lexeme_end = array.rightbracket_operator0 + 1;
@@ -3695,9 +3695,9 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 		}
 
 		// These 3 branches are static.
-		case Expression::integer_branch: {
-			const Expression::Integer &integer        = grammar.expression_integer_storage.at(expression_symbol.data);
-			const LexemeInteger       &lexeme_integer = grammar.lexemes.at(integer.integer).get_integer();
+		case ::Expression::integer_branch: {
+			const ::Expression::Integer &integer        = grammar.expression_integer_storage.at(expression_symbol.data);
+			const LexemeInteger         &lexeme_integer = grammar.lexemes.at(integer.integer).get_integer();
 			if (lexeme_integer.first_digits > std::numeric_limits<int32_t>::max() || lexeme_integer.remaining_digits.size() > 0) {
 				std::ostringstream sstr;
 				sstr << "Semantics::is_expression_constant: error (line " << lexeme_integer.line << " col " << lexeme_integer.column << "): integer is too large to encode in 32 bits: " << lexeme_integer.text;
@@ -3705,14 +3705,14 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			}
 			expression_constant_value = ConstantValue(static_cast<int32_t>(lexeme_integer.first_digits), integer.integer, integer.integer + 1);
 			break;
-		} case Expression::char__branch: {
-			const Expression::Char_ &char_       = grammar.expression_char__storage.at(expression_symbol.data);
-			const LexemeChar        &lexeme_char = grammar.lexemes.at(char_.char_).get_char();
+		} case ::Expression::char__branch: {
+			const ::Expression::Char_ &char_       = grammar.expression_char__storage.at(expression_symbol.data);
+			const LexemeChar          &lexeme_char = grammar.lexemes.at(char_.char_).get_char();
 			expression_constant_value = ConstantValue(static_cast<char>(lexeme_char.char_), char_.char_, char_.char_ + 1);
 			break;
-		} case Expression::string_branch: {
-			const Expression::String &string        = grammar.expression_string_storage.at(expression_symbol.data);
-			const LexemeString       &lexeme_string = grammar.lexemes.at(string.string).get_string();
+		} case ::Expression::string_branch: {
+			const ::Expression::String &string        = grammar.expression_string_storage.at(expression_symbol.data);
+			const LexemeString         &lexeme_string = grammar.lexemes.at(string.string).get_string();
 			expression_constant_value = ConstantValue(std::move(std::string(lexeme_string.expanded)), string.string, string.string + 1);
 			break;
 		}
@@ -3729,7 +3729,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 	return expression_constant_value;
 }
 
-Semantics::ConstantValue Semantics::is_expression_constant(const Expression &expression, const IdentifierScope &expression_constant_scope) const {
+Semantics::ConstantValue Semantics::is_expression_constant(const ::Expression &expression, const IdentifierScope &expression_constant_scope) const {
 	return is_expression_constant(&expression - &grammar.expression_storage[0], expression_constant_scope);
 }
 
@@ -3951,16 +3951,16 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 
 		case ::Type::array_branch: {
 			// Unpack the array_type.
-			const ::Type::Array  &array                  = grammar.type_array_storage.at(type.data);
-			const ArrayType      &array_type             = grammar.array_type_storage.at(array.array_type);
-			const LexemeKeyword  &array_keyword0         = grammar.lexemes.at(array_type.array_keyword0).get_keyword(); (void) array_keyword0;
-			const LexemeOperator &leftbracket_operator0  = grammar.lexemes.at(array_type.leftbracket_operator0).get_operator();
-			const Expression     &expression0            = grammar.expression_storage.at(array_type.expression0);
-			const LexemeOperator &colon_operator0        = grammar.lexemes.at(array_type.colon_operator0).get_operator();
-			const Expression     &expression1            = grammar.expression_storage.at(array_type.expression1);
-			const LexemeOperator &rightbracket_operator0 = grammar.lexemes.at(array_type.rightbracket_operator0).get_operator(); (void) rightbracket_operator0;
-			const LexemeKeyword  &of_keyword0            = grammar.lexemes.at(array_type.of_keyword0).get_keyword(); (void) of_keyword0;
-			const ::Type         &base_type              = grammar.type_storage.at(array_type.type);
+			const ::Type::Array    &array                  = grammar.type_array_storage.at(type.data);
+			const ArrayType        &array_type             = grammar.array_type_storage.at(array.array_type);
+			const LexemeKeyword    &array_keyword0         = grammar.lexemes.at(array_type.array_keyword0).get_keyword(); (void) array_keyword0;
+			const LexemeOperator   &leftbracket_operator0  = grammar.lexemes.at(array_type.leftbracket_operator0).get_operator();
+			const ::Expression     &expression0            = grammar.expression_storage.at(array_type.expression0);
+			const LexemeOperator   &colon_operator0        = grammar.lexemes.at(array_type.colon_operator0).get_operator();
+			const ::Expression     &expression1            = grammar.expression_storage.at(array_type.expression1);
+			const LexemeOperator   &rightbracket_operator0 = grammar.lexemes.at(array_type.rightbracket_operator0).get_operator(); (void) rightbracket_operator0;
+			const LexemeKeyword    &of_keyword0            = grammar.lexemes.at(array_type.of_keyword0).get_keyword(); (void) of_keyword0;
+			const ::Type           &base_type              = grammar.type_storage.at(array_type.type);
 
 			// Check for redefinitions.  (Redundant; this has already been checked.)
 			if (type_type_scope.has(identifier)) {
@@ -5736,11 +5736,27 @@ Semantics::MIPSIO::Index Semantics::MIPSIO::merge(const MIPSIO &other) {
 	return addition;
 }
 
+Semantics::Expression::Expression(const MIPSIO  &instructions, const Type  &output_type, MIPSIO::Index output_index) : instructions(          instructions ), output_type(          output_type ), output_index(output_index) {}
+Semantics::Expression::Expression(const MIPSIO  &instructions,       Type &&output_type, MIPSIO::Index output_index) : instructions(          instructions ), output_type(std::move(output_type)), output_index(output_index) {}
+Semantics::Expression::Expression(      MIPSIO &&instructions, const Type  &output_type, MIPSIO::Index output_index) : instructions(std::move(instructions)), output_type(          output_type ), output_index(output_index) {}
+Semantics::Expression::Expression(      MIPSIO &&instructions,       Type &&output_type, MIPSIO::Index output_index) : instructions(std::move(instructions)), output_type(std::move(output_type)), output_index(output_index) {}
+
 Semantics::MIPSIO Semantics::analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
 	return analyze_expression(grammar.expression_storage.at(expression), constant_scope, type_scope, var_scope, combined_scope);
 }
 
-Semantics::MIPSIO Semantics::analyze_expression(const Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
+Semantics::MIPSIO Semantics::analyze_expression(const ::Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
+	// Some type aliases to improve readability.
+	using M = Semantics::MIPSIO;
+	using I = Semantics::Instruction;
+	using B = Semantics::Instruction::Base;
+	using Index = M::Index;
+	using IO    = M::IO;
+	using ConstantValue = Semantics::ConstantValue;
+	using Output        = Semantics::Output;
+	using Storage       = Semantics::Storage;
+	using Symbol        = Semantics::Symbol;
+
 	// TODO
 	return MIPSIO();
 #if 0
@@ -6092,10 +6108,10 @@ void Semantics::analyze() {
 
 			// Handle the constant assignments.
 			for (const ConstantAssignment *next_constant_assignment : constant_assignments) {
-				const LexemeIdentifier &identifier          = grammar.lexemes.at(next_constant_assignment->identifier).get_identifier();
-				const LexemeOperator   &equals_operator0    = grammar.lexemes.at(next_constant_assignment->equals_operator0).get_operator(); (void) equals_operator0;
-				const Expression       &expression          = grammar.expression_storage.at(next_constant_assignment->expression);
-				const LexemeOperator   &semicolon_operator0 = grammar.lexemes.at(next_constant_assignment->semicolon_operator0).get_operator(); (void) semicolon_operator0;
+				const LexemeIdentifier   &identifier          = grammar.lexemes.at(next_constant_assignment->identifier).get_identifier();
+				const LexemeOperator     &equals_operator0    = grammar.lexemes.at(next_constant_assignment->equals_operator0).get_operator(); (void) equals_operator0;
+				const ::Expression       &expression          = grammar.expression_storage.at(next_constant_assignment->expression);
+				const LexemeOperator     &semicolon_operator0 = grammar.lexemes.at(next_constant_assignment->semicolon_operator0).get_operator(); (void) semicolon_operator0;
 
 				// Calculate the constant value.
 				ConstantValue constant_value = is_expression_constant(expression, top_level_constant_scope);
