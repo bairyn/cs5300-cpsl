@@ -1208,12 +1208,12 @@ public:
 		Index add_instruction(const Instruction &instruction, const std::vector<Index> inputs = {});
 		Index add_instruction(const Instruction &instruction, const std::vector<Index> inputs, const Index after);
 		Index add_instruction(const Instruction &instruction, const std::vector<Index> inputs, const std::optional<Index> after);
-		Index add_instruction(const Instruction &instruction, const Index after);
+		//Index add_instruction(const Instruction &instruction, const Index after);
 		// | Same as before, but allow specification of which output in case there are multiple outputs.
 		Index add_instruction_indexed(const Instruction &instruction, const std::vector<IO> inputs = {});
 		Index add_instruction_indexed(const Instruction &instruction, const std::vector<IO> inputs, const Index after);
 		Index add_instruction_indexed(const Instruction &instruction, const std::vector<IO> inputs, const std::optional<Index> after);
-		Index add_instruction_indexed(const Instruction &instruction, const Index after);
+		//Index add_instruction_indexed(const Instruction &instruction, const Index after);
 		// | Set "output"'s given output as "input"'s given input.
 		void add_connection(IO output, IO input);
 		// | Right after "before" is emitted, emit "after"'s unemitted children and then "after".

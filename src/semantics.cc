@@ -9138,9 +9138,9 @@ Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction(const Instruction &i
 	}
 }
 
-Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction(const Instruction &instruction, const Index after) {
-	return add_instruction_indexed(instruction, after);
-}
+//Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction(const Instruction &instruction, const Index after) {
+//	return add_instruction_indexed(instruction, after);
+//}
 
 // | Same as before, but allow specification of which output in case there are multiple outputs.
 Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction_indexed(const Instruction &instruction, const std::vector<IO> inputs) {
@@ -9170,9 +9170,9 @@ Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction_indexed(const Instru
 	}
 }
 
-Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction_indexed(const Instruction &instruction, const Index after) {
-	return add_instruction_indexed(instruction, {}, after);
-}
+//Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction_indexed(const Instruction &instruction, const Index after) {
+//	return add_instruction_indexed(instruction, {}, after);
+//}
 
 // | Set "output"'s given output as "input"'s given input.
 void Semantics::MIPSIO::add_connection(IO output, IO input) {
