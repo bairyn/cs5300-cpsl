@@ -192,6 +192,10 @@ public:
 			std::string identifier;  // In the scope in which this type is visible, which identifier refers to this type?
 			bool fixed_width;        // Are values of this type constrained to a fixed size?
 			uint32_t size;           // How many bytes do values of this type occupy in memory?  Ignored if !fixed_width.
+
+			const std::string &get_identifier()  const;
+			bool               get_fixed_width() const;
+			uint32_t           get_size()        const;
 		};
 
 		class Primitive : public Base {
@@ -225,6 +229,10 @@ public:
 			// | Return "integer", "char", "boolean", or "string".
 			static std::string get_tag_repr(tag_t tag);
 			std::string get_tag_repr() const;
+
+			// | Determine whether a 4-byte MIPS word is needed to store this value rather than only 1 byte.
+			// All constant value types can fit into either 4 bytes or 1 bytes; they are fixed size.
+			bool is_word(bool permit_in_between_size = true) const;
 		};
 
 		class Simple : public Base {
@@ -614,7 +622,6 @@ public:
 	// IdentifierScope passed to this method.
 	Type analyze_type(const std::string &identifier, const ::Type &type, const IdentifierScope &type_constant_scope, const IdentifierScope &type_type_scope, IdentifierScope &anonymous_storage);
 
-	// TODO: maybe a convenient short construct for basic registers OSLT.
 	// maybe for std::string register_ or Symbol.  Default max_size 4, offset 0, etc.
 	// | A representation of a storage unit: a register, offset on the stack, global address, etc.
 	//
@@ -625,12 +632,23 @@ public:
 	// There are 4 storage types:
 	// 	1: global_address + x
 	// 	2: x(global_address)
-	// 	3: $reg + x
+	// 	3: $reg
 	// 	4: x($reg)
+	//
+	// Pointers are 4-byte MIPS words, so if dereferencing, max_size refers to
+	// the pointed-to data, not the 4-byte MIPS word pointer.
 	class Storage {
 	public:
 		Storage();
 		Storage(uint32_t max_size, bool is_global, Symbol global_address, const std::string &register_, bool dereference, int32_t offset);
+		// Specialized storage constructors.
+		// | Storage type #1: (&global) + x, and
+		// | Storage type #2: ((uint8_t *) &global)[x];  -- if global is already a byte pointer/array, global[x].
+		Storage(Symbol global_address, bool dereference, uint32_t max_size, int32_t offset = 0);
+		// | Storage type #3: 4-byte direct register.  (No dereference.)
+		Storage(const std::string &register_);
+		// | Storage type #4: dereferenced register.
+		Storage(const std::string &register_, uint32_t max_size, int32_t offset = 0);
 
 		// | What is the maximum size that this storage can handle?
 		uint32_t    max_size;
@@ -888,8 +906,8 @@ public:
 
 	class Expression {
 	public:
-		MIPSIO instructions;
-		Type output_type;
+		MIPSIO        instructions;
+		Type          output_type;
 		MIPSIO::Index output_index;
 		Expression();  // (No instructions; null type.)
 		Expression(const MIPSIO  &instructions, const Type  &output_type, MIPSIO::Index output_index);
@@ -899,8 +917,8 @@ public:
 	};
 
 	// The non-const part is the ability to store strings.
-	MIPSIO analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
-	MIPSIO analyze_expression(const ::Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
+	Expression analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
+	Expression analyze_expression(const ::Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
 	// TODO
 	//MIPSIO analyze_statement();
 
