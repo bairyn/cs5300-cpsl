@@ -6452,7 +6452,6 @@ void UnitTests::test_mips_io2() {
 			// Storage(uint32_t max_size, bool is_global, Symbol global_address, const std::string &register_, bool dereference, int32_t offset);
 			Storage(4, false, Symbol(), "$t2", false, 0),
 			Storage(4, false, Symbol(), "$t3", false, 0),
-			Storage(4, false, Symbol(), "$t4", false, 0),
 		},
 		// Outputs.
 		{
