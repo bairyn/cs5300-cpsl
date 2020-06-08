@@ -11,7 +11,6 @@
 #include <variant>    // std::monostate, std::variant
 
 #include "grammar.hh"
-#include "graph.hh"
 
 extern "C" {
 #include "util.h"     // A_BILLION
@@ -668,6 +667,8 @@ public:
 		bool is_global_dereference()   const;
 		bool is_register_direct()      const;
 		bool is_register_dereference() const;
+
+		using Index = std::vector<Storage>::size_type;
 	};
 
 	// | An intermediate unit representation of MIPS instructions.
@@ -806,80 +807,65 @@ public:
 		std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
 	};
 
-	// TODO: fix required_working_sizes: it's connections *plus* max, not max of connections and max.  But for overlay it's fine as is.
 	class MIPSIO {
 	public:
-		class Node;
-		class Connection;
-		class Parallel;
-		using Graph = FullGraph<Node, Connection, Parallel>;
+		// | Reference to an instruction contained in this MIPSIO.
+		using Index   = std::vector<Instruction>::size_type;
+		// | Given an instruction, this is a reference to an input, working, or output storage.
+		using IOIndex = std::vector<uint32_t>::size_type;
+		// | Reference to an instruction and one of its inputs or outputs, depending on the context.
+		using IO = std::pair<Index, Index>;
 
-		// | Connecting Nodes with Empty should have equivalent behavior as the Nodes without Empty.
-		class Node {
-		public:
-			Node(Instruction       &&instruction);
-			Node(const Instruction  &instruction);
-			Instruction instruction;
-		};
-
-		// | Connect every output of "left" with every input of "right".
-		class Connection {
-		public:
-			Connection(const Graph &left, const Graph &right);
-
-			// | Has there been at least one non-empty connection somewhere?
-			bool empty;
-
-			std::vector<uint32_t> input_sizes;
-			// | For each size, max count of this set of input/output connection, left's, and right's.
-			std::map<uint32_t, std::vector<uint32_t>::size_type> required_working_sizes;
-			std::vector<uint32_t> output_sizes;
-		};
-
-		// | Collect two independent instruction sequences in parallel.
-		class Parallel {
-		public:
-			Parallel(const Graph &left, const Graph &right);
-
-			// | Has there been at least one non-empty branch somewhere?
-			bool empty;
-
-			// | The input sizes of all branches / pipelines, which must be equal.
-			std::vector<uint32_t> input_sizes;
-			// | For each size in any branch, the maximum count in a branch.
-			std::map<uint32_t, std::vector<uint32_t>::size_type> required_working_sizes;
-			std::vector<uint32_t> output_sizes;
-		};
-
-		static std::map<uint32_t, std::vector<uint32_t>::size_type> count_working_sizes(const std::vector<uint32_t> &expanded_working_sizes);
-		// | The order might be different, but get a vector of working sizes from largest to smallest.
-		static std::vector<uint32_t> expand_working_sizes(const std::map<uint32_t, std::vector<uint32_t>::size_type> &counted_working_sizes);
-		// | Set each size to the maximum count/value in which it occurs.
-		static std::map<uint32_t, std::vector<uint32_t>::size_type> merge_counted_working_sizes(const std::map<uint32_t, std::vector<uint32_t>::size_type> &a, const std::map<uint32_t, std::vector<uint32_t>::size_type> &b);
-		// | merge_counted_working_sizes for any number of counted working sizes vectors.
-		static std::map<uint32_t, std::vector<uint32_t>::size_type> merge_counted_working_sizes(const std::vector<std::map<uint32_t, std::vector<uint32_t>::size_type>> &counted_working_sizes_vector);
-
-		MIPSIO();
-		MIPSIO(Graph       &&nodes);
-		MIPSIO(const Graph  &nodes);
-		Graph nodes;
-
-		// | Propagate the storages (e.g. registers) through to the
-		// instructions in the instruction graph, and emit instructions using
-		// those registers.
+		// | Vertices.
 		//
-		// After the graph is constructed, the calculated needed input,
-		// working, and storage units can be used to generate a collection of
-		// registers (and, if needed, stack or other space) to pass as
-		// "storages".
+		// Each instruction has zero or more inputs, zero or more required working storages, and zero or more outputs.
 		//
-		// The graph is used calculate requirements for and connect used
-		// registers and other storage units.
-		std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
+		// Instructions can be added.  Connections between an instruction's
+		// input and an instruction's output can also be added.  An
+		// instruction's input can have at most one connection.
+		//
+		// For emission, all the inputs of all instructions must have exactly
+		// one producer, either another instruction's output or a storage unit
+		// provided by "input_storages".
+		std::vector<Instruction> instructions;
 
-		// | Convenience constructors.
-		static MIPSIO copy(const MIPSIO &mips_io);
-		// TODO: connect, parallelize (same input and output sizes), etc.
+		// | All vertices that have inputs.
+		std::map<IO, IO> connections;  // connections[input] == output that provides the input.
+		std::map<IO, std::set<IO>> reversed_connections;  // connections[output] == {all inputs that this output supplies}.
+
+		// | In order to emit these MIPSIO instructions that write these outputs, how many working storages are needed?
+		std::map<uint32_t, std::vector<uint32_t>::size_type> prepare(const std::set<IO> &capture_outputs) const;
+		// | Emit the collections of instructions using the provided storages.
+		//
+		// There must be a path between every node and capture_outputs, or an
+		// error is thrown.  This simplifies the algorithm's working storage
+		// tracking, to know when they can be re-used.
+		std::vector<Output::Line> emit(const std::map<IO, Storage> &input_storages, const std::vector<Storage> &working_storages, const std::map<IO, Storage> &capture_outputs) const;
+
+		template<typename A, typename B, typename C>
+		static std::map<A, std::map<B, C>> expand_map(const std::map<std::pair<A, B>, C> &map) {
+			std::map<A, std::map<B, C>> map_expanded;
+			for (const typename std::map<std::pair<A, B>, C>::value_type &map_pair : std::as_const(map)) {
+				typename std::map<A, std::map<B, C>>::iterator map_expanded_search = map_expanded.find(map_pair.first.first);
+				if (map_expanded_search == map_expanded.end()) {
+					map_expanded.insert({map_pair.first.first, {{map_pair.first.second, map_pair.second}}});
+				} else {
+					map_expanded_search->second.insert({map_pair.first.second, map_pair.second});
+				}
+			}
+			return map_expanded;
+		}
+
+		template<typename A, typename B, typename C>
+		static std::map<std::pair<A, B>, C> shrink_map(const std::map<A, std::map<B, C>> &map) {
+			std::map<std::pair<A, B>, C> map_shrinked;
+			for (const typename std::map<A, std::map<B, C>>::value_type &map_pair : std::as_const(map)) {
+				for (const typename std::map<B, C>::value_type &submap_pair : std::as_const(map_pair.second)) {
+					map_shrinked.insert({map_pair.first, submap_pair.first}, submap_pair.second);
+				}
+			}
+			return map_shrinked;
+		}
 	};
 
 	// The non-const part is the ability to store strings.
