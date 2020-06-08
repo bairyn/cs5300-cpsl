@@ -5688,7 +5688,50 @@ std::vector<uint32_t> Semantics::Instruction::JumpTo::get_output_sizes() const {
 std::vector<uint32_t> Semantics::Instruction::JumpTo::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::JumpTo::emit(const std::vector<Storage> &storages) const {
-	// TODO
+	// Check sizes.
+	if (Storage::get_sizes(storages) != get_all_sizes()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::JumpTo::emit: the number or sizes of storage units provided does not match what was expected.";
+		throw SemanticsError(sstr.str());
+	}
+	const Storage &source_storage = storages[0];
+
+	// Prepare output vector.
+	std::vector<Output::Line> lines;
+
+	// Emit a symbol for this instruction if there is one.
+	if (has_symbol) {
+		lines.push_back({":", symbol});
+	}
+
+	// Part 1: get source address.
+	if           (source_storage.is_global_address()) {
+		lines.push_back("\tla   $t8, " + source_storage.global_address);
+		if (source_storage.offset != 0) {
+			lines.push_back("\tla   $t8, " + std::to_string(source_storage.offset) + "($t8)");
+		}
+	} else if    (source_storage.is_global_dereference()) {
+		lines.push_back("\tla   $t8, " + source_storage.global_address);
+		lines.push_back("\tlw   $t8, " + std::to_string(source_storage.offset) + "($t8)");
+	} else if    (source_storage.is_register_direct()) {
+	} else {  // (source_storage.is_register_dereference()) {
+		lines.push_back("\tla   $t8, " + std::to_string(source_storage.offset) + "(" + source_storage.register_ + ")");
+	}
+
+	// Part 2: load source (4-bytes).
+	if (!source_storage.is_register_direct()) {
+		lines.push_back("\tlw   $t8, ($t8)");
+	}
+
+	// Part 3: jump.
+	if (!source_storage.is_register_direct()) {
+		lines.push_back("\tjr   $t8");
+	} else {
+		lines.push_back("\tjr   " + source_storage.register_);
+	}
+
+	// Return the output.
+	return lines;
 }
 
 Semantics::Instruction::Jump::Jump()
@@ -5705,25 +5748,62 @@ std::vector<uint32_t> Semantics::Instruction::Jump::get_output_sizes() const { r
 std::vector<uint32_t> Semantics::Instruction::Jump::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::Jump::emit(const std::vector<Storage> &storages) const {
-	// TODO
+	// Check sizes.
+	if (Storage::get_sizes(storages) != get_all_sizes()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::Jump::emit: the number or sizes of storage units provided does not match what was expected.";
+		throw SemanticsError(sstr.str());
+	}
+
+	// Prepare output vector.
+	std::vector<Output::Line> lines;
+
+	// Emit a symbol for this instruction if there is one.
+	if (has_symbol) {
+		lines.push_back({":", symbol});
+	}
+
+	// Part 1: jump.
+	lines.push_back("\tj    " + jump_destination);
+
+	// Return the output.
+	return lines;
 }
 
 Semantics::Instruction::Call::Call()
 	{}
 
-Semantics::Instruction::Call::Call(const Base &base, bool fixed_storage, const Storage &storage)
+Semantics::Instruction::Call::Call(const Base &base, Symbol jump_destination)
 	: Base(base)
-	, fixed_storage(fixed_storage)
-	, storage(storage)
+	, jump_destination(jump_destination)
 	{}
 
-std::vector<uint32_t> Semantics::Instruction::Call::get_input_sizes() const { if (fixed_storage) { return {}; } else { return {4}; } }
+std::vector<uint32_t> Semantics::Instruction::Call::get_input_sizes() const { return {}; }
 std::vector<uint32_t> Semantics::Instruction::Call::get_working_sizes() const { return {}; }
 std::vector<uint32_t> Semantics::Instruction::Call::get_output_sizes() const { return {}; }
 std::vector<uint32_t> Semantics::Instruction::Call::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::Call::emit(const std::vector<Storage> &storages) const {
-	// TODO
+	// Check sizes.
+	if (Storage::get_sizes(storages) != get_all_sizes()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::Call::emit: the number or sizes of storage units provided does not match what was expected.";
+		throw SemanticsError(sstr.str());
+	}
+
+	// Prepare output vector.
+	std::vector<Output::Line> lines;
+
+	// Emit a symbol for this instruction if there is one.
+	if (has_symbol) {
+		lines.push_back({":", symbol});
+	}
+
+	// Part 1: jump.
+	lines.push_back("\tjal  " + jump_destination);
+
+	// Return the output.
+	return lines;
 }
 
 Semantics::Instruction::Return::Return()
@@ -5741,41 +5821,172 @@ std::vector<uint32_t> Semantics::Instruction::Return::get_output_sizes() const {
 std::vector<uint32_t> Semantics::Instruction::Return::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::Return::emit(const std::vector<Storage> &storages) const {
-	// TODO
+	// Check sizes.
+	if (Storage::get_sizes(storages) != get_all_sizes()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::Return::emit: the number or sizes of storage units provided does not match what was expected.";
+		throw SemanticsError(sstr.str());
+	}
+	const Storage &source_storage = fixed_storage ? storage : storages[0];
+
+	// Prepare output vector.
+	std::vector<Output::Line> lines;
+
+	// Emit a symbol for this instruction if there is one.
+	if (has_symbol) {
+		lines.push_back({":", symbol});
+	}
+
+	// Part 1: get source address.
+	if           (source_storage.is_global_address()) {
+		lines.push_back("\tla   $t8, " + source_storage.global_address);
+		if (source_storage.offset != 0) {
+			lines.push_back("\tla   $t8, " + std::to_string(source_storage.offset) + "($t8)");
+		}
+	} else if    (source_storage.is_global_dereference()) {
+		lines.push_back("\tla   $t8, " + source_storage.global_address);
+		lines.push_back("\tlw   $t8, " + std::to_string(source_storage.offset) + "($t8)");
+	} else if    (source_storage.is_register_direct()) {
+	} else {  // (source_storage.is_register_dereference()) {
+		lines.push_back("\tla   $t8, " + std::to_string(source_storage.offset) + "(" + source_storage.register_ + ")");
+	}
+
+	// Part 2: load source (4-bytes).
+	if (!source_storage.is_register_direct()) {
+		lines.push_back("\tlw   $t8, ($t8)");
+	}
+
+	// Part 3: jump.
+	if (!source_storage.is_register_direct()) {
+		lines.push_back("\tjr   $t8");
+	} else {
+		lines.push_back("\tjr   " + source_storage.register_);
+	}
+
+	// Return the output.
+	return lines;
 }
 
 Semantics::Instruction::BranchZero::BranchZero()
 	{}
 
-Semantics::Instruction::BranchZero::BranchZero(const Base &base, Symbol branch_destination)
+Semantics::Instruction::BranchZero::BranchZero(const Base &base, bool is_word, Symbol branch_destination)
 	: Base(base)
+	, is_word(is_word)
 	, branch_destination(branch_destination)
 	{}
 
-std::vector<uint32_t> Semantics::Instruction::BranchZero::get_input_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::BranchZero::get_input_sizes() const { return {4}; }
 std::vector<uint32_t> Semantics::Instruction::BranchZero::get_working_sizes() const { return {}; }
 std::vector<uint32_t> Semantics::Instruction::BranchZero::get_output_sizes() const { return {}; }
 std::vector<uint32_t> Semantics::Instruction::BranchZero::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::BranchZero::emit(const std::vector<Storage> &storages) const {
-	// TODO
+	// Check sizes.
+	if (Storage::get_sizes(storages) != get_all_sizes()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::BranchZero::emit: the number or sizes of storage units provided does not match what was expected.";
+		throw SemanticsError(sstr.str());
+	}
+	const Storage &source_storage = storages[0];
+
+	// Prepare output vector.
+	std::vector<Output::Line> lines;
+
+	// Emit a symbol for this instruction if there is one.
+	if (has_symbol) {
+		lines.push_back({":", symbol});
+	}
+
+	// Part 1: get source address.
+	if           (source_storage.is_global_address()) {
+		lines.push_back("\tla   $t8, " + source_storage.global_address);
+		if (source_storage.offset != 0) {
+			lines.push_back("\tla   $t8, " + std::to_string(source_storage.offset) + "($t8)");
+		}
+	} else if    (source_storage.is_global_dereference()) {
+		lines.push_back("\tla   $t8, " + source_storage.global_address);
+		lines.push_back("\tlw   $t8, " + std::to_string(source_storage.offset) + "($t8)");
+	} else if    (source_storage.is_register_direct()) {
+	} else {  // (source_storage.is_register_dereference()) {
+		lines.push_back("\tla   $t8, " + std::to_string(source_storage.offset) + "(" + source_storage.register_ + ")");
+	}
+
+	// Part 2: load source (4-bytes).
+	if (!source_storage.is_register_direct()) {
+		lines.push_back("\tlw   $t8, ($t8)");
+	}
+
+	// Part 3: jump.
+	if (!source_storage.is_register_direct()) {
+		lines.push_back("\tbeq  $t8, $zero, " + branch_destination);
+	} else {
+		lines.push_back("\tbeq  " + source_storage.register_ + ", $zero, " + branch_destination);
+	}
+
+	// Return the output.
+	return lines;
 }
 
 Semantics::Instruction::BranchNonnegative::BranchNonnegative()
 	{}
 
-Semantics::Instruction::BranchNonnegative::BranchNonnegative(const Base &base, Symbol branch_destination)
+Semantics::Instruction::BranchNonnegative::BranchNonnegative(const Base &base, bool is_word, Symbol branch_destination)
 	: Base(base)
+	, is_word(is_word)
 	, branch_destination(branch_destination)
 	{}
 
-std::vector<uint32_t> Semantics::Instruction::BranchNonnegative::get_input_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::BranchNonnegative::get_input_sizes() const { return {4}; }
 std::vector<uint32_t> Semantics::Instruction::BranchNonnegative::get_working_sizes() const { return {}; }
 std::vector<uint32_t> Semantics::Instruction::BranchNonnegative::get_output_sizes() const { return {}; }
 std::vector<uint32_t> Semantics::Instruction::BranchNonnegative::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::BranchNonnegative::emit(const std::vector<Storage> &storages) const {
-	// TODO
+	// Check sizes.
+	if (Storage::get_sizes(storages) != get_all_sizes()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::BranchNonnegative::emit: the number or sizes of storage units provided does not match what was expected.";
+		throw SemanticsError(sstr.str());
+	}
+	const Storage &source_storage = storages[0];
+
+	// Prepare output vector.
+	std::vector<Output::Line> lines;
+
+	// Emit a symbol for this instruction if there is one.
+	if (has_symbol) {
+		lines.push_back({":", symbol});
+	}
+
+	// Part 1: get source address.
+	if           (source_storage.is_global_address()) {
+		lines.push_back("\tla   $t8, " + source_storage.global_address);
+		if (source_storage.offset != 0) {
+			lines.push_back("\tla   $t8, " + std::to_string(source_storage.offset) + "($t8)");
+		}
+	} else if    (source_storage.is_global_dereference()) {
+		lines.push_back("\tla   $t8, " + source_storage.global_address);
+		lines.push_back("\tlw   $t8, " + std::to_string(source_storage.offset) + "($t8)");
+	} else if    (source_storage.is_register_direct()) {
+	} else {  // (source_storage.is_register_dereference()) {
+		lines.push_back("\tla   $t8, " + std::to_string(source_storage.offset) + "(" + source_storage.register_ + ")");
+	}
+
+	// Part 2: load source (4-bytes).
+	if (!source_storage.is_register_direct()) {
+		lines.push_back("\tlw   $t8, ($t8)");
+	}
+
+	// Part 3: jump.
+	if (!source_storage.is_register_direct()) {
+		lines.push_back("\tbge  $t8, $zero, " + branch_destination);
+	} else {
+		lines.push_back("\tbge  " + source_storage.register_ + ", $zero, " + branch_destination);
+	}
+
+	// Return the output.
+	return lines;
 }
 
 Semantics::Instruction::Instruction(tag_t tag, const data_t &data)

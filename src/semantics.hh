@@ -738,9 +738,11 @@ public:
 			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
 		};
 
-		// | Consume but ignore the output value, so that when instruction
-		// graphs are emitted, the output will end up in a temporary storage
-		// unit that can be re-used.
+		// | Pseudoinstruction: consume but ignore the output value, so that
+		// when instruction graphs are emitted, the output will end up in a
+		// temporary storage unit that can be re-used.
+		//
+		// Emits no output.
 		class Ignore : public Base {
 		public:
 			Ignore();
@@ -941,13 +943,12 @@ public:
 			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
 		};
 
-		// | jal instruction to a label.
+		// | jal instruction to a label.  Store return address in $ra.
 		class Call : public Base {
 		public:
 			Call();
-			Call(const Base &base, bool fixed_storage, const Storage &storage);
-			bool fixed_storage;
-			Storage storage;
+			Call(const Base &base, Symbol jump_destination);
+			Symbol jump_destination;
 
 			std::vector<uint32_t> get_input_sizes() const;
 			std::vector<uint32_t> get_working_sizes() const;
@@ -961,7 +962,7 @@ public:
 		class Return : public Base {
 		public:
 			Return();
-			Return(const Base &base, bool fixed_storage, const Storage &storage);
+			Return(const Base &base, bool fixed_storage = true, const Storage &storage = Storage("$ra"));
 			bool fixed_storage;
 			Storage storage;
 
@@ -977,7 +978,8 @@ public:
 		class BranchZero : public Base {
 		public:
 			BranchZero();
-			BranchZero(const Base &base, Symbol branch_destination);
+			BranchZero(const Base &base, bool is_word, Symbol branch_destination);
+			bool is_word;
 			Symbol branch_destination;
 
 			std::vector<uint32_t> get_input_sizes() const;
@@ -992,7 +994,8 @@ public:
 		class BranchNonnegative : public Base {
 		public:
 			BranchNonnegative();
-			BranchNonnegative(const Base &base, Symbol branch_destination);
+			BranchNonnegative(const Base &base, bool is_word, Symbol branch_destination);
+			bool is_word;
 			Symbol branch_destination;
 
 			std::vector<uint32_t> get_input_sizes() const;
