@@ -5984,6 +5984,8 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 		capture_outputs.insert({capture_output, Storage()});
 	}
 
+	const bool permit_uncaptured_outputs = true;
+
 	// Emulate emit().
 	std::map<Index, std::map<IOIndex, Storage>> expanded_capture_outputs = expand_map<Index, IOIndex, Storage>(capture_outputs);
 
@@ -6165,14 +6167,16 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 					;
 				throw SemanticsError(sstr.str());
 			} else if (!capture_outputs_found && !reversed_connections_any) {
-				// Nothing consumes this output.  This should probably be a warning, but just throw an error for now (TODO: warn, not fail).
-				std::ostringstream sstr;
-				sstr
-					<< "Semantics::MIPSIO::prepare: warning: output capture missing without connection in instruction graph: the \"capture_outputs\" argument contains no reference to an instruction's output, and the output is is not provided to other node." << std::endl
-					<< "\tthis_node (index) : " << this_node << std::endl
-					<< "\toutput_index      : " << output_index
-					;
-				throw SemanticsError(sstr.str());
+				if (!permit_uncaptured_outputs) {
+					// Nothing consumes this output.
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::MIPSIO::prepare: error: output capture missing without connection in instruction graph: the \"capture_outputs\" argument contains no reference to an instruction's output, and the output is is not provided to other node." << std::endl
+						<< "\tthis_node (index) : " << this_node << std::endl
+						<< "\toutput_index      : " << output_index
+						;
+					throw SemanticsError(sstr.str());
+				}
 			}
 
 			if (capture_outputs_found) {
@@ -6329,7 +6333,7 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 	return Storage::get_sizes(working_storages);
 }
 
-std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, Storage> &input_storages, const std::vector<Storage> &working_storages, const std::map<IO, Storage> &capture_outputs) const {
+std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, Storage> &input_storages, const std::vector<Storage> &working_storages, const std::map<IO, Storage> &capture_outputs, bool permit_uncaptured_outputs) const {
 	std::map<Index, std::map<IOIndex, Storage>> expanded_capture_outputs = expand_map<Index, IOIndex, Storage>(capture_outputs);
 
 	std::vector<uint32_t> working_storage_sizes = Storage::get_sizes(working_storages);
@@ -6505,14 +6509,16 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 					;
 				throw SemanticsError(sstr.str());
 			} else if (!capture_outputs_found && !reversed_connections_any) {
-				// Nothing consumes this output.  This should probably be a warning, but just throw an error for now (TODO: warn, not fail).
-				std::ostringstream sstr;
-				sstr
-					<< "Semantics::MIPSIO::emit: warning: output capture missing without connection in instruction graph: the \"capture_outputs\" argument contains no reference to an instruction's output, and the output is is not provided to other node." << std::endl
-					<< "\tthis_node (index) : " << this_node << std::endl
-					<< "\toutput_index      : " << output_index
-					;
-				throw SemanticsError(sstr.str());
+				if (!permit_uncaptured_outputs) {
+					// Nothing consumes this output.
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::MIPSIO::emit: error: output capture missing without connection in instruction graph: the \"capture_outputs\" argument contains no reference to an instruction's output, and the output is is not provided to other node." << std::endl
+						<< "\tthis_node (index) : " << this_node << std::endl
+						<< "\toutput_index      : " << output_index
+						;
+					throw SemanticsError(sstr.str());
+				}
 			}
 
 			if (capture_outputs_found) {

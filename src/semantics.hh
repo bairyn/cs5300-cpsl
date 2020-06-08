@@ -935,7 +935,7 @@ public:
 		// There must be a path between every node and capture_outputs, or an
 		// error is thrown.  This simplifies the algorithm's working storage
 		// tracking, to know when they can be re-used.
-		std::vector<Output::Line> emit(const std::map<IO, Storage> &input_storages, const std::vector<Storage> &working_storages, const std::map<IO, Storage> &capture_outputs) const;
+		std::vector<Output::Line> emit(const std::map<IO, Storage> &input_storages, const std::vector<Storage> &working_storages, const std::map<IO, Storage> &capture_outputs, bool permit_uncaptured_outputs = true) const;
 
 		template<typename A, typename B, typename C>
 		static std::map<A, std::map<B, C>> expand_map(const std::map<std::pair<A, B>, C> &map) {
