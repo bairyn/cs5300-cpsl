@@ -5661,6 +5661,81 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 	return output_lines;
 }
 
+// | Straightforwardly add an instruction, optionally connecting its
+// first arguments with the first output of the instructions
+// corresponding to the input indices.
+Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction(const Instruction &instruction, const std::vector<Index> inputs_) {
+	std::vector<IO> inputs;
+	for (const Index &input : std::as_const(inputs_)) {
+		inputs.push_back({input, 0});
+	}
+	return add_instruction(instruction, inputs);
+}
+
+// | Same as before, but allow specification of which output in case there are multiple outputs.
+Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction(const Instruction &instruction, const std::vector<IO> inputs) {
+	Index index = instructions.size();
+
+	instructions.push_back(instruction);
+
+	for (const IO &input : std::as_const(inputs)) {
+		IOIndex input_index = &input - &inputs[0];
+		add_connection(input, {index, input_index});
+	}
+
+	return index;
+}
+
+// | Set "output"'s given output as "input"'s given input.
+void Semantics::MIPSIO::add_connection(IO output, IO input) {
+	if (connections.find(input) != connections.cend()) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::MIPSIO::add_connection: error: attempt to add a connection to an input that already has a connection." << std::endl
+			<< "\toutput node : "                << output.first << std::endl
+			<< "\toutput node's output index : " << output.first << std::endl
+			<< "\tinput node : "                 << input.first << std::endl
+			<< "\tinput node's input index :   " << input.first
+			;
+		throw SemanticsError(sstr.str());
+	}
+
+	connections.insert({input, output});
+
+	std::map<IO, std::set<IO>>::iterator reversed_connections_search = reversed_connections.find(output);
+	if (reversed_connections_search == reversed_connections.end()) {
+		reversed_connections.insert({output, {input}});
+	} else {
+		reversed_connections_search->second.insert(input);
+	}
+}
+
+// | Add "other"'s instructions to this; any indices returned from
+// "add_instruction" into "other" (but not "this") must be added by the
+// returned value to remain correct.
+Semantics::MIPSIO::Index Semantics::MIPSIO::merge(const MIPSIO &other) {
+	Index addition = instructions.size();
+
+	instructions.insert(instructions.end(), other.instructions.cbegin(), other.instructions.cend());
+
+	for (const std::map<IO, IO>::value_type &connection : std::as_const(other.connections)) {
+		const IO &input  = connection.first;
+		const IO &output = connection.second;
+		const IO new_input {input.first + addition, input.second};
+		const IO new_output {output.first + addition, output.second};
+		connections.insert({new_input, new_output});
+
+		std::map<IO, std::set<IO>>::iterator reversed_connections_search = reversed_connections.find(new_output);
+		if (reversed_connections_search == reversed_connections.end()) {
+			reversed_connections.insert({new_output, {new_input}});
+		} else {
+			reversed_connections_search->second.insert(new_input);
+		}
+	}
+
+	return addition;
+}
+
 Semantics::MIPSIO Semantics::analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
 	return analyze_expression(grammar.expression_storage.at(expression), constant_scope, type_scope, var_scope, combined_scope);
 }

@@ -867,6 +867,21 @@ public:
 			}
 			return map_shrinked;
 		}
+
+		// Utility methods.
+
+		// | Straightforwardly add an instruction, optionally connecting its
+		// first arguments with the first output of the instructions
+		// corresponding to the input indices.
+		Index add_instruction(const Instruction &instruction, const std::vector<Index> inputs);
+		// | Same as before, but allow specification of which output in case there are multiple outputs.
+		Index add_instruction(const Instruction &instruction, const std::vector<IO> inputs);
+		// | Set "output"'s given output as "input"'s given input.
+		void add_connection(IO output, IO input);
+		// | Add "other"'s instructions to this; any indices returned from
+		// "add_instruction" into "other" (but not "this") must be added by the
+		// returned value to remain correct.
+		Index merge(const MIPSIO &other);
 	};
 
 	// The non-const part is the ability to store strings.
