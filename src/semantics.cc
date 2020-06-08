@@ -1334,6 +1334,16 @@ std::string Semantics::Type::get_tag_repr() const {
 	return get_tag_repr(tag);
 }
 
+// | If this is a type alias, resolve the type to get the base type;
+// otherwise, just return this type.
+const Semantics::Type &Semantics::Type::resolve_type() const {
+	if (is_simple()) {
+		return get_simple().resolve_type();
+	} else {
+		return *this;
+	}
+}
+
 const Semantics::ConstantValue::Dynamic Semantics::ConstantValue::Dynamic::dynamic {};
 
 Semantics::ConstantValue::ConstantValue()
@@ -4245,21 +4255,34 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::Base::emit(const st
 Semantics::Instruction::Ignore::Ignore()
 	{}
 
-Semantics::Instruction::Ignore::Ignore(const Base &base, bool is_word)
+Semantics::Instruction::Ignore::Ignore(const Base &base, bool has_input, bool is_word)
 	: Base(base)
+	, has_input(has_input)
 	, is_word(is_word)
 	{}
 
-std::vector<uint32_t> Semantics::Instruction::Ignore::get_input_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1)}; }
+std::vector<uint32_t> Semantics::Instruction::Ignore::get_input_sizes() const { if (!has_input) { return {}; } else { return {static_cast<uint32_t>(is_word ? 4 : 1)}; } }
 std::vector<uint32_t> Semantics::Instruction::Ignore::get_working_sizes() const { return {}; }
 std::vector<uint32_t> Semantics::Instruction::Ignore::get_output_sizes() const { return {}; }
 std::vector<uint32_t> Semantics::Instruction::Ignore::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::Ignore::emit(const std::vector<Storage> &storages) const {
+	// Check sizes.
+	if (Storage::get_sizes(storages) != get_all_sizes()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::Ignore::emit: the number or sizes of storage units provided does not match what was expected.";
+		throw SemanticsError(sstr.str());
+	}
+
 	// Prepare output vector.
 	std::vector<Output::Line> lines;
 
-	// Leave output vector empty.
+	// Emit a symbol for this instruction if there is one.
+	if (has_symbol) {
+		lines.push_back({":", symbol});
+	}
+
+	// Emit no code.
 
 	// Return the output.
 	return lines;
@@ -4368,10 +4391,10 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadImmediate::emit
 Semantics::Instruction::LoadFrom::LoadFrom()
 	{}
 
-Semantics::Instruction::LoadFrom::LoadFrom(const Base &base, bool is_word_load, bool is_word_save, int32_t addition)
+Semantics::Instruction::LoadFrom::LoadFrom(const Base &base, bool is_word_save, bool is_word_load, int32_t addition)
 	: Base(base)
-	, is_word_load(is_word_load)
 	, is_word_save(is_word_save)
+	, is_word_load(is_word_load)
 	, addition(addition)
 	{}
 
@@ -4565,6 +4588,171 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 		} else {
 			lines.push_back("\tla   $t8, " + std::to_string(addition) + "($t8)");
 			lines.push_back(sized_save + "$t8, ($t9)");
+		}
+	}
+
+	// Return the output.
+	return lines;
+}
+
+Semantics::Instruction::LessThanFrom::LessThanFrom()
+	{}
+
+Semantics::Instruction::LessThanFrom::LessThanFrom(const Base &base, bool is_word, bool is_signed)
+	: Base(base)
+	, is_word(is_word)
+	, is_signed(is_signed)
+	{}
+
+std::vector<uint32_t> Semantics::Instruction::LessThanFrom::get_input_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1), static_cast<uint32_t>(is_word ? 4 : 1)}; }
+std::vector<uint32_t> Semantics::Instruction::LessThanFrom::get_working_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::LessThanFrom::get_output_sizes() const { return {static_cast<uint32_t>(1)}; }
+std::vector<uint32_t> Semantics::Instruction::LessThanFrom::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
+
+std::vector<Semantics::Output::Line> Semantics::Instruction::LessThanFrom::emit(const std::vector<Storage> &storages) const {
+	// Check sizes.
+	if (Storage::get_sizes(storages) != get_all_sizes()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::LessThanFrom::emit: the number or sizes of storage units provided does not match what was expected.";
+		throw SemanticsError(sstr.str());
+	}
+	const Storage &left_source_storage  = storages[0];
+	const Storage &right_source_storage = storages[1];
+	const Storage &destination_storage  = storages[2];
+
+	// Prepare output vector.
+	std::vector<Output::Line> lines;
+
+	// Emit a symbol for this instruction if there is one.
+	if (has_symbol) {
+		lines.push_back({":", symbol});
+	}
+
+	// If !this->is_word, replace sw with sb and lw with lb.
+	//
+	// 4 storage types for destination:
+	// 	1: global_address + x  (Store into this address.)
+	// 	2: x(global_address)   (Store into this dereferenced address.)
+	// 	3: $reg                (Store into this register.)
+	// 	4: x($reg)             (Store into this dereferenced register.)
+	//
+	// 4 storage types for a source:
+	// 	1: global_address + x  (Read from this address.)
+	// 	2: x(global_address)   (Read from this dereferenced address.)
+	// 	3: $reg                (Read from this register.)
+	// 	4: x($reg)             (Read from this dereferenced register.)
+
+	Output::Line sized_load;
+	Output::Line sized_save;
+
+	if (is_word) {
+		sized_load = "\tlw   ";
+	} else {
+		sized_load = "\tlb   ";
+	}
+	sized_save = "\tsb   ";
+
+	Output::Line slt_operator;
+
+	if (!is_signed) {
+		slt_operator = "\tsltu ";
+	} else {
+		slt_operator = "\tslt  ";
+	}
+
+	// Part 1: get left source address.
+	if           (left_source_storage.is_global_address()) {
+		lines.push_back("\tla   $t8, " + left_source_storage.global_address);
+		if (left_source_storage.offset != 0) {
+			lines.push_back("\tla   $t8, " + std::to_string(left_source_storage.offset) + "($t8)");
+		}
+	} else if    (left_source_storage.is_global_dereference()) {
+		lines.push_back("\tla   $t8, " + left_source_storage.global_address);
+		lines.push_back("\tlw   $t8, " + std::to_string(left_source_storage.offset) + "($t8)");
+	} else if    (left_source_storage.is_register_direct()) {
+	} else {  // (left_source_storage.is_register_dereference()) {
+		lines.push_back("\tla   $t8, " + std::to_string(left_source_storage.offset) + "(" + left_source_storage.register_ + ")");
+	}
+
+	// Part 2: load left source.
+	if (!left_source_storage.is_register_direct()) {
+		lines.push_back(sized_load + "$t8, ($t8)");
+	}
+
+	// Part 3: get right source address.
+	if           (right_source_storage.is_global_address()) {
+		lines.push_back("\tla   $t9, " + right_source_storage.global_address);
+		if (right_source_storage.offset != 0) {
+			lines.push_back("\tla   $t9, " + std::to_string(right_source_storage.offset) + "($t9)");
+		}
+	} else if    (right_source_storage.is_global_dereference()) {
+		lines.push_back("\tla   $t9, " + right_source_storage.global_address);
+		lines.push_back("\tlw   $t9, " + std::to_string(right_source_storage.offset) + "($t9)");
+	} else if    (right_source_storage.is_register_direct()) {
+	} else {  // (right_source_storage.is_register_dereference()) {
+		lines.push_back("\tla   $t9, " + std::to_string(right_source_storage.offset) + "(" + right_source_storage.register_ + ")");
+	}
+
+	// Part 4: load right source.
+	if (!right_source_storage.is_register_direct()) {
+		lines.push_back(sized_load + "$t9, ($t9)");
+	}
+
+	// Part 5: if both $t8 and $t9 are used, $t8 += $t9, to free $t9 for destination.
+	// If $t8 is free but $t9 is used, mark $t8 as being free.
+	std::string destination_address_register;
+	std::string sum_register;
+	if (left_source_storage.is_register_direct()) {
+		// $t8 is free.
+		destination_address_register = "$t8";
+		sum_register                 = "$t9";
+	} else {
+		// Make sure $t9 is free.
+		destination_address_register = "$t9";
+		sum_register                 = "$t8";
+		if (!(right_source_storage.is_register_direct())) {
+			lines.push_back(slt_operator + "$t8, $t8, $t9");
+		}
+	}
+
+	// Part 6: get destination address.
+	if           (destination_storage.is_global_address()) {
+		lines.push_back("\tla   " + destination_address_register + ", " + destination_storage.global_address);
+		if (destination_storage.offset != 0) {
+			lines.push_back("\tla   " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_address_register + ")");
+		}
+	} else if    (destination_storage.is_global_dereference()) {
+		lines.push_back("\tla   " + destination_address_register + ", " + destination_storage.global_address);
+		lines.push_back("\tlw   " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_address_register + ")");
+	} else if    (destination_storage.is_register_direct()) {
+	} else {  // (destination_storage.is_register_dereference()) {
+		lines.push_back("\tla   " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_storage.register_ + ")");
+	}
+
+	// Part 7: write destination.
+	if (destination_storage.is_register_direct()) {
+		if           ( left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
+			lines.push_back(slt_operator + destination_storage.register_ + ", " + left_source_storage.register_ + ", " + right_source_storage.register_);
+		} else if    ( left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
+			lines.push_back(slt_operator + destination_storage.register_ + ", " + left_source_storage.register_ + ", $t9");
+		} else if    (!left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
+			lines.push_back(slt_operator + destination_storage.register_ + ", $t8, " + right_source_storage.register_);
+		} else {  // (!left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
+			lines.push_back(slt_operator + destination_storage.register_ + ", $t8, $t9");
+		}
+	} else {
+		if           ( left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
+			lines.push_back(slt_operator + sum_register + ", " + left_source_storage.register_ + ", " + right_source_storage.register_);
+			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
+		} else if    ( left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
+			lines.push_back(slt_operator + sum_register + ", " + left_source_storage.register_ + ", $t9");
+			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
+		} else if    (!left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
+			lines.push_back(slt_operator + sum_register + ", $t8, " + right_source_storage.register_);
+			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
+		} else {  // (!left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
+			// (Addition already performed before loading the address.)
+			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
 		}
 	}
 
@@ -6014,6 +6202,11 @@ Semantics::Instruction::Instruction(const LoadFrom &load_from)
 	, data(load_from)
 	{}
 
+Semantics::Instruction::Instruction(const LessThanFrom &less_than_from)
+	: tag(less_than_from_tag)
+	, data(less_than_from)
+	{}
+
 Semantics::Instruction::Instruction(const NorFrom &nor_from)
 	: tag(nor_from_tag)
 	, data(nor_from)
@@ -6087,6 +6280,8 @@ const Semantics::Instruction::Base &Semantics::Instruction::get_base() const {
 			return get_load_immediate();
 		case load_from_tag:
 			return get_load_from();
+		case less_than_from_tag:
+			return get_less_than_from();
 		case nor_from_tag:
 			return get_nor_from();
 		case and_from_tag:
@@ -6130,6 +6325,8 @@ Semantics::Instruction::Base &&Semantics::Instruction::get_base() {
 			return std::move(get_load_immediate());
 		case load_from_tag:
 			return std::move(get_load_from());
+		case less_than_from_tag:
+			return std::move(get_less_than_from());
 		case nor_from_tag:
 			return std::move(get_nor_from());
 		case and_from_tag:
@@ -6173,6 +6370,8 @@ Semantics::Instruction::Base &Semantics::Instruction::get_base_mutable() {
 			return get_load_immediate_mutable();
 		case load_from_tag:
 			return get_load_from_mutable();
+		case less_than_from_tag:
+			return get_less_than_from_mutable();
 		case nor_from_tag:
 			return get_nor_from_mutable();
 		case and_from_tag:
@@ -6214,6 +6413,7 @@ bool Semantics::Instruction::is_ignore() const {
 			return true;
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -6244,6 +6444,7 @@ bool Semantics::Instruction::is_load_immediate() const {
 		case load_immediate_tag:
 			return true;
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -6274,6 +6475,7 @@ bool Semantics::Instruction::is_load_from() const {
 			return false;
 		case load_from_tag:
 			return true;
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -6297,11 +6499,43 @@ bool Semantics::Instruction::is_load_from() const {
 	}
 }
 
+bool Semantics::Instruction::is_less_than_from() const {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+			return false;
+		case less_than_from_tag:
+			return true;
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::is_less_than_from: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
 bool Semantics::Instruction::is_nor_from() const {
 	switch(tag) {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 			return false;
 		case nor_from_tag:
 			return true;
@@ -6332,6 +6566,7 @@ bool Semantics::Instruction::is_and_from() const {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 			return false;
 		case and_from_tag:
@@ -6362,6 +6597,7 @@ bool Semantics::Instruction::is_or_from() const {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 			return false;
@@ -6392,6 +6628,7 @@ bool Semantics::Instruction::is_add_from() const {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -6422,6 +6659,7 @@ bool Semantics::Instruction::is_sub_from() const {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -6452,6 +6690,7 @@ bool Semantics::Instruction::is_mult_from() const {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -6482,6 +6721,7 @@ bool Semantics::Instruction::is_div_from() const {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -6512,6 +6752,7 @@ bool Semantics::Instruction::is_jump_to() const {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -6542,6 +6783,7 @@ bool Semantics::Instruction::is_jump() const {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -6572,6 +6814,7 @@ bool Semantics::Instruction::is_call() const {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -6602,6 +6845,7 @@ bool Semantics::Instruction::is_return() const {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -6632,6 +6876,7 @@ bool Semantics::Instruction::is_branch_zero() const {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -6662,6 +6907,7 @@ bool Semantics::Instruction::is_branch_nonnegative() const {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -6693,6 +6939,7 @@ const Semantics::Instruction::Ignore &Semantics::Instruction::get_ignore() const
 			return std::get<Ignore>(data);
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -6726,6 +6973,7 @@ const Semantics::Instruction::LoadImmediate &Semantics::Instruction::get_load_im
 		case load_immediate_tag:
 			return std::get<LoadImmediate>(data);
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -6760,6 +7008,7 @@ const Semantics::Instruction::LoadFrom &Semantics::Instruction::get_load_from() 
 			break;
 		case load_from_tag:
 			return std::get<LoadFrom>(data);
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -6787,11 +7036,47 @@ const Semantics::Instruction::LoadFrom &Semantics::Instruction::get_load_from() 
 	throw SemanticsError(sstr.str());
 }
 
+const Semantics::Instruction::LessThanFrom &Semantics::Instruction::get_less_than_from() const {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+			break;
+		case less_than_from_tag:
+			return std::get<LessThanFrom>(data);
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_less_than_from: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_less_than_from: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
 const Semantics::Instruction::NorFrom &Semantics::Instruction::get_nor_from() const {
 	switch(tag) {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 			break;
 		case nor_from_tag:
 			return std::get<NorFrom>(data);
@@ -6826,6 +7111,7 @@ const Semantics::Instruction::AndFrom &Semantics::Instruction::get_and_from() co
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 			break;
 		case and_from_tag:
@@ -6860,6 +7146,7 @@ const Semantics::Instruction::OrFrom &Semantics::Instruction::get_or_from() cons
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 			break;
@@ -6894,6 +7181,7 @@ const Semantics::Instruction::AddFrom &Semantics::Instruction::get_add_from() co
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -6928,6 +7216,7 @@ const Semantics::Instruction::SubFrom &Semantics::Instruction::get_sub_from() co
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -6962,6 +7251,7 @@ const Semantics::Instruction::MultFrom &Semantics::Instruction::get_mult_from() 
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -6996,6 +7286,7 @@ const Semantics::Instruction::DivFrom &Semantics::Instruction::get_div_from() co
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7030,6 +7321,7 @@ const Semantics::Instruction::JumpTo &Semantics::Instruction::get_jump_to() cons
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7064,6 +7356,7 @@ const Semantics::Instruction::Jump &Semantics::Instruction::get_jump() const {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7098,6 +7391,7 @@ const Semantics::Instruction::Call &Semantics::Instruction::get_call() const {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7132,6 +7426,7 @@ const Semantics::Instruction::Return &Semantics::Instruction::get_return() const
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7166,6 +7461,7 @@ const Semantics::Instruction::BranchZero &Semantics::Instruction::get_branch_zer
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7200,6 +7496,7 @@ const Semantics::Instruction::BranchNonnegative &Semantics::Instruction::get_bra
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7234,6 +7531,7 @@ Semantics::Instruction::Ignore &&Semantics::Instruction::get_ignore() {
 			return std::get<Ignore>(std::move(data));
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7268,6 +7566,7 @@ Semantics::Instruction::LoadImmediate &&Semantics::Instruction::get_load_immedia
 		case load_immediate_tag:
 			return std::get<LoadImmediate>(std::move(data));
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7302,6 +7601,7 @@ Semantics::Instruction::LoadFrom &&Semantics::Instruction::get_load_from() {
 			break;
 		case load_from_tag:
 			return std::get<LoadFrom>(std::move(data));
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7329,11 +7629,47 @@ Semantics::Instruction::LoadFrom &&Semantics::Instruction::get_load_from() {
 	throw SemanticsError(sstr.str());
 }
 
+Semantics::Instruction::LessThanFrom &&Semantics::Instruction::get_less_than_from() {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+			break;
+		case less_than_from_tag:
+			return std::get<LessThanFrom>(std::move(data));
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_less_than_from: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_less_than_from: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
 Semantics::Instruction::NorFrom &&Semantics::Instruction::get_nor_from() {
 	switch(tag) {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 			break;
 		case nor_from_tag:
 			return std::get<NorFrom>(std::move(data));
@@ -7368,6 +7704,7 @@ Semantics::Instruction::AndFrom &&Semantics::Instruction::get_and_from() {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 			break;
 		case and_from_tag:
@@ -7402,6 +7739,7 @@ Semantics::Instruction::OrFrom &&Semantics::Instruction::get_or_from() {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 			break;
@@ -7436,6 +7774,7 @@ Semantics::Instruction::AddFrom &&Semantics::Instruction::get_add_from() {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7470,6 +7809,7 @@ Semantics::Instruction::SubFrom &&Semantics::Instruction::get_sub_from() {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7504,6 +7844,7 @@ Semantics::Instruction::MultFrom &&Semantics::Instruction::get_mult_from() {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7538,6 +7879,7 @@ Semantics::Instruction::DivFrom &&Semantics::Instruction::get_div_from() {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7572,6 +7914,7 @@ Semantics::Instruction::JumpTo &&Semantics::Instruction::get_jump_to() {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7606,6 +7949,7 @@ Semantics::Instruction::Jump &&Semantics::Instruction::get_jump() {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7640,6 +7984,7 @@ Semantics::Instruction::Call &&Semantics::Instruction::get_call() {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7674,6 +8019,7 @@ Semantics::Instruction::Return &&Semantics::Instruction::get_return() {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7708,6 +8054,7 @@ Semantics::Instruction::BranchZero &&Semantics::Instruction::get_branch_zero() {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7742,6 +8089,7 @@ Semantics::Instruction::BranchNonnegative &&Semantics::Instruction::get_branch_n
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7777,6 +8125,7 @@ Semantics::Instruction::Ignore &Semantics::Instruction::get_ignore_mutable() {
 			return std::get<Ignore>(data);
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7811,6 +8160,7 @@ Semantics::Instruction::LoadImmediate &Semantics::Instruction::get_load_immediat
 		case load_immediate_tag:
 			return std::get<LoadImmediate>(data);
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7845,6 +8195,7 @@ Semantics::Instruction::LoadFrom &Semantics::Instruction::get_load_from_mutable(
 			break;
 		case load_from_tag:
 			return std::get<LoadFrom>(data);
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -7872,11 +8223,47 @@ Semantics::Instruction::LoadFrom &Semantics::Instruction::get_load_from_mutable(
 	throw SemanticsError(sstr.str());
 }
 
+Semantics::Instruction::LessThanFrom &Semantics::Instruction::get_less_than_from_mutable() {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+			break;
+		case less_than_from_tag:
+			return std::get<LessThanFrom>(data);
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_less_than_from_mutable: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_less_than_from_mutable: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
 Semantics::Instruction::NorFrom &Semantics::Instruction::get_nor_from_mutable() {
 	switch(tag) {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 			break;
 		case nor_from_tag:
 			return std::get<NorFrom>(data);
@@ -7911,6 +8298,7 @@ Semantics::Instruction::AndFrom &Semantics::Instruction::get_and_from_mutable() 
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 			break;
 		case and_from_tag:
@@ -7945,6 +8333,7 @@ Semantics::Instruction::OrFrom &Semantics::Instruction::get_or_from_mutable() {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 			break;
@@ -7979,6 +8368,7 @@ Semantics::Instruction::AddFrom &Semantics::Instruction::get_add_from_mutable() 
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -8013,6 +8403,7 @@ Semantics::Instruction::SubFrom &Semantics::Instruction::get_sub_from_mutable() 
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -8047,6 +8438,7 @@ Semantics::Instruction::MultFrom &Semantics::Instruction::get_mult_from_mutable(
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -8081,6 +8473,7 @@ Semantics::Instruction::DivFrom &Semantics::Instruction::get_div_from_mutable() 
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -8115,6 +8508,7 @@ Semantics::Instruction::JumpTo &Semantics::Instruction::get_jump_to_mutable() {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -8149,6 +8543,7 @@ Semantics::Instruction::Jump &Semantics::Instruction::get_jump_mutable() {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -8183,6 +8578,7 @@ Semantics::Instruction::Call &Semantics::Instruction::get_call_mutable() {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -8217,6 +8613,7 @@ Semantics::Instruction::Return &Semantics::Instruction::get_return_mutable() {
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -8251,6 +8648,7 @@ Semantics::Instruction::BranchZero &Semantics::Instruction::get_branch_zero_muta
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -8285,6 +8683,7 @@ Semantics::Instruction::BranchNonnegative &Semantics::Instruction::get_branch_no
 		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
+		case less_than_from_tag:
 		case nor_from_tag:
 		case and_from_tag:
 		case or_from_tag:
@@ -8313,7 +8712,7 @@ Semantics::Instruction::BranchNonnegative &Semantics::Instruction::get_branch_no
 	throw SemanticsError(sstr.str());
 }
 
-// | Return "load_immediate", "load_from", or "nor_from", etc.
+// | Return "ignore", "load_immediate", "less_than_from", "load_from", or "nor_from", etc.
 std::string Semantics::Instruction::get_tag_repr(tag_t tag) {
 	switch(tag) {
 		case ignore_tag:
@@ -8322,6 +8721,8 @@ std::string Semantics::Instruction::get_tag_repr(tag_t tag) {
 			return "load_immediate";
 		case load_from_tag:
 			return "load_from";
+		case less_than_from_tag:
+			return "less_than_from";
 		case nor_from_tag:
 			return "nor_from";
 		case and_from_tag:
@@ -8369,6 +8770,8 @@ std::vector<uint32_t> Semantics::Instruction::get_input_sizes() const {
 			return get_load_immediate().get_input_sizes();
 		case load_from_tag:
 			return get_load_from().get_input_sizes();
+		case less_than_from_tag:
+			return get_less_than_from().get_input_sizes();
 		case nor_from_tag:
 			return get_nor_from().get_input_sizes();
 		case and_from_tag:
@@ -8412,6 +8815,8 @@ std::vector<uint32_t> Semantics::Instruction::get_working_sizes() const {
 			return get_load_immediate().get_working_sizes();
 		case load_from_tag:
 			return get_load_from().get_working_sizes();
+		case less_than_from_tag:
+			return get_less_than_from().get_working_sizes();
 		case nor_from_tag:
 			return get_nor_from().get_working_sizes();
 		case and_from_tag:
@@ -8455,6 +8860,8 @@ std::vector<uint32_t> Semantics::Instruction::get_output_sizes() const {
 			return get_load_immediate().get_output_sizes();
 		case load_from_tag:
 			return get_load_from().get_output_sizes();
+		case less_than_from_tag:
+			return get_less_than_from().get_output_sizes();
 		case nor_from_tag:
 			return get_nor_from().get_output_sizes();
 		case and_from_tag:
@@ -8498,6 +8905,8 @@ std::vector<uint32_t> Semantics::Instruction::get_all_sizes() const {
 			return get_load_immediate().get_all_sizes();
 		case load_from_tag:
 			return get_load_from().get_all_sizes();
+		case less_than_from_tag:
+			return get_less_than_from().get_all_sizes();
 		case nor_from_tag:
 			return get_nor_from().get_all_sizes();
 		case and_from_tag:
@@ -8541,6 +8950,8 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::emit(const std::vec
 			return get_load_immediate().emit(storages);
 		case load_from_tag:
 			return get_load_from().emit(storages);
+		case less_than_from_tag:
+			return get_less_than_from().emit(storages);
 		case nor_from_tag:
 			return get_nor_from().emit(storages);
 		case and_from_tag:
@@ -8942,7 +9353,7 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 		}
 	}
 
-	// Make sure there were no unvisited lines.
+	// Make sure there were no unvisited nodes.
 	if (visited_instructions.size() < instructions.size()) {
 		std::ostringstream sstr;
 		sstr
@@ -9005,6 +9416,8 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 
 		for (IOIndex input_index_ = 0; input_index_ < instruction.get_input_sizes().size(); ++input_index_) {
 			const IOIndex input_index = instruction.get_input_sizes().size() - 1 - input_index_;
+
+			// Search connections.
 			std::map<IO, IO>::const_iterator connections_search = connections.find({this_node, input_index});
 			if (connections_search != connections.cend()) {
 				const Index child_node = connections_search->second.first;
@@ -9020,6 +9433,25 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 				if (visited_instructions.find(child_node) == visited_instructions.cend()) {
 					has_unvisited_children = true;
 					children_stack.push_back(child_node);
+				}
+			}
+
+			// Search for a sequence connection for a node that should be emitted before this one.
+			std::map<Index, Index>::const_iterator reversed_sequences_search = reversed_sequences.find(this_node);
+			if (reversed_sequences_search != reversed_sequences.cend()) {
+				Index before_node = reversed_sequences_search->second;
+
+				// Detect cycles.
+				if (visited_instructions.find(before_node) != visited_instructions.cend()) {
+					std::ostringstream sstr;
+					sstr << "Semantics::MIPSIO::emit: error: a cycle was detected in the instruction graph at index " << before_node << " (sequenced after " << this_node << ").";
+					throw SemanticsError(sstr.str());
+				}
+
+				// Add the child.
+				if (visited_instructions.find(before_node) == visited_instructions.cend()) {
+					has_unvisited_children = true;
+					children_stack.push_back(before_node);
 				}
 			}
 		}
@@ -9307,7 +9739,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 		}
 	}
 
-	// Make sure there were no unvisited lines.
+	// Make sure there were no unvisited nodes.
 	if (visited_instructions.size() < instructions.size()) {
 		std::ostringstream sstr;
 		sstr
@@ -9422,6 +9854,18 @@ void Semantics::MIPSIO::add_sequence_connection(Index before, Index after) {
 	}
 
 	sequences.insert({before, after});
+
+	if (reversed_sequences.find(after) != reversed_sequences.cend()) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::MIPSIO::add_sequence_connection: error: attempt to add a sequence connection to an \"after\" instruction that already has a connection to a \"before\" instruction connected to it." << std::endl
+			<< "\tafter node  : " << after << std::endl
+			<< "\tbefore node : " << before
+			;
+		throw SemanticsError(sstr.str());
+	}
+
+	reversed_sequences.insert({after, before});
 }
 
 void Semantics::MIPSIO::add_sequence_connection(std::pair<Index, Index> before_after) {
@@ -9481,6 +9925,7 @@ Semantics::MIPSIO::Index Semantics::MIPSIO::merge(const MIPSIO &other) {
 		const Index new_before = before + addition;
 		const Index new_after  = after + addition;
 		sequences.insert({new_before, new_after});
+		reversed_sequences.insert({new_after, new_before});
 	}
 
 	return addition;
@@ -9488,10 +9933,10 @@ Semantics::MIPSIO::Index Semantics::MIPSIO::merge(const MIPSIO &other) {
 
 Semantics::Expression::Expression() {}
 
-Semantics::Expression::Expression(const MIPSIO  &instructions, const Type  &output_type, MIPSIO::Index output_index) : instructions(          instructions ), output_type(          output_type ), output_index(output_index) {}
-Semantics::Expression::Expression(const MIPSIO  &instructions,       Type &&output_type, MIPSIO::Index output_index) : instructions(          instructions ), output_type(std::move(output_type)), output_index(output_index) {}
-Semantics::Expression::Expression(      MIPSIO &&instructions, const Type  &output_type, MIPSIO::Index output_index) : instructions(std::move(instructions)), output_type(          output_type ), output_index(output_index) {}
-Semantics::Expression::Expression(      MIPSIO &&instructions,       Type &&output_type, MIPSIO::Index output_index) : instructions(std::move(instructions)), output_type(std::move(output_type)), output_index(output_index) {}
+Semantics::Expression::Expression(const MIPSIO  &instructions, const Type  &output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(          instructions ), output_type(          output_type ), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
+Semantics::Expression::Expression(const MIPSIO  &instructions,       Type &&output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(          instructions ), output_type(std::move(output_type)), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
+Semantics::Expression::Expression(      MIPSIO &&instructions, const Type  &output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(std::move(instructions)), output_type(          output_type ), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
+Semantics::Expression::Expression(      MIPSIO &&instructions,       Type &&output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(std::move(instructions)), output_type(std::move(output_type)), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
 
 Semantics::Expression Semantics::analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
 	return analyze_expression(grammar.expression_storage.at(expression), constant_scope, type_scope, var_scope, combined_scope);
@@ -9524,1082 +9969,1273 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 		expression_semantics.output_type  = constant_value.get_static_type();
 		expression_semantics.output_index = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), constant_value.get_static_primitive_type().is_word(), constant_value)});
 	} else {
-
-		// TODO
-#if 0
 		// Branch according to the expression type.
 		switch (expression_symbol.branch) {
-			// These 16 branches are static iff all subexpressions are static.
+			// These 16 branches are static iff all subexpressions are static, but they aren't.
 			case ::Expression::pipe_branch: {
 				const ::Expression::Pipe &pipe           = grammar.expression_pipe_storage.at(expression_symbol.data);
-				const ::Expression       &expression0    = grammar.expression_storage.at(pipe.expression0); (void) expression0;
+				const ::Expression       &expression0    = grammar.expression_storage.at(pipe.expression0);
 				const LexemeOperator     &pipe_operator0 = grammar.lexemes.at(pipe.pipe_operator0).get_operator();
-				const ::Expression       &expression1    = grammar.expression_storage.at(pipe.expression1); (void) expression1;
+				const ::Expression       &expression1    = grammar.expression_storage.at(pipe.expression1);
 
-				// Is either subexpression dynamic?  If so, this expression is also dynamic.
-				// (Normally we'd operate on the left side first, but since order
-				// of evaluation is referentially transparent and the parser tree
-				// is left-recursive, check the expression on the right first,
-				// which is more efficient.)
-				ConstantValue right = is_expression_constant(pipe.expression1, expression_constant_scope);
-				if (right.is_dynamic()) {
-					expression_constant_value = right;
-					break;
+				// Get left and right subexpressions.
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+
+				// Make sure left and right are of primitive types.
+				if (!left.output_type.resolve_type().is_primitive() || !right.output_type.resolve_type().is_primitive()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< pipe_operator0.line << " col " << pipe_operator0.column
+						<< "): cannot apply bitwise OR on a non-primitive-typed expression, for "
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
 				}
-				ConstantValue left  = is_expression_constant(pipe.expression0, expression_constant_scope);
-				if (left.is_dynamic()) {
-					expression_constant_value = left;
-					break;
-				}
+				const Type::Primitive &left_type  = left.output_type.resolve_type().get_primitive();
+				const Type::Primitive &right_type = left.output_type.resolve_type().get_primitive();
 
 				// Are the expressions of the same type?
-				if (left.tag != right.tag) {
+				if (left.output_type.tag != right.output_type.tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< pipe_operator0.line << " col " << pipe_operator0.column
 						<< "): refusing to OR values of different types, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Are we attempting to operate on a string?
-				if (left.is_string() || right.is_string()) {
+				if (left_type.is_string() || right_type.is_string()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< pipe_operator0.line << " col " << pipe_operator0.column
 						<< "): cannot apply bitwise OR on a string expression, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
+						<< left_type.get_tag_repr() << " with " << right_type.get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply bitwise OR depending on the integer type.
-				if        (left.is_integer()) {
-					expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) | static_cast<int32_t>(right.get_integer())), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_char()) {
-					expression_constant_value = ConstantValue(static_cast<char>(static_cast<char>(left.get_char()) | static_cast<char>(right.get_char())), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_boolean()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(static_cast<bool>(left.get_boolean()) | static_cast<bool>(right.get_boolean())), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else {
+				expression_semantics.output_type = left.output_type;
+				const Index left_index  = expression_semantics.instructions.merge(left.instructions);
+				const Index right_index = expression_semantics.instructions.merge(right.instructions);
+				const Index or_index    = expression_semantics.instructions.add_instruction({I::OrFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+				expression_semantics.output_index = or_index;
+				break;
+			} case ::Expression::ampersand_branch: {
+				const ::Expression::Ampersand &ampersand           = grammar.expression_ampersand_storage.at(expression_symbol.data);
+				const ::Expression            &expression0         = grammar.expression_storage.at(ampersand.expression0);
+				const LexemeOperator          &ampersand_operator0 = grammar.lexemes.at(ampersand.ampersand_operator0).get_operator();
+				const ::Expression            &expression1         = grammar.expression_storage.at(ampersand.expression1);
+
+				// Get left and right subexpressions.
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				expression_semantics.lexeme_begin = left.lexeme_begin;
+				expression_semantics.lexeme_end   = right.lexeme_end;
+
+				// Make sure left and right are of primitive types.
+				if (!left.output_type.resolve_type().is_primitive() || !right.output_type.resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
-						<< "Semantics::analyze_expression: internal error (line "
-						<< pipe_operator0.line << " col " << pipe_operator0.column
-						<< "): unhandled constant expression type for bitwise OR: "
-						<< left.get_tag_repr()
+						<< "Semantics::analyze_expression: error (line "
+						<< ampersand_operator0.line << " col " << ampersand_operator0.column
+						<< "): cannot apply bitwise AND on a non-primitive-typed expression, for "
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-			} case ::Expression::ampersand_branch: {
-				const ::Expression::Ampersand &ampersand           = grammar.expression_ampersand_storage.at(expression_symbol.data);
-				const ::Expression            &expression0         = grammar.expression_storage.at(ampersand.expression0); (void) expression0;
-				const LexemeOperator          &ampersand_operator0 = grammar.lexemes.at(ampersand.ampersand_operator0).get_operator();
-				const ::Expression            &expression1         = grammar.expression_storage.at(ampersand.expression1); (void) expression1;
-
-				// Is either subexpression dynamic?  If so, this expression is also dynamic.
-				ConstantValue right = is_expression_constant(ampersand.expression1, expression_constant_scope);
-				if (right.is_dynamic()) {
-					expression_constant_value = right;
-					break;
-				}
-				ConstantValue left  = is_expression_constant(ampersand.expression0, expression_constant_scope);
-				if (left.is_dynamic()) {
-					expression_constant_value = left;
-					break;
-				}
+				const Type::Primitive &left_type  = left.output_type.resolve_type().get_primitive();
+				const Type::Primitive &right_type = left.output_type.resolve_type().get_primitive();
 
 				// Are the expressions of the same type?
-				if (left.tag != right.tag) {
+				if (left.output_type.tag != right.output_type.tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< ampersand_operator0.line << " col " << ampersand_operator0.column
 						<< "): refusing to AND values of different types, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Are we attempting to operate on a string?
-				if (left.is_string() || right.is_string()) {
+				if (left_type.is_string() || right_type.is_string()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< ampersand_operator0.line << " col " << ampersand_operator0.column
 						<< "): cannot apply bitwise AND on a string expression, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
+						<< left_type.get_tag_repr() << " with " << right_type.get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply bitwise AND depending on the integer type.
-				if        (left.is_integer()) {
-					expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) & static_cast<int32_t>(right.get_integer())), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_char()) {
-					expression_constant_value = ConstantValue(static_cast<char>(static_cast<char>(left.get_char()) & static_cast<char>(right.get_char())), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_boolean()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(static_cast<bool>(left.get_boolean()) & static_cast<bool>(right.get_boolean())), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else {
-					std::ostringstream sstr;
-					sstr
-						<< "Semantics::analyze_expression: internal error (line "
-						<< ampersand_operator0.line << " col " << ampersand_operator0.column
-						<< "): unhandled constant expression type for bitwise AND: "
-						<< left.get_tag_repr()
-						;
-					throw SemanticsError(sstr.str());
-				}
+				expression_semantics.output_type = left.output_type;
+				const Index left_index  = expression_semantics.instructions.merge(left.instructions);
+				const Index right_index = expression_semantics.instructions.merge(right.instructions);
+				const Index and_index   = expression_semantics.instructions.add_instruction({I::AndFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+				expression_semantics.output_index = and_index;
+				break;
 			} case ::Expression::equals_branch: {
 				const ::Expression::Equals &equals           = grammar.expression_equals_storage.at(expression_symbol.data);
-				const ::Expression         &expression0      = grammar.expression_storage.at(equals.expression0); (void) expression0;
+				const ::Expression         &expression0      = grammar.expression_storage.at(equals.expression0);
 				const LexemeOperator       &equals_operator0 = grammar.lexemes.at(equals.equals_operator0).get_operator();
-				const ::Expression         &expression1      = grammar.expression_storage.at(equals.expression1); (void) expression1;
+				const ::Expression         &expression1      = grammar.expression_storage.at(equals.expression1);
 
-				// Is either subexpression dynamic?  If so, this expression is also dynamic.
-				ConstantValue right = is_expression_constant(equals.expression1, expression_constant_scope);
-				if (right.is_dynamic()) {
-					expression_constant_value = right;
-					break;
-				}
-				ConstantValue left  = is_expression_constant(equals.expression0, expression_constant_scope);
-				if (left.is_dynamic()) {
-					expression_constant_value = left;
-					break;
-				}
+				// Get left and right subexpressions.
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				expression_semantics.lexeme_begin = left.lexeme_begin;
+				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (left.tag != right.tag) {
+				if (left.output_type.tag != right.output_type.tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< equals_operator0.line << " col " << equals_operator0.column
 						<< "): refusing to compare values of different types for =, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply = comparison depending on the type.
-				if        (left.is_integer()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() == right.get_integer()), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_char()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() == right.get_char()), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_boolean()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() == right.get_boolean()), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_string()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() == right.get_string()), left.lexeme_begin, right.lexeme_end);
-					break;
+				if        (left.output_type.resolve_type().is_primitive()) {
+					const Type::Primitive &left_type = left.output_type.resolve_type().get_primitive();
+					if (!left_type.is_string()) {
+						expression_semantics.output_type  = Type::boolean_type;
+						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
+						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
+						const Index sub_index             = expression_semantics.instructions.add_instruction({I::SubFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+						const Index load_1_index          = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), left_type.is_word(), ConstantValue(static_cast<int32_t>(1), 0, 0))});
+						const Index eq_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word())}, {sub_index, load_1_index});
+						expression_semantics.output_index = eq_index;
+					} else {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze_expression: error (line "
+							<< equals_operator0.line << " col " << equals_operator0.column
+							<< "): comparison of string types is not yet supported, for "
+							<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+							<< "."
+							;
+						throw SemanticsError(sstr.str());
+					}
+				} else if (left.output_type.resolve_type().is_record() || left.output_type.resolve_type().is_array()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< equals_operator0.line << " col " << equals_operator0.column
+						<< "): comparison of record or array types is not yet supported, for "
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
 				} else {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: internal error (line "
 						<< equals_operator0.line << " col " << equals_operator0.column
-						<< "): unhandled constant expression type for = comparison: "
-						<< left.get_tag_repr()
+						<< "): unhandled expression type for = comparison: "
+						<< left.output_type.get_tag_repr()
 						;
 					throw SemanticsError(sstr.str());
 				}
+				break;
 			} case ::Expression::lt_or_gt_branch: {
 				const ::Expression::LtOrGt &lt_or_gt           = grammar.expression_lt_or_gt_storage.at(expression_symbol.data);
-				const ::Expression         &expression0        = grammar.expression_storage.at(lt_or_gt.expression0); (void) expression0;
+				const ::Expression         &expression0        = grammar.expression_storage.at(lt_or_gt.expression0);
 				const LexemeOperator       &lt_or_gt_operator0 = grammar.lexemes.at(lt_or_gt.lt_or_gt_operator0).get_operator();
-				const ::Expression         &expression1        = grammar.expression_storage.at(lt_or_gt.expression1); (void) expression1;
+				const ::Expression         &expression1        = grammar.expression_storage.at(lt_or_gt.expression1);
 
-				// Is either subexpression dynamic?  If so, this expression is also dynamic.
-				ConstantValue right = is_expression_constant(lt_or_gt.expression1, expression_constant_scope);
-				if (right.is_dynamic()) {
-					expression_constant_value = right;
-					break;
-				}
-				ConstantValue left  = is_expression_constant(lt_or_gt.expression0, expression_constant_scope);
-				if (left.is_dynamic()) {
-					expression_constant_value = left;
-					break;
-				}
+				// Get left and right subexpressions.
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				expression_semantics.lexeme_begin = left.lexeme_begin;
+				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (left.tag != right.tag) {
+				if (left.output_type.tag != right.output_type.tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< lt_or_gt_operator0.line << " col " << lt_or_gt_operator0.column
 						<< "): refusing to compare values of different types for <>, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply <> comparison depending on the type.
-				if        (left.is_integer()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() != right.get_integer()), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_char()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() != right.get_char()), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_boolean()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() != right.get_boolean()), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_string()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() != right.get_string()), left.lexeme_begin, right.lexeme_end);
-					break;
+				if        (left.output_type.resolve_type().is_primitive()) {
+					const Type::Primitive &left_type = left.output_type.resolve_type().get_primitive();
+					if (!left_type.is_string()) {
+						expression_semantics.output_type  = Type::boolean_type;
+						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
+						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
+						const Index sub_index             = expression_semantics.instructions.add_instruction({I::SubFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+						const Index load_1_index          = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), left_type.is_word(), ConstantValue(static_cast<int32_t>(1), 0, 0))});
+						const Index eq_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word())}, {sub_index, load_1_index});
+						const Index neq_index             = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word())}, {eq_index, load_1_index});
+						expression_semantics.output_index = neq_index;
+					} else {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze_expression: error (line "
+							<< lt_or_gt_operator0.line << " col " << lt_or_gt_operator0.column
+							<< "): comparison of string types is not yet supported, for "
+							<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+							<< "."
+							;
+						throw SemanticsError(sstr.str());
+					}
+				} else if (left.output_type.resolve_type().is_record() || left.output_type.resolve_type().is_array()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< lt_or_gt_operator0.line << " col " << lt_or_gt_operator0.column
+						<< "): comparison of record or array types is not yet supported, for "
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
 				} else {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: internal error (line "
 						<< lt_or_gt_operator0.line << " col " << lt_or_gt_operator0.column
-						<< "): unhandled constant expression type for <> comparison: "
-						<< left.get_tag_repr()
+						<< "): unhandled expression type for <> comparison: "
+						<< left.output_type.get_tag_repr()
 						;
 					throw SemanticsError(sstr.str());
 				}
+				break;
 			} case ::Expression::le_branch: {
 				const ::Expression::Le &le           = grammar.expression_le_storage.at(expression_symbol.data);
-				const ::Expression     &expression0  = grammar.expression_storage.at(le.expression0); (void) expression0;
+				const ::Expression     &expression0  = grammar.expression_storage.at(le.expression0);
 				const LexemeOperator   &le_operator0 = grammar.lexemes.at(le.le_operator0).get_operator();
-				const ::Expression     &expression1  = grammar.expression_storage.at(le.expression1); (void) expression1;
+				const ::Expression     &expression1  = grammar.expression_storage.at(le.expression1);
 
-				// Is either subexpression dynamic?  If so, this expression is also dynamic.
-				ConstantValue right = is_expression_constant(le.expression1, expression_constant_scope);
-				if (right.is_dynamic()) {
-					expression_constant_value = right;
-					break;
-				}
-				ConstantValue left  = is_expression_constant(le.expression0, expression_constant_scope);
-				if (left.is_dynamic()) {
-					expression_constant_value = left;
-					break;
-				}
+				// Get left and right subexpressions.
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				expression_semantics.lexeme_begin = left.lexeme_begin;
+				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (left.tag != right.tag) {
+				if (left.output_type.tag != right.output_type.tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< le_operator0.line << " col " << le_operator0.column
 						<< "): refusing to compare values of different types for <=, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply <= comparison depending on the type.
-				if        (left.is_integer()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() <= right.get_integer()), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_char()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() <= right.get_char()), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_boolean()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() <= right.get_boolean()), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_string()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() <= right.get_string()), left.lexeme_begin, right.lexeme_end);
-					break;
+				if        (left.output_type.resolve_type().is_primitive()) {
+					const Type::Primitive &left_type = left.output_type.resolve_type().get_primitive();
+					if (!left_type.is_string()) {
+						expression_semantics.output_type  = Type::boolean_type;
+						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
+						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
+						const Index lt_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word(), true)}, {left.output_index + left_index, right.output_index + right_index});
+						const Index sub_index             = expression_semantics.instructions.add_instruction({I::SubFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+						const Index load_1_index          = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), left_type.is_word(), ConstantValue(static_cast<int32_t>(1), 0, 0))});
+						const Index eq_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word())}, {sub_index, load_1_index});
+						const Index le_index              = expression_semantics.instructions.add_instruction({I::OrFrom(B(), false)}, {eq_index, lt_index});
+						expression_semantics.output_index = le_index;
+					} else {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze_expression: error (line "
+							<< le_operator0.line << " col " << le_operator0.column
+							<< "): comparison of string types is not yet supported, for "
+							<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+							<< "."
+							;
+						throw SemanticsError(sstr.str());
+					}
+				} else if (left.output_type.resolve_type().is_record() || left.output_type.resolve_type().is_array()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< le_operator0.line << " col " << le_operator0.column
+						<< "): comparison of record or array types is not yet supported, for "
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
 				} else {
 					std::ostringstream sstr;
 					sstr
-						<< "Semantics::is_expression_constant: internal error (line "
+						<< "Semantics::analyze_expression: internal error (line "
 						<< le_operator0.line << " col " << le_operator0.column
-						<< "): unhandled constant expression type for <= comparison: "
-						<< left.get_tag_repr()
+						<< "): unhandled expression type for <= comparison: "
+						<< left.output_type.get_tag_repr()
 						;
 					throw SemanticsError(sstr.str());
 				}
+				break;
 			} case ::Expression::ge_branch: {
 				const ::Expression::Ge &ge           = grammar.expression_ge_storage.at(expression_symbol.data);
-				const ::Expression     &expression0  = grammar.expression_storage.at(ge.expression0); (void) expression0;
+				const ::Expression     &expression0  = grammar.expression_storage.at(ge.expression0);
 				const LexemeOperator   &ge_operator0 = grammar.lexemes.at(ge.ge_operator0).get_operator();
-				const ::Expression     &expression1  = grammar.expression_storage.at(ge.expression1); (void) expression1;
+				const ::Expression     &expression1  = grammar.expression_storage.at(ge.expression1);
 
-				// Is either subexpression dynamic?  If so, this expression is also dynamic.
-				ConstantValue right = is_expression_constant(ge.expression1, expression_constant_scope);
-				if (right.is_dynamic()) {
-					expression_constant_value = right;
-					break;
-				}
-				ConstantValue left  = is_expression_constant(ge.expression0, expression_constant_scope);
-				if (left.is_dynamic()) {
-					expression_constant_value = left;
-					break;
-				}
+				// Get left and right subexpressions.
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				expression_semantics.lexeme_begin = left.lexeme_begin;
+				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (left.tag != right.tag) {
+				if (left.output_type.tag != right.output_type.tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< ge_operator0.line << " col " << ge_operator0.column
 						<< "): refusing to compare values of different types for >=, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply >= comparison depending on the type.
-				if        (left.is_integer()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() >= right.get_integer()), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_char()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() >= right.get_char()), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_boolean()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() >= right.get_boolean()), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_string()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() >= right.get_string()), left.lexeme_begin, right.lexeme_end);
-					break;
+				if        (left.output_type.resolve_type().is_primitive()) {
+					const Type::Primitive &left_type = left.output_type.resolve_type().get_primitive();
+					if (!left_type.is_string()) {
+						expression_semantics.output_type  = Type::boolean_type;
+						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
+						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
+						const Index gt_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word(), true)}, {right.output_index + right_index, left.output_index + left_index});
+						const Index sub_index             = expression_semantics.instructions.add_instruction({I::SubFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+						const Index load_1_index          = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), left_type.is_word(), ConstantValue(static_cast<int32_t>(1), 0, 0))});
+						const Index eq_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word())}, {sub_index, load_1_index});
+						const Index ge_index              = expression_semantics.instructions.add_instruction({I::OrFrom(B(), false)}, {eq_index, gt_index});
+						expression_semantics.output_index = ge_index;
+					} else {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze_expression: error (line "
+							<< ge_operator0.line << " col " << ge_operator0.column
+							<< "): comparison of string types is not yet supported, for "
+							<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+							<< "."
+							;
+						throw SemanticsError(sstr.str());
+					}
+				} else if (left.output_type.resolve_type().is_record() || left.output_type.resolve_type().is_array()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< ge_operator0.line << " col " << ge_operator0.column
+						<< "): comparison of record or array types is not yet supported, for "
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
 				} else {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: internal error (line "
 						<< ge_operator0.line << " col " << ge_operator0.column
-						<< "): unhandled constant expression type for >= comparison: "
-						<< left.get_tag_repr()
+						<< "): unhandled expression type for >= comparison: "
+						<< left.output_type.get_tag_repr()
 						;
 					throw SemanticsError(sstr.str());
 				}
+				break;
 			} case ::Expression::lt_branch: {
 				const ::Expression::Lt &lt           = grammar.expression_lt_storage.at(expression_symbol.data);
-				const ::Expression     &expression0  = grammar.expression_storage.at(lt.expression0); (void) expression0;
+				const ::Expression     &expression0  = grammar.expression_storage.at(lt.expression0);
 				const LexemeOperator   &lt_operator0 = grammar.lexemes.at(lt.lt_operator0).get_operator();
-				const ::Expression     &expression1  = grammar.expression_storage.at(lt.expression1); (void) expression1;
+				const ::Expression     &expression1  = grammar.expression_storage.at(lt.expression1);
 
-				// Is either subexpression dynamic?  If so, this expression is also dynamic.
-				ConstantValue right = is_expression_constant(lt.expression1, expression_constant_scope);
-				if (right.is_dynamic()) {
-					expression_constant_value = right;
-					break;
-				}
-				ConstantValue left  = is_expression_constant(lt.expression0, expression_constant_scope);
-				if (left.is_dynamic()) {
-					expression_constant_value = left;
-					break;
-				}
+				// Get left and right subexpressions.
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				expression_semantics.lexeme_begin = left.lexeme_begin;
+				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (left.tag != right.tag) {
+				if (left.output_type.tag != right.output_type.tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< lt_operator0.line << " col " << lt_operator0.column
 						<< "): refusing to compare values of different types for <, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply < comparison depending on the type.
-				if        (left.is_integer()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() < right.get_integer()), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_char()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() < right.get_char()), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_boolean()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() < right.get_boolean()), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_string()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() < right.get_string()), left.lexeme_begin, right.lexeme_end);
-					break;
+				if        (left.output_type.resolve_type().is_primitive()) {
+					const Type::Primitive &left_type = left.output_type.resolve_type().get_primitive();
+					if (!left_type.is_string()) {
+						expression_semantics.output_type  = Type::boolean_type;
+						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
+						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
+						const Index lt_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word(), true)}, {left.output_index + left_index, right.output_index + right_index});
+						expression_semantics.output_index = lt_index;
+					} else {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze_expression: error (line "
+							<< lt_operator0.line << " col " << lt_operator0.column
+							<< "): comparison of string types is not yet supported, for "
+							<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+							<< "."
+							;
+						throw SemanticsError(sstr.str());
+					}
+				} else if (left.output_type.resolve_type().is_record() || left.output_type.resolve_type().is_array()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< lt_operator0.line << " col " << lt_operator0.column
+						<< "): comparison of record or array types is not yet supported, for "
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
 				} else {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: internal error (line "
 						<< lt_operator0.line << " col " << lt_operator0.column
-						<< "): unhandled constant expression type for < comparison: "
-						<< left.get_tag_repr()
+						<< "): unhandled expression type for < comparison: "
+						<< left.output_type.get_tag_repr()
 						;
 					throw SemanticsError(sstr.str());
 				}
+				break;
 			} case ::Expression::gt_branch: {
 				const ::Expression::Gt &gt           = grammar.expression_gt_storage.at(expression_symbol.data);
-				const ::Expression     &expression0  = grammar.expression_storage.at(gt.expression0); (void) expression0;
+				const ::Expression     &expression0  = grammar.expression_storage.at(gt.expression0);
 				const LexemeOperator   &gt_operator0 = grammar.lexemes.at(gt.gt_operator0).get_operator();
-				const ::Expression     &expression1  = grammar.expression_storage.at(gt.expression1); (void) expression1;
+				const ::Expression     &expression1  = grammar.expression_storage.at(gt.expression1);
 
-				// Is either subexpression dynamic?  If so, this expression is also dynamic.
-				ConstantValue right = is_expression_constant(gt.expression1, expression_constant_scope);
-				if (right.is_dynamic()) {
-					expression_constant_value = right;
-					break;
-				}
-				ConstantValue left  = is_expression_constant(gt.expression0, expression_constant_scope);
-				if (left.is_dynamic()) {
-					expression_constant_value = left;
-					break;
-				}
+				// Get left and right subexpressions.
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				expression_semantics.lexeme_begin = left.lexeme_begin;
+				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (left.tag != right.tag) {
+				if (left.output_type.tag != right.output_type.tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< gt_operator0.line << " col " << gt_operator0.column
 						<< "): refusing to compare values of different types for >, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply > comparison depending on the type.
-				if        (left.is_integer()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_integer() > right.get_integer()), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_char()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_char() > right.get_char()), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_boolean()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_boolean() > right.get_boolean()), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else if (left.is_string()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(left.get_string() > right.get_string()), left.lexeme_begin, right.lexeme_end);
-					break;
+				if        (left.output_type.resolve_type().is_primitive()) {
+					const Type::Primitive &left_type = left.output_type.resolve_type().get_primitive();
+					if (!left_type.is_string()) {
+						expression_semantics.output_type  = Type::boolean_type;
+						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
+						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
+						const Index gt_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word(), true)}, {right.output_index + right_index, left.output_index + left_index});
+						expression_semantics.output_index = gt_index;
+					} else {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze_expression: error (line "
+							<< gt_operator0.line << " col " << gt_operator0.column
+							<< "): comparison of string types is not yet supported, for "
+							<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+							<< "."
+							;
+						throw SemanticsError(sstr.str());
+					}
+				} else if (left.output_type.resolve_type().is_record() || left.output_type.resolve_type().is_array()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< gt_operator0.line << " col " << gt_operator0.column
+						<< "): comparison of record or array types is not yet supported, for "
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
 				} else {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: internal error (line "
 						<< gt_operator0.line << " col " << gt_operator0.column
-						<< "): unhandled constant expression type for > comparison: "
-						<< left.get_tag_repr()
+						<< "): unhandled expression type for > comparison: "
+						<< left.output_type.get_tag_repr()
 						;
 					throw SemanticsError(sstr.str());
 				}
+				break;
 			} case ::Expression::plus_branch: {
 				const ::Expression::Plus &plus           = grammar.expression_plus_storage.at(expression_symbol.data);
-				const ::Expression       &expression0    = grammar.expression_storage.at(plus.expression0); (void) expression0;
+				const ::Expression       &expression0    = grammar.expression_storage.at(plus.expression0);
 				const LexemeOperator     &plus_operator0 = grammar.lexemes.at(plus.plus_operator0).get_operator();
-				const ::Expression       &expression1    = grammar.expression_storage.at(plus.expression1); (void) expression1;
+				const ::Expression       &expression1    = grammar.expression_storage.at(plus.expression1);
 
-				// Is either subexpression dynamic?  If so, this expression is also dynamic.
-				ConstantValue right = is_expression_constant(plus.expression1, expression_constant_scope);
-				if (right.is_dynamic()) {
-					expression_constant_value = right;
-					break;
-				}
-				ConstantValue left  = is_expression_constant(plus.expression0, expression_constant_scope);
-				if (left.is_dynamic()) {
-					expression_constant_value = left;
-					break;
-				}
+				// Get left and right subexpressions.
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				expression_semantics.lexeme_begin = left.lexeme_begin;
+				expression_semantics.lexeme_end   = right.lexeme_end;
 
-				// Are the expressions of the same type?
-				if (left.tag != right.tag) {
+				// Make sure left and right are of primitive types.
+				if (!left.output_type.resolve_type().is_primitive() || !right.output_type.resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< plus_operator0.line << " col " << plus_operator0.column
-						<< "): refusing to add different types, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
+						<< "): cannot apply addition on a non-primitive-typed expression, for "
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				const Type::Primitive &left_type  = left.output_type.resolve_type().get_primitive();
+				const Type::Primitive &right_type = left.output_type.resolve_type().get_primitive();
+
+				// Are we attempting to operate on a non-integer?
+				if (left_type.is_char() || left_type.is_boolean() || right_type.is_char() || right_type.is_boolean()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< plus_operator0.line << " col " << plus_operator0.column
+						<< "): refusing to apply addition on a non-integer, for "
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Are the expressions of the same type?
+				if (left.output_type.tag != right.output_type.tag) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< plus_operator0.line << " col " << plus_operator0.column
+						<< "): refusing to add values of different types, for "
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Are we attempting to operate on a string?
-				if (left.is_string() || right.is_string()) {
+				if (left_type.is_string() || right_type.is_string()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< plus_operator0.line << " col " << plus_operator0.column
 						<< "): cannot apply addition on a string expression, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
-						<< "."
-						;
-					throw SemanticsError(sstr.str());
-				}
-
-				// Are we attempting to operate on a non-integer?
-				if (left.is_char() || left.is_boolean() || right.is_char() || right.is_boolean()) {
-					std::ostringstream sstr;
-					sstr
-						<< "Semantics::analyze_expression: error (line "
-						<< plus_operator0.line << " col " << plus_operator0.column
-						<< "): refusing to apply addition on a non-integer, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
+						<< left_type.get_tag_repr() << " with " << right_type.get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply addition depending on the integer type.
-				if (left.is_integer()) {
-					// Detect overflow in constant expression.
-					if (would_addition_overflow(left.get_integer(), right.get_integer())) {
-						std::ostringstream sstr;
-						sstr
-							<< "Semantics::analyze_expression: error (line "
-							<< plus_operator0.line << " col " << plus_operator0.column
-							<< "): addition would result in an overflow, for "
-							<< left.get_integer() << " + " << right.get_integer()
-							<< "."
-							;
-						throw SemanticsError(sstr.str());
-					}
-
-					expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) + static_cast<int32_t>(right.get_integer())), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else {
-					std::ostringstream sstr;
-					sstr
-						<< "Semantics::analyze_expression: internal error (line "
-						<< plus_operator0.line << " col " << plus_operator0.column
-						<< "): unhandled constant expression type for addition: "
-						<< left.get_tag_repr()
-						;
-					throw SemanticsError(sstr.str());
-				}
+				expression_semantics.output_type = left.output_type;
+				const Index left_index  = expression_semantics.instructions.merge(left.instructions);
+				const Index right_index = expression_semantics.instructions.merge(right.instructions);
+				const Index add_index   = expression_semantics.instructions.add_instruction({I::AddFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+				expression_semantics.output_index = add_index;
+				break;
 			} case ::Expression::minus_branch: {
 				const ::Expression::Minus &minus           = grammar.expression_minus_storage.at(expression_symbol.data);
-				const ::Expression        &expression0     = grammar.expression_storage.at(minus.expression0); (void) expression0;
+				const ::Expression        &expression0     = grammar.expression_storage.at(minus.expression0);
 				const LexemeOperator      &minus_operator0 = grammar.lexemes.at(minus.minus_operator0).get_operator();
-				const ::Expression        &expression1     = grammar.expression_storage.at(minus.expression1); (void) expression1;
+				const ::Expression        &expression1     = grammar.expression_storage.at(minus.expression1);
 
-				// Is either subexpression dynamic?  If so, this expression is also dynamic.
-				ConstantValue right = is_expression_constant(minus.expression1, expression_constant_scope);
-				if (right.is_dynamic()) {
-					expression_constant_value = right;
-					break;
-				}
-				ConstantValue left  = is_expression_constant(minus.expression0, expression_constant_scope);
-				if (left.is_dynamic()) {
-					expression_constant_value = left;
-					break;
-				}
+				// Get left and right subexpressions.
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				expression_semantics.lexeme_begin = left.lexeme_begin;
+				expression_semantics.lexeme_end   = right.lexeme_end;
 
-				// Are the expressions of the same type?
-				if (left.tag != right.tag) {
+				// Make sure left and right are of primitive types.
+				if (!left.output_type.resolve_type().is_primitive() || !right.output_type.resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< minus_operator0.line << " col " << minus_operator0.column
-						<< "): refusing to substract values of different types, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
+						<< "): cannot apply subtraction on a non-primitive-typed expression, for "
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				const Type::Primitive &left_type  = left.output_type.resolve_type().get_primitive();
+				const Type::Primitive &right_type = left.output_type.resolve_type().get_primitive();
+
+				// Are we attempting to operate on a non-integer?
+				if (left_type.is_char() || left_type.is_boolean() || right_type.is_char() || right_type.is_boolean()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< minus_operator0.line << " col " << minus_operator0.column
+						<< "): refusing to apply subtraction a non-integer, for "
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Are the expressions of the same type?
+				if (left.output_type.tag != right.output_type.tag) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< minus_operator0.line << " col " << minus_operator0.column
+						<< "): refusing to subtract values of different types, for "
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Are we attempting to operate on a string?
-				if (left.is_string() || right.is_string()) {
+				if (left_type.is_string() || right_type.is_string()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< minus_operator0.line << " col " << minus_operator0.column
 						<< "): cannot apply subtraction on a string expression, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
-						<< "."
-						;
-					throw SemanticsError(sstr.str());
-				}
-
-				// Are we attempting to operate on a non-integer?
-				if (left.is_char() || left.is_boolean() || right.is_char() || right.is_boolean()) {
-					std::ostringstream sstr;
-					sstr
-						<< "Semantics::analyze_expression: error (line "
-						<< minus_operator0.line << " col " << minus_operator0.column
-						<< "): refusing to apply subtraction on a non-integer, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
+						<< left_type.get_tag_repr() << " with " << right_type.get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply subtraction depending on the integer type.
-				if (left.is_integer()) {
-					// Detect overflow in constant expression.
-					if (would_addition_overflow(left.get_integer(), -right.get_integer())) {
-						std::ostringstream sstr;
-						sstr
-							<< "Semantics::analyze_expression: error (line "
-							<< minus_operator0.line << " col " << minus_operator0.column
-							<< "): subtraction would result in an overflow, for "
-							<< left.get_integer() << " - " << right.get_integer()
-							<< "."
-							;
-						throw SemanticsError(sstr.str());
-					}
+				expression_semantics.output_type = left.output_type;
+				const Index left_index  = expression_semantics.instructions.merge(left.instructions);
+				const Index right_index = expression_semantics.instructions.merge(right.instructions);
+				const Index sub_index   = expression_semantics.instructions.add_instruction({I::SubFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+				expression_semantics.output_index = sub_index;
+				break;
+			} case ::Expression::times_branch: {
+				const ::Expression::Times &times           = grammar.expression_times_storage.at(expression_symbol.data);
+				const ::Expression        &expression0     = grammar.expression_storage.at(times.expression0);
+				const LexemeOperator      &times_operator0 = grammar.lexemes.at(times.times_operator0).get_operator();
+				const ::Expression        &expression1     = grammar.expression_storage.at(times.expression1);
 
-					expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) - static_cast<int32_t>(right.get_integer())), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else {
+				// Get left and right subexpressions.
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				expression_semantics.lexeme_begin = left.lexeme_begin;
+				expression_semantics.lexeme_end   = right.lexeme_end;
+
+				// Make sure left and right are of primitive types.
+				if (!left.output_type.resolve_type().is_primitive() || !right.output_type.resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
-						<< "Semantics::analyze_expression: internal error (line "
-						<< minus_operator0.line << " col " << minus_operator0.column
-						<< "): unhandled constant expression type for subtraction: "
-						<< left.get_tag_repr()
+						<< "Semantics::analyze_expression: error (line "
+						<< times_operator0.line << " col " << times_operator0.column
+						<< "): cannot apply multiplication on a non-primitive-typed expression, for "
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-			} case ::Expression::times_branch: {
-				const ::Expression::Times &times           = grammar.expression_times_storage.at(expression_symbol.data);
-				const ::Expression        &expression0     = grammar.expression_storage.at(times.expression0); (void) expression0;
-				const LexemeOperator      &times_operator0 = grammar.lexemes.at(times.times_operator0).get_operator();
-				const ::Expression        &expression1     = grammar.expression_storage.at(times.expression1); (void) expression1;
+				const Type::Primitive &left_type  = left.output_type.resolve_type().get_primitive();
+				const Type::Primitive &right_type = left.output_type.resolve_type().get_primitive();
 
-				// Is either subexpression dynamic?  If so, this expression is also dynamic.
-				ConstantValue right = is_expression_constant(times.expression1, expression_constant_scope);
-				if (right.is_dynamic()) {
-					expression_constant_value = right;
-					break;
-				}
-				ConstantValue left  = is_expression_constant(times.expression0, expression_constant_scope);
-				if (left.is_dynamic()) {
-					expression_constant_value = left;
-					break;
+				// Are we attempting to operate on a non-integer?
+				if (left_type.is_char() || left_type.is_boolean() || right_type.is_char() || right_type.is_boolean()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< times_operator0.line << " col " << times_operator0.column
+						<< "): refusing to apply multiplication on a non-integer, for "
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
 				}
 
 				// Are the expressions of the same type?
-				if (left.tag != right.tag) {
+				if (left.output_type.tag != right.output_type.tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< times_operator0.line << " col " << times_operator0.column
 						<< "): refusing to multiply values of different types, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Are we attempting to operate on a string?
-				if (left.is_string() || right.is_string()) {
+				if (left_type.is_string() || right_type.is_string()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< times_operator0.line << " col " << times_operator0.column
 						<< "): cannot apply multiplication on a string expression, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
-						<< "."
-						;
-					throw SemanticsError(sstr.str());
-				}
-
-				// Are we attempting to operate on a non-integer?
-				if (left.is_char() || left.is_boolean() || right.is_char() || right.is_boolean()) {
-					std::ostringstream sstr;
-					sstr
-						<< "Semantics::analyze_expression: error (line "
-						<< times_operator0.line << " col " << times_operator0.column
-						<< "): refusing to apply multiplication on a non-integer, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
+						<< left_type.get_tag_repr() << " with " << right_type.get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply multiplication depending on the integer type.
-				if (left.is_integer()) {
-					// Detect overflow in constant expression.
-					if (would_multiplication_overflow(left.get_integer(), right.get_integer())) {
-						std::ostringstream sstr;
-						sstr
-							<< "Semantics::analyze_expression: error (line "
-							<< times_operator0.line << " col " << times_operator0.column
-							<< "): multiplication would result in an overflow, for "
-							<< left.get_integer() << " * " << right.get_integer()
-							<< "."
-							;
-						throw SemanticsError(sstr.str());
-					}
+				expression_semantics.output_type = left.output_type;
+				const Index left_index   = expression_semantics.instructions.merge(left.instructions);
+				const Index right_index  = expression_semantics.instructions.merge(right.instructions);
+				const Index mult_index   = expression_semantics.instructions.add_instruction({I::MultFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+				const Index ignore_index = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{mult_index, 1}}, mult_index);
+				expression_semantics.output_index = mult_index;
+				break;
+			} case ::Expression::slash_branch: {
+				const ::Expression::Slash &slash           = grammar.expression_slash_storage.at(expression_symbol.data);
+				const ::Expression        &expression0     = grammar.expression_storage.at(slash.expression0);
+				const LexemeOperator      &slash_operator0 = grammar.lexemes.at(slash.slash_operator0).get_operator();
+				const ::Expression        &expression1     = grammar.expression_storage.at(slash.expression1);
 
-					expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) * static_cast<int32_t>(right.get_integer())), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else {
+				// Get left and right subexpressions.
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				expression_semantics.lexeme_begin = left.lexeme_begin;
+				expression_semantics.lexeme_end   = right.lexeme_end;
+
+				// Make sure left and right are of primitive types.
+				if (!left.output_type.resolve_type().is_primitive() || !right.output_type.resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
-						<< "Semantics::analyze_expression: internal error (line "
-						<< times_operator0.line << " col " << times_operator0.column
-						<< "): unhandled constant expression type for multiplication: "
-						<< left.get_tag_repr()
+						<< "Semantics::analyze_expression: error (line "
+						<< slash_operator0.line << " col " << slash_operator0.column
+						<< "): cannot apply division on a non-primitive-typed expression, for "
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-			} case ::Expression::slash_branch: {
-				const ::Expression::Slash &slash           = grammar.expression_slash_storage.at(expression_symbol.data);
-				const ::Expression        &expression0     = grammar.expression_storage.at(slash.expression0); (void) expression0;
-				const LexemeOperator      &slash_operator0 = grammar.lexemes.at(slash.slash_operator0).get_operator();
-				const ::Expression        &expression1     = grammar.expression_storage.at(slash.expression1); (void) expression1;
+				const Type::Primitive &left_type  = left.output_type.resolve_type().get_primitive();
+				const Type::Primitive &right_type = left.output_type.resolve_type().get_primitive();
 
-				// Is either subexpression dynamic?  If so, this expression is also dynamic.
-				ConstantValue right = is_expression_constant(slash.expression1, expression_constant_scope);
-				if (right.is_dynamic()) {
-					expression_constant_value = right;
-					break;
-				}
-				ConstantValue left  = is_expression_constant(slash.expression0, expression_constant_scope);
-				if (left.is_dynamic()) {
-					expression_constant_value = left;
-					break;
+				// Are we attempting to operate on a non-integer?
+				if (left_type.is_char() || left_type.is_boolean() || right_type.is_char() || right_type.is_boolean()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< slash_operator0.line << " col " << slash_operator0.column
+						<< "): refusing to apply division on a non-integer, for "
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
 				}
 
 				// Are the expressions of the same type?
-				if (left.tag != right.tag) {
+				if (left.output_type.tag != right.output_type.tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< slash_operator0.line << " col " << slash_operator0.column
 						<< "): refusing to divide values of different types, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Are we attempting to operate on a string?
-				if (left.is_string() || right.is_string()) {
+				if (left_type.is_string() || right_type.is_string()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< slash_operator0.line << " col " << slash_operator0.column
 						<< "): cannot apply division on a string expression, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
-						<< "."
-						;
-					throw SemanticsError(sstr.str());
-				}
-
-				// Are we attempting to operate on a non-integer?
-				if (left.is_char() || left.is_boolean() || right.is_char() || right.is_boolean()) {
-					std::ostringstream sstr;
-					sstr
-						<< "Semantics::analyze_expression: error (line "
-						<< slash_operator0.line << " col " << slash_operator0.column
-						<< "): refusing to apply division on a non-integer, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
+						<< left_type.get_tag_repr() << " with " << right_type.get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply division depending on the integer type.
-				if (left.is_integer()) {
-					// Detect overflow in constant expression.
-					if (would_division_overflow(left.get_integer(), right.get_integer())) {
-						std::ostringstream sstr;
-						sstr
-							<< "Semantics::analyze_expression: error (line "
-							<< slash_operator0.line << " col " << slash_operator0.column
-							<< "): division would result in an overflow, for "
-							<< left.get_integer() << " / " << right.get_integer()
-							<< "."
-							;
-						throw SemanticsError(sstr.str());
-					}
+				expression_semantics.output_type = left.output_type;
+				const Index left_index   = expression_semantics.instructions.merge(left.instructions);
+				const Index right_index  = expression_semantics.instructions.merge(right.instructions);
+				const Index div_index    = expression_semantics.instructions.add_instruction({I::DivFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+				const Index ignore_index = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{div_index, 1}}, div_index);
+				expression_semantics.output_index = div_index;
+				break;
+			} case ::Expression::percent_branch: {
+				const ::Expression::Percent &percent           = grammar.expression_percent_storage.at(expression_symbol.data);
+				const ::Expression          &expression0       = grammar.expression_storage.at(percent.expression0);
+				const LexemeOperator        &percent_operator0 = grammar.lexemes.at(percent.percent_operator0).get_operator();
+				const ::Expression          &expression1       = grammar.expression_storage.at(percent.expression1);
 
-					// Detect division by zero in constant expression.
-					if (right.get_integer() == 0) {
-						std::ostringstream sstr;
-						sstr
-							<< "Semantics::analyze_expression: error (line "
-							<< slash_operator0.line << " col " << slash_operator0.column
-							<< "): division by zero, for "
-							<< left.get_integer() << " / " << right.get_integer()
-							<< "."
-							;
-						throw SemanticsError(sstr.str());
-					}
+				// Get left and right subexpressions.
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				expression_semantics.lexeme_begin = left.lexeme_begin;
+				expression_semantics.lexeme_end   = right.lexeme_end;
 
-					// Of three standard division/mod algorithms:
-					// - QuotRem: C-style division and mod that truncates toward 0.
-					// - DivMod: Division truncates toward negative infinite.
-					// - Euclidian division: the remainder is non-negative.
-					// I prefer Euclidian division, even though this deviates from
-					// traditional division and modding in C.  So I'll use it.
-					//expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) / static_cast<int32_t>(right.get_integer())), left.lexeme_begin, right.lexeme_end);
-					expression_constant_value = ConstantValue(static_cast<int32_t>(euclidian_div(static_cast<int32_t>(left.get_integer()), static_cast<int32_t>(right.get_integer()))), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else {
+				// Make sure left and right are of primitive types.
+				if (!left.output_type.resolve_type().is_primitive() || !right.output_type.resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
-						<< "Semantics::analyze_expression: internal error (line "
-						<< slash_operator0.line << " col " << slash_operator0.column
-						<< "): unhandled constant expression type for division: "
-						<< left.get_tag_repr()
+						<< "Semantics::analyze_expression: error (line "
+						<< percent_operator0.line << " col " << percent_operator0.column
+						<< "): cannot apply mod on a non-primitive-typed expression, for "
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-			} case ::Expression::percent_branch: {
-				const ::Expression::Percent &percent           = grammar.expression_percent_storage.at(expression_symbol.data);
-				const ::Expression          &expression0       = grammar.expression_storage.at(percent.expression0); (void) expression0;
-				const LexemeOperator        &percent_operator0 = grammar.lexemes.at(percent.percent_operator0).get_operator();
-				const ::Expression          &expression1       = grammar.expression_storage.at(percent.expression1); (void) expression1;
+				const Type::Primitive &left_type  = left.output_type.resolve_type().get_primitive();
+				const Type::Primitive &right_type = left.output_type.resolve_type().get_primitive();
 
-				// Is either subexpression dynamic?  If so, this expression is also dynamic.
-				ConstantValue right = is_expression_constant(percent.expression1, expression_constant_scope);
-				if (right.is_dynamic()) {
-					expression_constant_value = right;
-					break;
-				}
-				ConstantValue left  = is_expression_constant(percent.expression0, expression_constant_scope);
-				if (left.is_dynamic()) {
-					expression_constant_value = left;
-					break;
+				// Are we attempting to operate on a non-integer?
+				if (left_type.is_char() || left_type.is_boolean() || right_type.is_char() || right_type.is_boolean()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< percent_operator0.line << " col " << percent_operator0.column
+						<< "): refusing to apply mod on a non-integer, for "
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
 				}
 
 				// Are the expressions of the same type?
-				if (left.tag != right.tag) {
+				if (left.output_type.tag != right.output_type.tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< percent_operator0.line << " col " << percent_operator0.column
 						<< "): refusing to mod values of different types, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
+						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Are we attempting to operate on a string?
-				if (left.is_string() || right.is_string()) {
+				if (left_type.is_string() || right_type.is_string()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< percent_operator0.line << " col " << percent_operator0.column
 						<< "): cannot apply mod on a string expression, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
-						<< "."
-						;
-					throw SemanticsError(sstr.str());
-				}
-
-				// Are we attempting to operate on a non-integer?
-				if (left.is_char() || left.is_boolean() || right.is_char() || right.is_boolean()) {
-					std::ostringstream sstr;
-					sstr
-						<< "Semantics::analyze_expression: error (line "
-						<< percent_operator0.line << " col " << percent_operator0.column
-						<< "): refusing to apply mod on a non-integer, for "
-						<< left.get_tag_repr() << " with " << right.get_tag_repr()
+						<< left_type.get_tag_repr() << " with " << right_type.get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply mod depending on the integer type.
-				if (left.is_integer()) {
-					// Detect division by zero in constant expression.
-					if (right.get_integer() == 0) {
-						std::ostringstream sstr;
-						sstr
-							<< "Semantics::analyze_expression: error (line "
-							<< percent_operator0.line << " col " << percent_operator0.column
-							<< "): division by zero, for "
-							<< left.get_integer() << " % " << right.get_integer()
-							<< "."
-							;
-						throw SemanticsError(sstr.str());
-					}
-
-					//expression_constant_value = ConstantValue(static_cast<int32_t>(static_cast<int32_t>(left.get_integer()) % static_cast<int32_t>(right.get_integer())), left.lexeme_begin, right.lexeme_end);
-					expression_constant_value = ConstantValue(static_cast<int32_t>(euclidian_mod(static_cast<int32_t>(left.get_integer()), static_cast<int32_t>(right.get_integer()))), left.lexeme_begin, right.lexeme_end);
-					break;
-				} else {
-					std::ostringstream sstr;
-					sstr
-						<< "Semantics::analyze_expression: internal error (line "
-						<< percent_operator0.line << " col " << percent_operator0.column
-						<< "): unhandled constant expression type for mod: "
-						<< left.get_tag_repr()
-						;
-					throw SemanticsError(sstr.str());
-				}
+				expression_semantics.output_type = left.output_type;
+				const Index left_index      = expression_semantics.instructions.merge(left.instructions);
+				const Index right_index     = expression_semantics.instructions.merge(right.instructions);
+				const Index div_index       = expression_semantics.instructions.add_instruction({I::DivFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+				const Index ignore_index    = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{div_index, 0}}, div_index);
+				const Index remainder_index = expression_semantics.instructions.add_instruction_indexed({I::LoadFrom(B(), left_type.is_word())}, {{div_index, 1}}, div_index);
+				expression_semantics.output_index = remainder_index;
+				break;
 			} case ::Expression::tilde_branch: {
 				const ::Expression::Tilde &tilde           = grammar.expression_tilde_storage.at(expression_symbol.data);
 				const LexemeOperator      &tilde_operator0 = grammar.lexemes.at(tilde.tilde_operator0).get_operator();
-				const ::Expression        &expression0     = grammar.expression_storage.at(tilde.expression); (void) expression0;
+				const ::Expression        &expression0     = grammar.expression_storage.at(tilde.expression);
 
-				// Is the subexpression dynamic?  If so, this expression is also dynamic.
-				ConstantValue value = is_expression_constant(tilde.expression, expression_constant_scope);
-				if (value.is_dynamic()) {
-					expression_constant_value = value;
-					break;
-				}
+				// Get the subexpression.
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				expression_semantics.lexeme_begin = tilde.tilde_operator0;
+				expression_semantics.lexeme_end   = value.lexeme_end;
 
-				// Are we attempting to operate on a string?
-				if (value.is_string()) {
+				// Make sure value is of primitive type.
+				if (!value.output_type.resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< tilde_operator0.line << " col " << tilde_operator0.column
-						<< "): cannot apply bitwise NOT on a string expression."
+						<< "): cannot apply bitwise NOT on a non-primitive-typed expression, for "
+						<< value.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				const Type::Primitive &value_type  = value.output_type.resolve_type().get_primitive();
+
+				// Are we attempting to operate on a string?
+				if (value_type.is_string()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< tilde_operator0.line << " col " << tilde_operator0.column
+						<< "): cannot apply bitwise NOT on a string expression, for "
+						<< value_type.get_tag_repr()
+						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply bitwise NOT depending on the integer type.
-				if        (value.is_integer()) {
-					expression_constant_value = ConstantValue(static_cast<int32_t>(~static_cast<int32_t>(value.get_integer())), tilde.tilde_operator0, value.lexeme_end);
-					break;
-				} else if (value.is_char()) {
-					expression_constant_value = ConstantValue(static_cast<char>(~static_cast<char>(value.get_integer())), tilde.tilde_operator0, value.lexeme_end);
-					break;
-				} else if (value.is_boolean()) {
-					expression_constant_value = ConstantValue(static_cast<bool>(~static_cast<bool>(value.get_integer())), tilde.tilde_operator0, value.lexeme_end);
-					break;
-				} else {
-					std::ostringstream sstr;
-					sstr
-						<< "Semantics::analyze_expression: internal error (line "
-						<< tilde_operator0.line << " col " << tilde_operator0.column
-						<< "): unhandled constant expression type for bitwise NOT: "
-						<< value.get_tag_repr()
-						;
-					throw SemanticsError(sstr.str());
-				}
+				expression_semantics.output_type = value.output_type;
+				const Index value_index = expression_semantics.instructions.merge(value.instructions);
+				const Index not_index   = expression_semantics.instructions.add_instruction({I::NorFrom(B(), value_type.is_word())}, {value.output_index + value_index, value.output_index + value_index});
+				expression_semantics.output_index = not_index;
+				break;
 			} case ::Expression::unary_minus_branch: {
 				const ::Expression::UnaryMinus &unary_minus     = grammar.expression_unary_minus_storage.at(expression_symbol.data);
 				const LexemeOperator           &minus_operator0 = grammar.lexemes.at(unary_minus.minus_operator0).get_operator();
-				const ::Expression             &expression0     = grammar.expression_storage.at(unary_minus.expression); (void) expression0;
+				const ::Expression             &expression0     = grammar.expression_storage.at(unary_minus.expression);
 
-				// Is the subexpression dynamic?  If so, this expression is also dynamic.
-				ConstantValue value = is_expression_constant(unary_minus.expression, expression_constant_scope);
-				if (value.is_dynamic()) {
-					expression_constant_value = value;
-					break;
-				}
+				// Get the subexpression.
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				expression_semantics.lexeme_begin = unary_minus.minus_operator0;
+				expression_semantics.lexeme_end   = value.lexeme_end;
 
-				// Are we attempting to operate on a string?
-				if (value.is_string()) {
+				// Make sure value is of primitive type.
+				if (!value.output_type.resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< minus_operator0.line << " col " << minus_operator0.column
-						<< "): cannot apply unary minus on a string expression."
+						<< "): cannot apply unary minus on a non-primitive-typed expression, for "
+						<< value.output_type.get_tag_repr()
+						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
+				const Type::Primitive &value_type = value.output_type.resolve_type().get_primitive();
 
 				// Are we attempting to operate on a non-integer?
-				if (value.is_char() || value.is_boolean()) {
+				if (value_type.is_char() || value_type.is_boolean()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< minus_operator0.line << " col " << minus_operator0.column
 						<< "): refusing to apply unary minus on a non-integer, for "
-						<< value.get_tag_repr() << "."
+						<< value.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Are we attempting to operate on a string?
+				if (value_type.is_string()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< minus_operator0.line << " col " << minus_operator0.column
+						<< "): cannot apply unary minus on a string expression, for "
+						<< value_type.get_tag_repr()
+						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply unary minus depending on the integer type.
-				if (value.is_integer()) {
-					// Detect overflow in constant expression.
-					if (would_multiplication_overflow(-1, value.get_integer())) {
-						std::ostringstream sstr;
-						sstr
-							<< "Semantics::analyze_expression: error (line "
-							<< minus_operator0.line << " col " << minus_operator0.column
-							<< "): unary minus would result in an overflow, for "
-							<< value.get_integer() << "."
-							;
-						throw SemanticsError(sstr.str());
-					}
-
-					expression_constant_value = ConstantValue(static_cast<int32_t>(-static_cast<int32_t>(value.get_integer())), unary_minus.minus_operator0, value.lexeme_end);
-					break;
-				} else {
-					std::ostringstream sstr;
-					sstr
-						<< "Semantics::analyze_expression: internal error (line "
-						<< minus_operator0.line << " col " << minus_operator0.column
-						<< "): unhandled constant expression type for unary minus: "
-						<< value.get_tag_repr()
-						;
-					throw SemanticsError(sstr.str());
-				}
+				expression_semantics.output_type = value.output_type;
+				const Index value_index   = expression_semantics.instructions.merge(value.instructions);
+				const Index load_n1_index = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), value_type.is_word(), ConstantValue(static_cast<int32_t>(-1), 1, 0))});
+				const Index mult_index    = expression_semantics.instructions.add_instruction({I::MultFrom(B(), value_type.is_word())}, {load_n1_index, value.output_index + value_index});
+				const Index ignore_index  = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{mult_index, 1}}, mult_index);
+				expression_semantics.output_index = mult_index;
+				break;
 			} case ::Expression::parentheses_branch: {
 				const ::Expression::Parentheses &parentheses                = grammar.expression_parentheses_storage.at(expression_symbol.data);
-				const LexemeOperator            &leftparenthesis_operator0  = grammar.lexemes.at(parentheses.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
+				const LexemeOperator            &leftparenthesis_operator0  = grammar.lexemes.at(parentheses.leftparenthesis_operator0).get_operator();
 				const ::Expression              &expression0                = grammar.expression_storage.at(parentheses.expression); (void) expression0;
-				const LexemeOperator            &rightparenthesis_operator0 = grammar.lexemes.at(parentheses.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+				const LexemeOperator            &rightparenthesis_operator0 = grammar.lexemes.at(parentheses.rightparenthesis_operator0).get_operator();
 
-				// Is the subexpression dynamic?  If so, this expression is also dynamic.
-				ConstantValue value = is_expression_constant(parentheses.expression, expression_constant_scope);
-				if (value.is_dynamic()) {
-					expression_constant_value = value;
-					break;
-				}
+				// Get the subexpression.
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				expression_semantics.lexeme_begin = parentheses.leftparenthesis_operator0;
+				expression_semantics.lexeme_end   = parentheses.rightparenthesis_operator0 + 1;
 
-				// The constant value of this expression is equivalent to the
-				// constant value of the subexpression.
-				expression_constant_value = ConstantValue(value, parentheses.leftparenthesis_operator0, parentheses.rightparenthesis_operator0 + 1);
+				// Use the same expression, but update lexeme_begin and lexeme_end.
+				uint64_t lexeme_begin = expression_semantics.lexeme_begin;
+				uint64_t lexeme_end   = expression_semantics.lexeme_end;
+				expression_semantics = value;
+				expression_semantics.lexeme_begin = lexeme_begin;
+				expression_semantics.lexeme_end   = lexeme_end;
 				break;
 			}
 
 			// These 5 branches are dynamic.
 			case ::Expression::call_branch: {
 				const ::Expression::Call      &call                        = grammar.expression_call_storage.at(expression_symbol.data);
-				const LexemeIdentifier        &call_identifier             = grammar.lexemes.at(call.identifier).get_identifier(); (void) call_identifier;
+				const LexemeIdentifier        &call_identifier             = grammar.lexemes.at(call.identifier).get_identifier();
 				const LexemeOperator          &leftparenthesis_operator0   = grammar.lexemes.at(call.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
-				const ExpressionSequenceOpt   &expression_sequence_opt     = grammar.expression_sequence_opt_storage.at(call.expression_sequence_opt); (void) expression_sequence_opt;
-				const LexemeOperator          &rightparenthesis_operator0  = grammar.lexemes.at(call.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+				const ExpressionSequenceOpt   &expression_sequence_opt     = grammar.expression_sequence_opt_storage.at(call.expression_sequence_opt);
+				const LexemeOperator          &rightparenthesis_operator0  = grammar.lexemes.at(call.rightparenthesis_operator0).get_operator();
 
+// TODO
+#if 0
 				expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, call.identifier, call.rightparenthesis_operator0 + 1);
 
 				break;
+#endif
 			} case ::Expression::chr_branch: {
 				const ::Expression::Chr &chr                        = grammar.expression_chr_storage.at(expression_symbol.data);
-				const LexemeKeyword     &chr_keyword0               = grammar.lexemes.at(chr.chr_keyword0).get_keyword(); (void) chr_keyword0;
+				const LexemeKeyword     &chr_keyword0               = grammar.lexemes.at(chr.chr_keyword0).get_keyword();
 				const LexemeOperator    &leftparenthesis_operator0  = grammar.lexemes.at(chr.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
-				const ::Expression      &expression0                = grammar.expression_storage.at(chr.expression); (void) expression0;
-				const LexemeOperator    &rightparenthesis_operator0 = grammar.lexemes.at(chr.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+				const ::Expression      &expression0                = grammar.expression_storage.at(chr.expression);
+				const LexemeOperator    &rightparenthesis_operator0 = grammar.lexemes.at(chr.rightparenthesis_operator0).get_operator();
 
-				expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, chr.chr_keyword0, chr.rightparenthesis_operator0 + 1);
+				// Convert an integer to a char.
 
+				// Get the subexpression.
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				expression_semantics.lexeme_begin = chr.chr_keyword0;
+				expression_semantics.lexeme_end   = chr.rightparenthesis_operator0 + 1;
+
+				// Make sure value is of primitive type.
+				if (!value.output_type.resolve_type().is_primitive()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< chr_keyword0.line << " col " << chr_keyword0.column
+						<< "): cannot apply chr() on a non-primitive-typed expression, for "
+						<< value.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				const Type::Primitive &value_type = value.output_type.resolve_type().get_primitive();
+
+				// Are we attempting to operate on a non-integer?
+				if (value_type.is_char() || value_type.is_boolean()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< chr_keyword0.line << " col " << chr_keyword0.column
+						<< "): refusing to apply chr() on a non-integer, for "
+						<< value.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Are we attempting to operate on a string?
+				if (value_type.is_string()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< chr_keyword0.line << " col " << chr_keyword0.column
+						<< "): cannot apply chr() on a string expression, for "
+						<< value_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Apply chr() depending on the integer type.
+				// Truncate all but the lowest bits.  We may be storing e.g. to a byte in an array.
+				expression_semantics.output_type = Type::char_type;
+				const Index value_index  = expression_semantics.instructions.merge(value.instructions);
+				const Index resize_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), Type::Primitive::char_type.is_word(), Type::Primitive::integer_type.is_word())}, {value.output_index + value_index});
+				expression_semantics.output_index = resize_index;
 				break;
 			} case ::Expression::ord_branch: {
 				const ::Expression::Ord &ord                        = grammar.expression_ord_storage.at(expression_symbol.data);
-				const LexemeKeyword     &ord_keyword0               = grammar.lexemes.at(ord.ord_keyword0).get_keyword(); (void) ord_keyword0;
+				const LexemeKeyword     &ord_keyword0               = grammar.lexemes.at(ord.ord_keyword0).get_keyword();
 				const LexemeOperator    &leftparenthesis_operator0  = grammar.lexemes.at(ord.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
-				const ::Expression      &expression0                = grammar.expression_storage.at(ord.expression); (void) expression0;
-				const LexemeOperator    &rightparenthesis_operator0 = grammar.lexemes.at(ord.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+				const ::Expression      &expression0                = grammar.expression_storage.at(ord.expression);
+				const LexemeOperator    &rightparenthesis_operator0 = grammar.lexemes.at(ord.rightparenthesis_operator0).get_operator();
 
-				expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, ord.ord_keyword0, ord.rightparenthesis_operator0 + 1);
+				// Convert a char to an integer.
 
+				// Get the subexpression.
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				expression_semantics.lexeme_begin = ord.ord_keyword0;
+				expression_semantics.lexeme_end   = ord.rightparenthesis_operator0 + 1;
+
+				// Make sure value is of primitive type.
+				if (!value.output_type.resolve_type().is_primitive()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< ord_keyword0.line << " col " << ord_keyword0.column
+						<< "): cannot apply ord() on a non-primitive-typed expression, for "
+						<< value.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				const Type::Primitive &value_type = value.output_type.resolve_type().get_primitive();
+
+				// Are we attempting to operate on a non-char?
+				if (value_type.is_integer() || value_type.is_boolean()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< ord_keyword0.line << " col " << ord_keyword0.column
+						<< "): refusing to apply ord() on a non-char, for "
+						<< value.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Are we attempting to operate on a string?
+				if (value_type.is_string()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< ord_keyword0.line << " col " << ord_keyword0.column
+						<< "): cannot apply ord() on a string expression, for "
+						<< value_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Apply ord() depending on the integer type.
+				// MIPS's "lb" should load a 1-byte value to the lowest bits
+				// and fill the rest with 0s if loading from a memory address.
+				// (We could always reset it to 0 before loading if not.)
+				expression_semantics.output_type = Type::integer_type;
+				const Index value_index  = expression_semantics.instructions.merge(value.instructions);
+				const Index resize_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), Type::Primitive::integer_type.is_word(), Type::Primitive::char_type.is_word())}, {value.output_index + value_index});
+				expression_semantics.output_index = resize_index;
 				break;
 			} case ::Expression::pred_branch: {
 				const ::Expression::Pred &pred                       = grammar.expression_pred_storage.at(expression_symbol.data);
-				const LexemeKeyword      &pred_keyword0              = grammar.lexemes.at(pred.pred_keyword0).get_keyword(); (void) pred_keyword0;
+				const LexemeKeyword      &pred_keyword0              = grammar.lexemes.at(pred.pred_keyword0).get_keyword();
 				const LexemeOperator     &leftparenthesis_operator0  = grammar.lexemes.at(pred.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
-				const ::Expression       &expression0                = grammar.expression_storage.at(pred.expression); (void) expression0;
-				const LexemeOperator     &rightparenthesis_operator0 = grammar.lexemes.at(pred.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+				const ::Expression       &expression0                = grammar.expression_storage.at(pred.expression);
+				const LexemeOperator     &rightparenthesis_operator0 = grammar.lexemes.at(pred.rightparenthesis_operator0).get_operator();
 
-				expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, pred.pred_keyword0, pred.rightparenthesis_operator0 + 1);
+				// Find the predecessor of a value.
 
+				// Get the subexpression.
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				expression_semantics.lexeme_begin = pred.pred_keyword0;
+				expression_semantics.lexeme_end   = pred.rightparenthesis_operator0 + 1;
+
+				// Make sure value is of primitive type.
+				if (!value.output_type.resolve_type().is_primitive()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< pred_keyword0.line << " col " << pred_keyword0.column
+						<< "): cannot apply pred() on a non-primitive-typed expression, for "
+						<< value.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				const Type::Primitive &value_type = value.output_type.resolve_type().get_primitive();
+
+				// Are we attempting to operate on a string?
+				if (value_type.is_string()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< pred_keyword0.line << " col " << pred_keyword0.column
+						<< "): cannot apply pred() on a string expression, for "
+						<< value_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Apply pred() depending on the integer type.
+				expression_semantics.output_type = value.output_type;
+				if (!value_type.is_boolean()) {
+					const Index value_index  = expression_semantics.instructions.merge(value.instructions);
+					const Index load_1_index = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), value_type.is_word(), ConstantValue(static_cast<int32_t>(1), 0, 0))});
+					const Index sub_index    = expression_semantics.instructions.add_instruction({I::SubFrom(B(), value_type.is_word())}, {value.output_index + value_index, load_1_index});
+					expression_semantics.output_index = sub_index;
+				} else {
+					const Index value_index   = expression_semantics.instructions.merge(value.instructions);
+					const Index load_1_index  = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), value_type.is_word(), ConstantValue(static_cast<int32_t>(1), 0, 0))});
+					const Index bnot_index    = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), value_type.is_word())}, {value.output_index + value_index, load_1_index});
+					expression_semantics.output_index = bnot_index;
+				}
 				break;
 			} case ::Expression::succ_branch: {
 				const ::Expression::Succ &succ                       = grammar.expression_succ_storage.at(expression_symbol.data);
-				const LexemeKeyword      &succ_keyword0              = grammar.lexemes.at(succ.succ_keyword0).get_keyword(); (void) succ_keyword0;
+				const LexemeKeyword      &succ_keyword0              = grammar.lexemes.at(succ.succ_keyword0).get_keyword();
 				const LexemeOperator     &leftparenthesis_operator0  = grammar.lexemes.at(succ.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
-				const ::Expression       &expression0                = grammar.expression_storage.at(succ.expression); (void) expression0;
-				const LexemeOperator     &rightparenthesis_operator0 = grammar.lexemes.at(succ.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+				const ::Expression       &expression0                = grammar.expression_storage.at(succ.expression);
+				const LexemeOperator     &rightparenthesis_operator0 = grammar.lexemes.at(succ.rightparenthesis_operator0).get_operator();
 
-				expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, succ.succ_keyword0, succ.rightparenthesis_operator0 + 1);
+				// Find the successor of a value.
 
+				// Get the subexpression.
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				expression_semantics.lexeme_begin = succ.succ_keyword0;
+				expression_semantics.lexeme_end   = succ.rightparenthesis_operator0 + 1;
+
+				// Make sure value is of primitive type.
+				if (!value.output_type.resolve_type().is_primitive()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< succ_keyword0.line << " col " << succ_keyword0.column
+						<< "): cannot apply succ() on a non-primitive-typed expression, for "
+						<< value.output_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				const Type::Primitive &value_type = value.output_type.resolve_type().get_primitive();
+
+				// Are we attempting to operate on a string?
+				if (value_type.is_string()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< succ_keyword0.line << " col " << succ_keyword0.column
+						<< "): cannot apply succ() on a string expression, for "
+						<< value_type.get_tag_repr()
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Apply succ() depending on the integer type.
+				if (!value_type.is_boolean()) {
+					expression_semantics.output_type = value.output_type;
+					const Index value_index  = expression_semantics.instructions.merge(value.instructions);
+					const Index load_1_index = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), value_type.is_word(), ConstantValue(static_cast<int32_t>(1), 0, 0))});
+					const Index add_index    = expression_semantics.instructions.add_instruction({I::AddFrom(B(), value_type.is_word())}, {value.output_index + value_index, load_1_index});
+					expression_semantics.output_index = add_index;
+				} else {
+					const Index value_index   = expression_semantics.instructions.merge(value.instructions);
+					const Index load_1_index  = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), value_type.is_word(), ConstantValue(static_cast<int32_t>(1), 0, 0))});
+					const Index bnot_index    = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), value_type.is_word())}, {value.output_index + value_index, load_1_index});
+					expression_semantics.output_index = bnot_index;
+				}
 				break;
 			}
 
@@ -10612,6 +11248,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const LexemeIdentifier           &lexeme_identifier           = grammar.lexemes.at(lvalue_symbol.identifier).get_identifier();
 				const LvalueAccessorClauseList   &lvalue_accessor_clause_list = grammar.lvalue_accessor_clause_list_storage.at(lvalue_symbol.lvalue_accessor_clause_list);
 
+// TODO
+#if 0
 				// According to the documentation, only lvalues without
 				// accessors can be constant (static) expressions.  So check the
 				// lvalue type, to see if it's just an identifier.
@@ -10698,39 +11336,25 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 					expression_constant_value = ConstantValue(static_.constant_value, lvalue_symbol.identifier, lvalue_symbol.identifier + 1);
 					break;
 				}
+#endif
 			}
 
 			// These 3 branches are static.
-			case ::Expression::integer_branch: {
-				const ::Expression::Integer &integer        = grammar.expression_integer_storage.at(expression_symbol.data);
-				const LexemeInteger         &lexeme_integer = grammar.lexemes.at(integer.integer).get_integer();
-				if (lexeme_integer.first_digits > std::numeric_limits<int32_t>::max() || lexeme_integer.remaining_digits.size() > 0) {
-					std::ostringstream sstr;
-					sstr << "Semantics::is_expression_constant: error (line " << lexeme_integer.line << " col " << lexeme_integer.column << "): integer is too large to encode in 32 bits: " << lexeme_integer.text;
-					throw SemanticsError(sstr.str());
-				}
-				expression_constant_value = ConstantValue(static_cast<int32_t>(lexeme_integer.first_digits), integer.integer, integer.integer + 1);
-				break;
-			} case ::Expression::char__branch: {
-				const ::Expression::Char_ &char_       = grammar.expression_char__storage.at(expression_symbol.data);
-				const LexemeChar          &lexeme_char = grammar.lexemes.at(char_.char_).get_char();
-				expression_constant_value = ConstantValue(static_cast<char>(lexeme_char.char_), char_.char_, char_.char_ + 1);
-				break;
-			} case ::Expression::string_branch: {
-				const ::Expression::String &string        = grammar.expression_string_storage.at(expression_symbol.data);
-				const LexemeString         &lexeme_string = grammar.lexemes.at(string.string).get_string();
-				expression_constant_value = ConstantValue(std::move(std::string(lexeme_string.expanded)), string.string, string.string + 1);
-				break;
+			case ::Expression::integer_branch:
+			case ::Expression::char__branch:
+			case ::Expression::string_branch: {
+				std::ostringstream sstr;
+				sstr << "Semantics::analyze_expression: internal error: an integer, char, or string expression should have been analyzed as a constant expression but wasn't at index " << &expression_symbol - &grammar.expression_storage[0] << " (branch: " << expression_symbol.branch << ").";
+				throw SemanticsError(sstr.str());
 			}
 
 			// Unrecognized branch.
 			default: {
 				std::ostringstream sstr;
-				sstr << "Semantics::is_expression_constant: internal error: invalid expression branch at index " << expression << ": " << expression_symbol.branch;
+				sstr << "Semantics::analyze_expression: internal error: invalid expression branch at index " << &expression_symbol - &grammar.expression_storage[0] << ": " << expression_symbol.branch;
 				throw SemanticsError(sstr.str());
 			}
 		}
-#endif
 	}
 
 	// Return the semantics expression.

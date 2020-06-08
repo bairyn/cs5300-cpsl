@@ -351,6 +351,10 @@ public:
 		// | Return "primitive", "simple", "record", or "array".
 		static std::string get_tag_repr(tag_t tag);
 		std::string get_tag_repr() const;
+
+		// | If this is a type alias, resolve the type to get the base type;
+		// otherwise, just return this type.
+		const Type &resolve_type() const;
 	};
 
 	// | The result of a constant expression.
@@ -385,8 +389,8 @@ public:
 		>;
 
 		ConstantValue();
-		ConstantValue(tag_t tag, const data_t &data, uint64_t lexeme_begin, uint64_t lexeme_end);
-		ConstantValue(tag_t tag, data_t &&data, uint64_t lexeme_begin, uint64_t lexeme_end);
+		ConstantValue(tag_t tag, const data_t &data, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+		ConstantValue(tag_t tag, data_t &&data, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
 		// | Copy the constant value but use new lexeme identifiers.
 		ConstantValue(const ConstantValue &constant_value, uint64_t lexeme_begin, uint64_t lexeme_end);
 		ConstantValue(ConstantValue &&constant_value, uint64_t lexeme_begin, uint64_t lexeme_end);
@@ -645,7 +649,9 @@ public:
 		// | Storage type #1: (&global) + x, and
 		// | Storage type #2: ((uint8_t *) &global)[x];  -- if global is already a byte pointer/array, global[x].
 		Storage(Symbol global_address, bool dereference, uint32_t max_size, int32_t offset = 0);
-		// | Storage type #3: 4-byte direct register.  (No dereference.)
+		// | Storage type #3: 4-byte direct register.  (No dereference.)  To
+		// use a 4-byte direct register as a 1-byte storage, you'll need to use
+		// the normal constructor.
 		Storage(const std::string &register_);
 		// | Storage type #4: dereferenced register.
 		Storage(const std::string &register_, uint32_t max_size, int32_t offset = 0);
@@ -705,20 +711,21 @@ public:
 			ignore_tag             = 1,
 			load_immediate_tag     = 2,
 			load_from_tag          = 3,
-			nor_from_tag           = 4,
-			and_from_tag           = 5,
-			or_from_tag            = 6,
-			add_from_tag           = 7,
-			sub_from_tag           = 8,
-			mult_from_tag          = 9,
-			div_from_tag           = 10,
-			jump_to_tag            = 11,
-			jump_tag               = 12,
-			call_tag               = 13,
-			return_tag             = 14,
-			branch_zero_tag        = 15,
-			branch_nonnegative_tag = 16,
-			num_tags               = 16,
+			less_than_from_tag     = 4,
+			nor_from_tag           = 5,
+			and_from_tag           = 6,
+			or_from_tag            = 7,
+			add_from_tag           = 8,
+			sub_from_tag           = 9,
+			mult_from_tag          = 10,
+			div_from_tag           = 11,
+			jump_to_tag            = 12,
+			jump_tag               = 13,
+			call_tag               = 14,
+			return_tag             = 15,
+			branch_zero_tag        = 16,
+			branch_nonnegative_tag = 17,
+			num_tags               = 17,
 		};
 		typedef enum tag_e tag_t;
 
@@ -742,11 +749,14 @@ public:
 		// when instruction graphs are emitted, the output will end up in a
 		// temporary storage unit that can be re-used.
 		//
-		// Emits no output.
+		// Emits no output except for a symbol, if one is provided.
+		//
+		// This can also be used to add a pseudoinstruction nop that only emits a label as a symbol, by setting "has_input" to false.
 		class Ignore : public Base {
 		public:
 			Ignore();
-			Ignore(const Base &base, bool is_word);
+			Ignore(const Base &base, bool has_input = true, bool is_word = true);
+			bool has_input;
 			// | Are we loading a byte or a word?
 			bool is_word;
 
@@ -784,15 +794,34 @@ public:
 		class LoadFrom : public Base {
 		public:
 			LoadFrom();
-			LoadFrom(const Base &base, bool is_word_load, bool is_word_save, int32_t addition = 0);
+			LoadFrom(const Base &base, bool is_word_save, bool is_word_load, int32_t addition = 0);
 			LoadFrom(const Base &base, bool is_word, int32_t addition = 0);
-			// | Are we loading a byte or a word?
-			bool is_word_load;
-			// | Permit resizing.
+			// | Are we saving a byte or a word?
 			bool is_word_save;
+			// | Permit resizing.
+			bool is_word_load;
 			// | destination <- source + addition
 			// (Addition applies to values, not addresses.)
 			int32_t addition;
+
+			std::vector<uint32_t> get_input_sizes() const;
+			std::vector<uint32_t> get_working_sizes() const;
+			std::vector<uint32_t> get_output_sizes() const;
+			std::vector<uint32_t> get_all_sizes() const;
+
+			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
+		};
+
+		// | If the first input is less than the second input, write value 1 to
+		// the output, else write value 0 to the output.
+		class LessThanFrom : public Base {
+		public:
+			LessThanFrom();
+			LessThanFrom(const Base &base, bool is_word, bool is_signed = false);
+			// | Are we loading a byte or a word?
+			bool is_word;
+			// | Is this a signed comparison?
+			bool is_signed;
 
 			std::vector<uint32_t> get_input_sizes() const;
 			std::vector<uint32_t> get_working_sizes() const;
@@ -1011,6 +1040,7 @@ public:
 			Ignore,
 			LoadImmediate,
 			LoadFrom,
+			LessThanFrom,
 			NorFrom,
 			AndFrom,
 			OrFrom,
@@ -1039,6 +1069,7 @@ public:
 		Instruction(const Ignore            &ignore);
 		Instruction(const LoadImmediate     &load_immediate);
 		Instruction(const LoadFrom          &load_from);
+		Instruction(const LessThanFrom      &less_than_from);
 		Instruction(const NorFrom           &nor_from);
 		Instruction(const AndFrom           &and_from);
 		Instruction(const OrFrom            &or_from);
@@ -1056,6 +1087,7 @@ public:
 		bool is_ignore()             const;
 		bool is_load_immediate()     const;
 		bool is_load_from()          const;
+		bool is_less_than_from()     const;
 		bool is_nor_from()           const;
 		bool is_and_from()           const;
 		bool is_or_from()            const;
@@ -1074,6 +1106,7 @@ public:
 		const Ignore            &get_ignore()             const;
 		const LoadImmediate     &get_load_immediate()     const;
 		const LoadFrom          &get_load_from()          const;
+		const LessThanFrom      &get_less_than_from()     const;
 		const NorFrom           &get_nor_from()           const;
 		const AndFrom           &get_and_from()           const;
 		const OrFrom            &get_or_from()            const;
@@ -1091,6 +1124,7 @@ public:
 		Ignore            &&get_ignore();
 		LoadImmediate     &&get_load_immediate();
 		LoadFrom          &&get_load_from();
+		LessThanFrom      &&get_less_than_from();
 		NorFrom           &&get_nor_from();
 		AndFrom           &&get_and_from();
 		OrFrom            &&get_or_from();
@@ -1108,6 +1142,7 @@ public:
 		Ignore            &get_ignore_mutable();
 		LoadImmediate     &get_load_immediate_mutable();
 		LoadFrom          &get_load_from_mutable();
+		LessThanFrom      &get_less_than_from_mutable();
 		NorFrom           &get_nor_from_mutable();
 		AndFrom           &get_and_from_mutable();
 		OrFrom            &get_or_from_mutable();
@@ -1122,7 +1157,7 @@ public:
 		BranchZero        &get_branch_zero_mutable();
 		BranchNonnegative &get_branch_nonnegative_mutable();
 
-		// | Return "ignore", "load_immediate", "load_from", or "nor_from", etc.
+		// | Return "ignore", "load_immediate", "less_than_from", "load_from", or "nor_from", etc.
 		static std::string get_tag_repr(tag_t tag);
 		std::string get_tag_repr() const;
 
@@ -1160,8 +1195,13 @@ public:
 		std::map<IO, IO>           connections;           // connections[input]   == output that provides the input.
 		std::map<IO, std::set<IO>> reversed_connections;  // connections[output]  == {all inputs that this output supplies}.
 		std::map<Index, Index>     sequences;             // sequences[this_node] == the node that should be emitted (after its unemitted children (inputs) are emitted) right after this_node is emitted.
+		std::map<Index, Index>     reversed_sequences;    // sequences reversed.  We have a bimap now.
 
 		// | In order to emit these MIPSIO instructions that write these outputs, how many working storages are needed?
+		// TODO: optimization: count which storages are used most so the caller
+		// knows which to prioritize as registers.  Storages that are used more
+		// often should appear first, but this is currently unimplemented.
+		// (Count number of locks / claims, and then stable sort the output before returning.)
 		std::vector<uint32_t> prepare(const std::set<IO> &capture_outputs) const;
 		std::vector<uint32_t> prepare(const std::map<IO, Storage> &capture_outputs) const;
 		// | Emit the collections of instructions using the provided storages.
@@ -1235,11 +1275,13 @@ public:
 		MIPSIO        instructions;
 		Type          output_type;
 		MIPSIO::Index output_index;
+		uint64_t      lexeme_begin;
+		uint64_t      lexeme_end;
 		Expression();  // (No instructions; null type.)
-		Expression(const MIPSIO  &instructions, const Type  &output_type, MIPSIO::Index output_index);
-		Expression(const MIPSIO  &instructions,       Type &&output_type, MIPSIO::Index output_index);
-		Expression(      MIPSIO &&instructions, const Type  &output_type, MIPSIO::Index output_index);
-		Expression(      MIPSIO &&instructions,       Type &&output_type, MIPSIO::Index output_index);
+		Expression(const MIPSIO  &instructions, const Type  &output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+		Expression(const MIPSIO  &instructions,       Type &&output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+		Expression(      MIPSIO &&instructions, const Type  &output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+		Expression(      MIPSIO &&instructions,       Type &&output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
 	};
 
 	// The non-const part is the ability to store strings.
