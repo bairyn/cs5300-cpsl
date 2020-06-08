@@ -705,7 +705,8 @@ public:
 			load_immediate_tag = 1,
 			load_from_tag      = 2,
 			add_from_tag       = 3,
-			num_tags           = 3,
+			sub_from_tag       = 4,
+			num_tags           = 4,
 		};
 		typedef enum tag_e tag_t;
 
@@ -782,10 +783,27 @@ public:
 			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
 		};
 
+		// | Subtract two storage units into another.
+		class SubFrom : public Base {
+		public:
+			SubFrom();
+			SubFrom(const Base &base, bool is_word);
+			// | Are we loading a byte or a word?
+			bool is_word;
+
+			std::vector<uint32_t> get_input_sizes() const;
+			std::vector<uint32_t> get_working_sizes() const;
+			std::vector<uint32_t> get_output_sizes() const;
+			std::vector<uint32_t> get_all_sizes() const;
+
+			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
+		};
+
 		using data_t = std::variant<
 			std::monostate,
 			LoadImmediate,
 			LoadFrom,
+			SubFrom,
 			AddFrom
 		>;
 
@@ -801,21 +819,25 @@ public:
 		Instruction(const LoadImmediate &load_immediate);
 		Instruction(const LoadFrom      &load_from);
 		Instruction(const AddFrom       &add_from);
+		Instruction(const SubFrom       &sub_from);
 
 		bool is_load_immediate() const;
 		bool is_load_from()      const;
 		bool is_add_from()       const;
+		bool is_sub_from()       const;
 
 		// | The tags must be correct, or else an exception will be thrown, including for set_*.
 		const LoadImmediate &get_load_immediate() const;
 		const LoadFrom      &get_load_from()      const;
 		const AddFrom       &get_add_from()       const;
+		const SubFrom       &get_sub_from()       const;
 
 		LoadImmediate &&get_load_immediate();
 		LoadFrom      &&get_load_from();
 		AddFrom       &&get_add_from();
+		SubFrom       &&get_sub_from();
 
-		// | Return "load_immediate", "load_from", or "add_from".
+		// | Return "load_immediate", "load_from", or "add_from", etc.
 		static std::string get_tag_repr(tag_t tag);
 		std::string get_tag_repr() const;
 
