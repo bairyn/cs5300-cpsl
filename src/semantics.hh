@@ -56,7 +56,7 @@ public:
 		Symbol(const std::string &prefix, const std::string &requested_suffix, uint64_t unique_identifier = 0);
 		std::string prefix;
 		std::string requested_suffix;
-		uint64_t unique_identifier;
+		uint64_t unique_identifier = 0;
 
 		static const uint64_t max_unique_try_iterations;
 
