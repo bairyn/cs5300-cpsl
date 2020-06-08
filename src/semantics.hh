@@ -1154,8 +1154,9 @@ public:
 		std::vector<Instruction> instructions;
 
 		// | All vertices that have inputs.
-		std::map<IO, IO> connections;  // connections[input] == output that provides the input.
-		std::map<IO, std::set<IO>> reversed_connections;  // connections[output] == {all inputs that this output supplies}.
+		std::map<IO, IO>           connections;           // connections[input]   == output that provides the input.
+		std::map<IO, std::set<IO>> reversed_connections;  // connections[output]  == {all inputs that this output supplies}.
+		std::map<Index, Index>     sequences;             // sequences[this_node] == the node that should be emitted (after its unemitted children (inputs) are emitted) right after this_node is emitted.
 
 		// | In order to emit these MIPSIO instructions that write these outputs, how many working storages are needed?
 		std::vector<uint32_t> prepare(const std::set<IO> &capture_outputs) const;
@@ -1165,7 +1166,11 @@ public:
 		// There must be a path between every node and capture_outputs, or an
 		// error is thrown.  This simplifies the algorithm's working storage
 		// tracking, to know when they can be re-used.
-		std::vector<Output::Line> emit(const std::map<IO, Storage> &input_storages, const std::vector<Storage> &working_storages, const std::map<IO, Storage> &capture_outputs, bool permit_uncaptured_outputs = true) const;
+		//
+		// Uncaptured outputs should be consumed with another connection.  If
+		// it is unused, use the Ignore instruction to consume it.  To disable
+		// this restriction, pass permit_uncaptured_outputs = true.
+		std::vector<Output::Line> emit(const std::map<IO, Storage> &input_storages, const std::vector<Storage> &working_storages, const std::map<IO, Storage> &capture_outputs, bool permit_uncaptured_outputs = false) const;
 
 		template<typename A, typename B, typename C>
 		static std::map<A, std::map<B, C>> expand_map(const std::map<std::pair<A, B>, C> &map) {
@@ -1197,11 +1202,25 @@ public:
 		// | Straightforwardly add an instruction, optionally connecting its
 		// first arguments with the first output of the instructions
 		// corresponding to the input indices.
+		//
+		// There is a variant that can take an index to an instruction that
+		// should run before the instruction being added.
 		Index add_instruction(const Instruction &instruction, const std::vector<Index> inputs = {});
+		Index add_instruction(const Instruction &instruction, const std::vector<Index> inputs, const Index after);
+		Index add_instruction(const Instruction &instruction, const std::vector<Index> inputs, const std::optional<Index> after);
+		Index add_instruction(const Instruction &instruction, const Index after);
 		// | Same as before, but allow specification of which output in case there are multiple outputs.
 		Index add_instruction_indexed(const Instruction &instruction, const std::vector<IO> inputs = {});
+		Index add_instruction_indexed(const Instruction &instruction, const std::vector<IO> inputs, const Index after);
+		Index add_instruction_indexed(const Instruction &instruction, const std::vector<IO> inputs, const std::optional<Index> after);
+		Index add_instruction_indexed(const Instruction &instruction, const Index after);
 		// | Set "output"'s given output as "input"'s given input.
 		void add_connection(IO output, IO input);
+		// | Right after "before" is emitted, emit "after"'s unemitted children and then "after".
+		void add_sequence_connection(Index before, Index after);
+		void add_sequence_connection(std::pair<Index, Index> before_after);
+		void add_sequence_connections(const std::vector<std::pair<Index, Index>> before_afters);
+		void add_sequence_connections(const std::vector<Index> befores, const std::vector<Index> afters);
 		// | Add "other"'s instructions to this; any indices returned from
 		// "add_instruction" into "other" (but not "this") must be added by the
 		// returned value to remain correct.

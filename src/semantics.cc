@@ -8666,12 +8666,12 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 		//instruction_output = instruction.emit(instruction_storage);
 		//output_lines.insert(output_lines.end(), instruction_output.cbegin(), instruction_output.cend());
 
-		// Finally, free working storages: for each input that's in a working
-		// storage unit (as opposed to being provided by "input_storages"),
-		// check all the other nodes that are using that same output as input.
-		// If there are none, unclaim it.  If all have already been emitted,
-		// then this instruction is the last instruction that needs this
-		// working storage unit: unclaim it.
+		// Free working storages: for each input that's in a working storage
+		// unit (as opposed to being provided by "input_storages"), check all
+		// the other nodes that are using that same output as input.  If there
+		// are none, unclaim it.  If all have already been emitted, then this
+		// instruction is the last instruction that needs this working storage
+		// unit: unclaim it.
 		for (IOIndex input_index = 0; input_index < instruction.get_input_sizes().size(); ++input_index) {
 			std::map<IO, IO>::const_iterator connections_search = connections.find({this_node, input_index});
 			if (connections_search != connections.cend()) {
@@ -8710,6 +8710,24 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 					claimed_working_storages.erase(claimed_storage);
 				}
 			}
+		}
+
+		// Finally, if there is another node sequence-connected after this one,
+		// push it onto the stack to replace this one, which we've already
+		// removed; otherwise, leave this one popped and continue.
+		std::map<Index, Index>::const_iterator sequences_search = sequences.find(this_node);
+		if (sequences_search != sequences.cend()) {
+			Index after_node = sequences_search->second;
+
+			// Detect cycles.
+			if (visited_instructions.find(after_node) != visited_instructions.cend()) {
+				std::ostringstream sstr;
+				sstr << "Semantics::MIPSIO::prepare: error: a cycle, loop, or ordering inconsistency was detected in the instruction graph at index " << after_node << ", which has already been emitted before, but it is sequenced to be after " << this_node << ").";
+				throw SemanticsError(sstr.str());
+			}
+
+			// Replace this node with the one after it.
+			children_stack.push_back(after_node);
 		}
 	}
 
@@ -9013,12 +9031,12 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 		instruction_output = instruction.emit(instruction_storage);
 		output_lines.insert(output_lines.end(), instruction_output.cbegin(), instruction_output.cend());
 
-		// Finally, free working storages: for each input that's in a working
-		// storage unit (as opposed to being provided by "input_storages"),
-		// check all the other nodes that are using that same output as input.
-		// If there are none, unclaim it.  If all have already been emitted,
-		// then this instruction is the last instruction that needs this
-		// working storage unit: unclaim it.
+		// Free working storages: for each input that's in a working storage
+		// unit (as opposed to being provided by "input_storages"), check all
+		// the other nodes that are using that same output as input.  If there
+		// are none, unclaim it.  If all have already been emitted, then this
+		// instruction is the last instruction that needs this working storage
+		// unit: unclaim it.
 		for (IOIndex input_index = 0; input_index < instruction.get_input_sizes().size(); ++input_index) {
 			std::map<IO, IO>::const_iterator connections_search = connections.find({this_node, input_index});
 			if (connections_search != connections.cend()) {
@@ -9058,6 +9076,24 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 				}
 			}
 		}
+
+		// Finally, if there is another node sequence-connected after this one,
+		// push it onto the stack to replace this one, which we've already
+		// removed; otherwise, leave this one popped and continue.
+		std::map<Index, Index>::const_iterator sequences_search = sequences.find(this_node);
+		if (sequences_search != sequences.cend()) {
+			Index after_node = sequences_search->second;
+
+			// Detect cycles.
+			if (visited_instructions.find(after_node) != visited_instructions.cend()) {
+				std::ostringstream sstr;
+				sstr << "Semantics::MIPSIO::emit: error: a cycle, loop, or ordering inconsistency was detected in the instruction graph at index " << after_node << ", which has already been emitted before, but it is sequenced to be after " << this_node << ").";
+				throw SemanticsError(sstr.str());
+			}
+
+			// Replace this node with the one after it.
+			children_stack.push_back(after_node);
+		}
 	}
 
 	// Make sure there were no unvisited lines.
@@ -9086,6 +9122,26 @@ Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction(const Instruction &i
 	return add_instruction_indexed(instruction, inputs);
 }
 
+Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction(const Instruction &instruction, const std::vector<Index> inputs_, const Index after) {
+	std::vector<IO> inputs;
+	for (const Index &input : std::as_const(inputs_)) {
+		inputs.push_back({input, 0});
+	}
+	return add_instruction_indexed(instruction, inputs, after);
+}
+
+Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction(const Instruction &instruction, const std::vector<Index> inputs, const std::optional<Index> after) {
+	if (after.has_value()) {
+		return add_instruction(instruction, inputs, *after);
+	} else {
+		return add_instruction(instruction, inputs);
+	}
+}
+
+Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction(const Instruction &instruction, const Index after) {
+	return add_instruction_indexed(instruction, after);
+}
+
 // | Same as before, but allow specification of which output in case there are multiple outputs.
 Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction_indexed(const Instruction &instruction, const std::vector<IO> inputs) {
 	Index index = instructions.size();
@@ -9100,16 +9156,34 @@ Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction_indexed(const Instru
 	return index;
 }
 
+Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction_indexed(const Instruction &instruction, const std::vector<IO> inputs, const Index after) {
+	Index index = add_instruction_indexed(instruction, inputs);
+	add_sequence_connection(after, index);
+	return index;
+}
+
+Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction_indexed(const Instruction &instruction, const std::vector<IO> inputs, const std::optional<Index> after) {
+	if (after.has_value()) {
+		return add_instruction_indexed(instruction, inputs, *after);
+	} else {
+		return add_instruction_indexed(instruction, inputs);
+	}
+}
+
+Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction_indexed(const Instruction &instruction, const Index after) {
+	return add_instruction_indexed(instruction, {}, after);
+}
+
 // | Set "output"'s given output as "input"'s given input.
 void Semantics::MIPSIO::add_connection(IO output, IO input) {
 	if (connections.find(input) != connections.cend()) {
 		std::ostringstream sstr;
 		sstr
 			<< "Semantics::MIPSIO::add_connection: error: attempt to add a connection to an input that already has a connection." << std::endl
-			<< "\toutput node : "                << output.first << std::endl
+			<< "\toutput node                : " << output.first << std::endl
 			<< "\toutput node's output index : " << output.first << std::endl
-			<< "\tinput node : "                 << input.first << std::endl
-			<< "\tinput node's input index :   " << input.first
+			<< "\tinput node                 : " << input.first << std::endl
+			<< "\tinput node's input index   : " << input.first
 			;
 		throw SemanticsError(sstr.str());
 	}
@@ -9121,6 +9195,49 @@ void Semantics::MIPSIO::add_connection(IO output, IO input) {
 		reversed_connections.insert({output, {input}});
 	} else {
 		reversed_connections_search->second.insert(input);
+	}
+}
+
+// | Right after "before" is emitted, emit "after"'s unemitted children and then "after".
+void Semantics::MIPSIO::add_sequence_connection(Index before, Index after) {
+	if (sequences.find(before) != sequences.cend()) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::MIPSIO::add_sequence_connection: error: attempt to add a sequence connection to a \"before\" instruction that already has a connection to an \"after\" instruction that should be emitted (after \"after\"'s unemitted children if any) right after \"before\" is emitted." << std::endl
+			<< "\tbefore node : " << before << std::endl
+			<< "\tafter node  : " << after
+			;
+		throw SemanticsError(sstr.str());
+	}
+
+	sequences.insert({before, after});
+}
+
+void Semantics::MIPSIO::add_sequence_connection(std::pair<Index, Index> before_after) {
+	return add_sequence_connection(before_after.first, before_after.second);
+}
+
+void Semantics::MIPSIO::add_sequence_connections(const std::vector<std::pair<Index, Index>> before_afters) {
+	for (const std::pair<Index, Index> &before_after : std::as_const(before_afters)) {
+		add_sequence_connection(before_after);
+	}
+}
+
+void Semantics::MIPSIO::add_sequence_connections(const std::vector<Index> befores, const std::vector<Index> afters) {
+	if (befores.size() != afters.size()) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::MIPSIO::add_sequence_connection: error: the \"befores\" and \"afters\" vectors have different lengths." << std::endl
+			<< "\tbefores length : " << befores.size() << std::endl
+			<< "\tafters length  : " << afters.size()
+			;
+		throw SemanticsError(sstr.str());
+	}
+
+	for (std::vector<Index>::size_type befores_afters_index = 0; befores_afters_index < befores.size(); ++befores_afters_index) {
+		const Index &before = befores[befores_afters_index];
+		const Index &after  = afters[befores_afters_index];
+		add_sequence_connection(before, after);
 	}
 }
 
@@ -9145,6 +9262,14 @@ Semantics::MIPSIO::Index Semantics::MIPSIO::merge(const MIPSIO &other) {
 		} else {
 			reversed_connections_search->second.insert(new_input);
 		}
+	}
+
+	for (const std::map<Index, Index>::value_type &sequence : std::as_const(other.sequences)) {
+		const Index before     = sequence.first;
+		const Index after      = sequence.second;
+		const Index new_before = before + addition;
+		const Index new_after  = after + addition;
+		sequences.insert({new_before, new_after});
 	}
 
 	return addition;
