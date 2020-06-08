@@ -5669,11 +5669,11 @@ Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction(const Instruction &i
 	for (const Index &input : std::as_const(inputs_)) {
 		inputs.push_back({input, 0});
 	}
-	return add_instruction(instruction, inputs);
+	return add_instruction_indexed(instruction, inputs);
 }
 
 // | Same as before, but allow specification of which output in case there are multiple outputs.
-Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction(const Instruction &instruction, const std::vector<IO> inputs) {
+Semantics::MIPSIO::Index Semantics::MIPSIO::add_instruction_indexed(const Instruction &instruction, const std::vector<IO> inputs) {
 	Index index = instructions.size();
 
 	instructions.push_back(instruction);
@@ -6774,15 +6774,13 @@ void UnitTests::test_mips_io() {
 	using M = Semantics::MIPSIO;
 	using I = Semantics::Instruction;
 	using B = Semantics::Instruction::Base;
+	using Index = M::Index;
+	using IO    = M::IO;
 	using ConstantValue = Semantics::ConstantValue;
 	using Output        = Semantics::Output;
 	using Storage       = Semantics::Storage;
 	using Symbol        = Semantics::Symbol;
 
-	using ConstantValue = Semantics::ConstantValue;
-	using Output        = Semantics::Output;
-	using Storage       = Semantics::Storage;
-	using Symbol        = Semantics::Symbol;
 	M basic;
 	basic.instructions.push_back(I(I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(4), 0, 0), Symbol())));
 	basic.instructions.push_back(I(I::LoadFrom(B(), true, 16)));
@@ -6813,37 +6811,29 @@ void UnitTests::test_mips_io() {
 
 	assert(basic.prepare({{1,0}}) == std::vector<uint32_t>({4}));
 
-	// TODO
-#if 0
-	// Some type aliases to improve readability.
-	using M = Semantics::MIPSIO;
-	using I = Semantics::Instruction;
-	using B = Semantics::Instruction::Base;
-	using ConstantValue = Semantics::ConstantValue;
-	using Output        = Semantics::Output;
-	using Storage       = Semantics::Storage;
-	using Symbol        = Semantics::Symbol;
+	// Now use the utility methods to construct the same MIPSIO.
+	M simple;
+	Index load_4    = simple.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(4), 0, 0), Symbol())});
+	Index load_from = simple.add_instruction({I::LoadFrom(B(), true, 16)}, {load_4});
+	const std::map<IO, Storage> capture_outputs {
+		{{load_from, 0}, Storage(4, false, Symbol(), "$t0", false, 0)},
+	};
 
-	M load_4 {{}, {
-		I(I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(4), 0, 0), Symbol())),
-	}};
-	M move_16 {{load_4}, {
-		I(I::LoadFrom(B(), true, 16)),
-	}};
-	const M &mips_io = move_16;
-
-	// Storage(uint32_t max_size, bool is_global, Symbol global_address, const std::string &register_, bool dereference, int32_t offset);
-	std::vector<Output::Line> lines = mips_io.emit({
-		Storage(4, false, Symbol(), "$t2", false, 0),  // Working (load_4 -> move_16).
-		Storage(4, false, Symbol(), "$t3", false, 0),  // Output  (move_16 -> here).
-	});
-
-	std::vector<Output::Line> expected;
-	expected.push_back("\tli   $t2, 4");
-	expected.push_back("\tla   $t3, 16($t2)");
+	lines = simple.emit(
+		// Inputs.
+		{},
+		// Working.
+		{
+			// Storage(uint32_t max_size, bool is_global, Symbol global_address, const std::string &register_, bool dereference, int32_t offset);
+			Storage(4, false, Symbol(), "$t2", false, 0),
+		},
+		// Outputs.
+		capture_outputs
+	);
 
 	assert(lines == expected);
-#endif /* #if 0 */
+
+	assert(simple.prepare(capture_outputs) == std::vector<uint32_t>({4}));
 }
 
 void UnitTests::test_mips_io2() {
@@ -6851,15 +6841,13 @@ void UnitTests::test_mips_io2() {
 	using M = Semantics::MIPSIO;
 	using I = Semantics::Instruction;
 	using B = Semantics::Instruction::Base;
+	using Index = M::Index;
+	using IO    = M::IO;
 	using ConstantValue = Semantics::ConstantValue;
 	using Output        = Semantics::Output;
 	using Storage       = Semantics::Storage;
 	using Symbol        = Semantics::Symbol;
 
-	using ConstantValue = Semantics::ConstantValue;
-	using Output        = Semantics::Output;
-	using Storage       = Semantics::Storage;
-	using Symbol        = Semantics::Symbol;
 	M basic;
 	basic.instructions.push_back(I(I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(4), 0, 0), Symbol())));
 	basic.instructions.push_back(I(I::LoadFrom(B(), true, 16)));
@@ -6903,41 +6891,30 @@ void UnitTests::test_mips_io2() {
 
 	assert(basic.prepare({{3,0}}) == std::vector<uint32_t>({4, 4}));
 
-#if 0
-	// Some type aliases to improve readability.
-	using M = Semantics::MIPSIO;
-	using I = Semantics::Instruction;
-	using B = Semantics::Instruction::Base;
-	using ConstantValue = Semantics::ConstantValue;
-	using Output        = Semantics::Output;
-	using Storage       = Semantics::Storage;
-	using Symbol        = Semantics::Symbol;
+	// Now use the utility methods to construct the same MIPSIO.
+	M simple;
+	Index load_4    = simple.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(4), 0, 0), Symbol())});
+	Index load_from = simple.add_instruction({I::LoadFrom(B(), true, 16)}, {load_4});
+	Index load_6    = simple.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(6), 0, 0), Symbol())}, {});
+	Index add       = simple.add_instruction({I::AddFrom(B(), true)}, {load_from, load_6});
+	const std::map<IO, Storage> capture_outputs {
+		{{add, 0}, Storage(4, false, Symbol(), "$t0", false, 0)},
+	};
 
-	M load_4 {{}, {  // 0 -> 1
-		I(I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(4), 0, 0), Symbol())),
-	}};
-	M move_16 {{load_4}, {  // 0 -> 1; 1
-		I(I::LoadFrom(B(), true, 16)),
-	}};
-	M load_6 {{}, {  // 0 -> 1
-		I(I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(6), 0, 0), Symbol())),
-	}};
-	M add {{move_16, load_6}, {  // 0 -> 1; 2
-		I(I::AddFrom(B(), true)),
-	}};
-	const M &mips_io = add;
-
-	// Storage(uint32_t max_size, bool is_global, Symbol global_address, const std::string &register_, bool dereference, int32_t offset);
-	std::vector<Output::Line> lines = add.emit({
-		Storage(4, false, Symbol(), "$t2", false, 0),  // Working
-		Storage(4, false, Symbol(), "$t3", false, 0),  // Working
-		Storage(4, false, Symbol(), "$t4", false, 0),  // Output  (move_5 -> here).
-	});
-
-	std::vector<Output::Line> expected;
-	expected.push_back("\tli   $t2, 4");
-	expected.push_back("\tla   $t3, 16($t2)");
+	lines = simple.emit(
+		// Inputs.
+		{},
+		// Working.
+		{
+			// Storage(uint32_t max_size, bool is_global, Symbol global_address, const std::string &register_, bool dereference, int32_t offset);
+			Storage(4, false, Symbol(), "$t2", false, 0),
+			Storage(4, false, Symbol(), "$t3", false, 0),
+		},
+		// Outputs.
+		capture_outputs
+	);
 
 	assert(lines == expected);
-#endif /* #if 0 */
+
+	assert(simple.prepare({{1, 0}}) == std::vector<uint32_t>({4, 4}));
 }

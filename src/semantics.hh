@@ -614,6 +614,8 @@ public:
 	// IdentifierScope passed to this method.
 	Type analyze_type(const std::string &identifier, const ::Type &type, const IdentifierScope &type_constant_scope, const IdentifierScope &type_type_scope, IdentifierScope &anonymous_storage);
 
+	// TODO: maybe a convenient short construct for basic registers OSLT.
+	// maybe for std::string register_ or Symbol.  Default max_size 4, offset 0, etc.
 	// | A representation of a storage unit: a register, offset on the stack, global address, etc.
 	//
 	// $t8 and $t9 are reserved in case any working storage units require 2
@@ -778,9 +780,9 @@ public:
 		const Base &get_base() const;
 		Base &&get_base();
 
-		explicit Instruction(const LoadImmediate &load_immediate);
-		explicit Instruction(const LoadFrom      &load_from);
-		explicit Instruction(const AddFrom       &add_from);
+		Instruction(const LoadImmediate &load_immediate);
+		Instruction(const LoadFrom      &load_from);
+		Instruction(const AddFrom       &add_from);
 
 		bool is_load_immediate() const;
 		bool is_load_from()      const;
@@ -873,9 +875,9 @@ public:
 		// | Straightforwardly add an instruction, optionally connecting its
 		// first arguments with the first output of the instructions
 		// corresponding to the input indices.
-		Index add_instruction(const Instruction &instruction, const std::vector<Index> inputs);
+		Index add_instruction(const Instruction &instruction, const std::vector<Index> inputs = {});
 		// | Same as before, but allow specification of which output in case there are multiple outputs.
-		Index add_instruction(const Instruction &instruction, const std::vector<IO> inputs);
+		Index add_instruction_indexed(const Instruction &instruction, const std::vector<IO> inputs = {});
 		// | Set "output"'s given output as "input"'s given input.
 		void add_connection(IO output, IO input);
 		// | Add "other"'s instructions to this; any indices returned from
