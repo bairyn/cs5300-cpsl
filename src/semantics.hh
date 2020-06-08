@@ -701,17 +701,24 @@ public:
 	class Instruction {
 	public:
 		enum tag_e {
-			null_tag           = 0,
-			load_immediate_tag = 1,
-			load_from_tag      = 2,
-			nor_from_tag       = 3,
-			and_from_tag       = 4,
-			or_from_tag        = 5,
-			add_from_tag       = 6,
-			sub_from_tag       = 7,
-			mult_from_tag      = 8,
-			div_from_tag       = 9,
-			num_tags           = 9,
+			null_tag               = 0,
+			ignore_tag             = 1,
+			load_immediate_tag     = 2,
+			load_from_tag          = 3,
+			nor_from_tag           = 4,
+			and_from_tag           = 5,
+			or_from_tag            = 6,
+			add_from_tag           = 7,
+			sub_from_tag           = 8,
+			mult_from_tag          = 9,
+			div_from_tag           = 10,
+			jump_to_tag            = 11,
+			jump_tag               = 12,
+			call_tag               = 13,
+			return_tag             = 14,
+			branch_zero_tag        = 15,
+			branch_nonnegative_tag = 16,
+			num_tags               = 16,
 		};
 		typedef enum tag_e tag_t;
 
@@ -722,6 +729,24 @@ public:
 			// | Does this instruction have a label at the beginning of this instruction?
 			bool has_symbol;
 			Symbol symbol;
+
+			std::vector<uint32_t> get_input_sizes() const;
+			std::vector<uint32_t> get_working_sizes() const;
+			std::vector<uint32_t> get_output_sizes() const;
+			std::vector<uint32_t> get_all_sizes() const;
+
+			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
+		};
+
+		// | Consume but ignore the output value, so that when instruction
+		// graphs are emitted, the output will end up in a temporary storage
+		// unit that can be re-used.
+		class Ignore : public Base {
+		public:
+			Ignore();
+			Ignore(const Base &base, bool is_word);
+			// | Are we loading a byte or a word?
+			bool is_word;
 
 			std::vector<uint32_t> get_input_sizes() const;
 			std::vector<uint32_t> get_working_sizes() const;
@@ -757,9 +782,12 @@ public:
 		class LoadFrom : public Base {
 		public:
 			LoadFrom();
-			LoadFrom(const Base &base, bool is_word, int32_t addition);
+			LoadFrom(const Base &base, bool is_word_load, bool is_word_save, int32_t addition = 0);
+			LoadFrom(const Base &base, bool is_word, int32_t addition = 0);
 			// | Are we loading a byte or a word?
-			bool is_word;
+			bool is_word_load;
+			// | Permit resizing.
+			bool is_word_save;
 			// | destination <- source + addition
 			// (Addition applies to values, not addresses.)
 			int32_t addition;
@@ -884,8 +912,100 @@ public:
 			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
 		};
 
+		// | Unconditionally jump to a location referred to by the input.
+		class JumpTo : public Base {
+		public:
+			JumpTo();
+			JumpTo(const Base &base);
+
+			std::vector<uint32_t> get_input_sizes() const;
+			std::vector<uint32_t> get_working_sizes() const;
+			std::vector<uint32_t> get_output_sizes() const;
+			std::vector<uint32_t> get_all_sizes() const;
+
+			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
+		};
+
+		// | Unconditionally jump to a label.
+		class Jump : public Base {
+		public:
+			Jump();
+			Jump(const Base &base, Symbol jump_destination);
+			Symbol jump_destination;
+
+			std::vector<uint32_t> get_input_sizes() const;
+			std::vector<uint32_t> get_working_sizes() const;
+			std::vector<uint32_t> get_output_sizes() const;
+			std::vector<uint32_t> get_all_sizes() const;
+
+			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
+		};
+
+		// | jal instruction to a label.
+		class Call : public Base {
+		public:
+			Call();
+			Call(const Base &base, bool fixed_storage, const Storage &storage);
+			bool fixed_storage;
+			Storage storage;
+
+			std::vector<uint32_t> get_input_sizes() const;
+			std::vector<uint32_t> get_working_sizes() const;
+			std::vector<uint32_t> get_output_sizes() const;
+			std::vector<uint32_t> get_all_sizes() const;
+
+			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
+		};
+
+		// | jr instruction.
+		class Return : public Base {
+		public:
+			Return();
+			Return(const Base &base, bool fixed_storage, const Storage &storage);
+			bool fixed_storage;
+			Storage storage;
+
+			std::vector<uint32_t> get_input_sizes() const;
+			std::vector<uint32_t> get_working_sizes() const;
+			std::vector<uint32_t> get_output_sizes() const;
+			std::vector<uint32_t> get_all_sizes() const;
+
+			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
+		};
+
+		// | Branch to a label if the input is equal to zero.
+		class BranchZero : public Base {
+		public:
+			BranchZero();
+			BranchZero(const Base &base, Symbol branch_destination);
+			Symbol branch_destination;
+
+			std::vector<uint32_t> get_input_sizes() const;
+			std::vector<uint32_t> get_working_sizes() const;
+			std::vector<uint32_t> get_output_sizes() const;
+			std::vector<uint32_t> get_all_sizes() const;
+
+			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
+		};
+
+		// | Branch to a label if the input is greater than or equal to zero.
+		class BranchNonnegative : public Base {
+		public:
+			BranchNonnegative();
+			BranchNonnegative(const Base &base, Symbol branch_destination);
+			Symbol branch_destination;
+
+			std::vector<uint32_t> get_input_sizes() const;
+			std::vector<uint32_t> get_working_sizes() const;
+			std::vector<uint32_t> get_output_sizes() const;
+			std::vector<uint32_t> get_all_sizes() const;
+
+			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
+		};
+
 		using data_t = std::variant<
 			std::monostate,
+			Ignore,
 			LoadImmediate,
 			LoadFrom,
 			NorFrom,
@@ -894,7 +1014,13 @@ public:
 			AddFrom,
 			SubFrom,
 			MultFrom,
-			DivFrom
+			DivFrom,
+			JumpTo,
+			Jump,
+			Call,
+			Return,
+			BranchZero,
+			BranchNonnegative
 		>;
 
 		Instruction();
@@ -907,58 +1033,93 @@ public:
 		Base &&get_base();
 		Base &get_base_mutable();
 
-		Instruction(const LoadImmediate &load_immediate);
-		Instruction(const LoadFrom      &load_from);
-		Instruction(const NorFrom       &nor_from);
-		Instruction(const AndFrom       &and_from);
-		Instruction(const OrFrom        &or_from);
-		Instruction(const AddFrom       &add_from);
-		Instruction(const SubFrom       &sub_from);
-		Instruction(const MultFrom      &sub_from);
-		Instruction(const DivFrom       &sub_from);
+		Instruction(const Ignore            &ignore);
+		Instruction(const LoadImmediate     &load_immediate);
+		Instruction(const LoadFrom          &load_from);
+		Instruction(const NorFrom           &nor_from);
+		Instruction(const AndFrom           &and_from);
+		Instruction(const OrFrom            &or_from);
+		Instruction(const AddFrom           &add_from);
+		Instruction(const SubFrom           &sub_from);
+		Instruction(const MultFrom          &mult_from);
+		Instruction(const DivFrom           &div_from);
+		Instruction(const JumpTo            &jump_to);
+		Instruction(const Jump              &jump);
+		Instruction(const Call              &call);
+		Instruction(const Return            &return_);
+		Instruction(const BranchZero        &branch_zero);
+		Instruction(const BranchNonnegative &branch_nonnegative);
 
-		bool is_load_immediate() const;
-		bool is_load_from()      const;
-		bool is_nor_from()       const;
-		bool is_and_from()       const;
-		bool is_or_from()        const;
-		bool is_add_from()       const;
-		bool is_sub_from()       const;
-		bool is_mult_from()      const;
-		bool is_div_from()       const;
+		bool is_ignore()             const;
+		bool is_load_immediate()     const;
+		bool is_load_from()          const;
+		bool is_nor_from()           const;
+		bool is_and_from()           const;
+		bool is_or_from()            const;
+		bool is_add_from()           const;
+		bool is_sub_from()           const;
+		bool is_mult_from()          const;
+		bool is_div_from()           const;
+		bool is_jump_to()            const;
+		bool is_jump()               const;
+		bool is_call()               const;
+		bool is_return()             const;
+		bool is_branch_zero()        const;
+		bool is_branch_nonnegative() const;
 
 		// | The tags must be correct, or else an exception will be thrown, including for set_*.
-		const LoadImmediate &get_load_immediate() const;
-		const LoadFrom      &get_load_from()      const;
-		const NorFrom       &get_nor_from()       const;
-		const AndFrom       &get_and_from()       const;
-		const OrFrom        &get_or_from()        const;
-		const AddFrom       &get_add_from()       const;
-		const SubFrom       &get_sub_from()       const;
-		const MultFrom      &get_mult_from()      const;
-		const DivFrom       &get_div_from()       const;
+		const Ignore            &get_ignore()             const;
+		const LoadImmediate     &get_load_immediate()     const;
+		const LoadFrom          &get_load_from()          const;
+		const NorFrom           &get_nor_from()           const;
+		const AndFrom           &get_and_from()           const;
+		const OrFrom            &get_or_from()            const;
+		const AddFrom           &get_add_from()           const;
+		const SubFrom           &get_sub_from()           const;
+		const MultFrom          &get_mult_from()          const;
+		const DivFrom           &get_div_from()           const;
+		const JumpTo            &get_jump_to()            const;
+		const Jump              &get_jump()               const;
+		const Call              &get_call()               const;
+		const Return            &get_return()             const;
+		const BranchZero        &get_branch_zero()        const;
+		const BranchNonnegative &get_branch_nonnegative() const;
 
-		LoadImmediate &&get_load_immediate();
-		LoadFrom      &&get_load_from();
-		NorFrom       &&get_nor_from();
-		AndFrom       &&get_and_from();
-		OrFrom        &&get_or_from();
-		AddFrom       &&get_add_from();
-		SubFrom       &&get_sub_from();
-		MultFrom      &&get_mult_from();
-		DivFrom       &&get_div_from();
+		Ignore            &&get_ignore();
+		LoadImmediate     &&get_load_immediate();
+		LoadFrom          &&get_load_from();
+		NorFrom           &&get_nor_from();
+		AndFrom           &&get_and_from();
+		OrFrom            &&get_or_from();
+		AddFrom           &&get_add_from();
+		SubFrom           &&get_sub_from();
+		MultFrom          &&get_mult_from();
+		DivFrom           &&get_div_from();
+		JumpTo            &&get_jump_to();
+		Jump              &&get_jump();
+		Call              &&get_call();
+		Return            &&get_return();
+		BranchZero        &&get_branch_zero();
+		BranchNonnegative &&get_branch_nonnegative();
 
-		LoadImmediate &get_load_immediate_mutable();
-		LoadFrom      &get_load_from_mutable();
-		NorFrom       &get_nor_from_mutable();
-		AndFrom       &get_and_from_mutable();
-		OrFrom        &get_or_from_mutable();
-		AddFrom       &get_add_from_mutable();
-		SubFrom       &get_sub_from_mutable();
-		MultFrom      &get_mult_from_mutable();
-		DivFrom       &get_div_from_mutable();
+		Ignore            &get_ignore_mutable();
+		LoadImmediate     &get_load_immediate_mutable();
+		LoadFrom          &get_load_from_mutable();
+		NorFrom           &get_nor_from_mutable();
+		AndFrom           &get_and_from_mutable();
+		OrFrom            &get_or_from_mutable();
+		AddFrom           &get_add_from_mutable();
+		SubFrom           &get_sub_from_mutable();
+		MultFrom          &get_mult_from_mutable();
+		DivFrom           &get_div_from_mutable();
+		JumpTo            &get_jump_to_mutable();
+		Jump              &get_jump_mutable();
+		Call              &get_call_mutable();
+		Return            &get_return_mutable();
+		BranchZero        &get_branch_zero_mutable();
+		BranchNonnegative &get_branch_nonnegative_mutable();
 
-		// | Return "load_immediate", "load_from", or "nor_from", etc.
+		// | Return "ignore", "load_immediate", "load_from", or "nor_from", etc.
 		static std::string get_tag_repr(tag_t tag);
 		std::string get_tag_repr() const;
 

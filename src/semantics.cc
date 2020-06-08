@@ -4242,6 +4242,29 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::Base::emit(const st
 	throw SemanticsError(sstr.str());
 }
 
+Semantics::Instruction::Ignore::Ignore()
+	{}
+
+Semantics::Instruction::Ignore::Ignore(const Base &base, bool is_word)
+	: Base(base)
+	, is_word(is_word)
+	{}
+
+std::vector<uint32_t> Semantics::Instruction::Ignore::get_input_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1)}; }
+std::vector<uint32_t> Semantics::Instruction::Ignore::get_working_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::Ignore::get_output_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::Ignore::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
+
+std::vector<Semantics::Output::Line> Semantics::Instruction::Ignore::emit(const std::vector<Storage> &storages) const {
+	// Prepare output vector.
+	std::vector<Output::Line> lines;
+
+	// Leave output vector empty.
+
+	// Return the output.
+	return lines;
+}
+
 Semantics::Instruction::LoadImmediate::LoadImmediate()
 	{}
 
@@ -4345,15 +4368,23 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadImmediate::emit
 Semantics::Instruction::LoadFrom::LoadFrom()
 	{}
 
-Semantics::Instruction::LoadFrom::LoadFrom(const Base &base, bool is_word, int32_t addition)
+Semantics::Instruction::LoadFrom::LoadFrom(const Base &base, bool is_word_load, bool is_word_save, int32_t addition)
 	: Base(base)
-	, is_word(is_word)
+	, is_word_load(is_word_load)
+	, is_word_save(is_word_save)
 	, addition(addition)
 	{}
 
-std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_input_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1)}; }
+Semantics::Instruction::LoadFrom::LoadFrom(const Base &base, bool is_word, int32_t addition)
+	: Base(base)
+	, is_word_load(is_word)
+	, is_word_save(is_word)
+	, addition(addition)
+	{}
+
+std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_input_sizes() const { return {static_cast<uint32_t>(is_word_load ? 4 : 1)}; }
 std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_working_sizes() const { return {}; }
-std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_output_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1)}; }
+std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_output_sizes() const { return {static_cast<uint32_t>(is_word_save ? 4 : 1)}; }
 std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(const std::vector<Storage> &storages) const {
@@ -4438,11 +4469,15 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 	Output::Line sized_load;
 	Output::Line sized_save;
 
-	if (is_word) {
+	if (is_word_load) {
 		sized_load = "\tlw   ";
-		sized_save = "\tsw   ";
 	} else {
 		sized_load = "\tlb   ";
+	}
+
+	if (is_word_save) {
+		sized_save = "\tsw   ";
+	} else {
 		sized_save = "\tsb   ";
 	}
 
@@ -5640,6 +5675,109 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::DivFrom::emit(const
 	return lines;
 }
 
+Semantics::Instruction::JumpTo::JumpTo()
+	{}
+
+Semantics::Instruction::JumpTo::JumpTo(const Base &base)
+	: Base(base)
+	{}
+
+std::vector<uint32_t> Semantics::Instruction::JumpTo::get_input_sizes() const { return {4}; }
+std::vector<uint32_t> Semantics::Instruction::JumpTo::get_working_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::JumpTo::get_output_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::JumpTo::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
+
+std::vector<Semantics::Output::Line> Semantics::Instruction::JumpTo::emit(const std::vector<Storage> &storages) const {
+	// TODO
+}
+
+Semantics::Instruction::Jump::Jump()
+	{}
+
+Semantics::Instruction::Jump::Jump(const Base &base, Symbol jump_destination)
+	: Base(base)
+	, jump_destination(jump_destination)
+	{}
+
+std::vector<uint32_t> Semantics::Instruction::Jump::get_input_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::Jump::get_working_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::Jump::get_output_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::Jump::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
+
+std::vector<Semantics::Output::Line> Semantics::Instruction::Jump::emit(const std::vector<Storage> &storages) const {
+	// TODO
+}
+
+Semantics::Instruction::Call::Call()
+	{}
+
+Semantics::Instruction::Call::Call(const Base &base, bool fixed_storage, const Storage &storage)
+	: Base(base)
+	, fixed_storage(fixed_storage)
+	, storage(storage)
+	{}
+
+std::vector<uint32_t> Semantics::Instruction::Call::get_input_sizes() const { if (fixed_storage) { return {}; } else { return {4}; } }
+std::vector<uint32_t> Semantics::Instruction::Call::get_working_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::Call::get_output_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::Call::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
+
+std::vector<Semantics::Output::Line> Semantics::Instruction::Call::emit(const std::vector<Storage> &storages) const {
+	// TODO
+}
+
+Semantics::Instruction::Return::Return()
+	{}
+
+Semantics::Instruction::Return::Return(const Base &base, bool fixed_storage, const Storage &storage)
+	: Base(base)
+	, fixed_storage(fixed_storage)
+	, storage(storage)
+	{}
+
+std::vector<uint32_t> Semantics::Instruction::Return::get_input_sizes() const { if (fixed_storage) { return {}; } else { return {4}; } }
+std::vector<uint32_t> Semantics::Instruction::Return::get_working_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::Return::get_output_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::Return::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
+
+std::vector<Semantics::Output::Line> Semantics::Instruction::Return::emit(const std::vector<Storage> &storages) const {
+	// TODO
+}
+
+Semantics::Instruction::BranchZero::BranchZero()
+	{}
+
+Semantics::Instruction::BranchZero::BranchZero(const Base &base, Symbol branch_destination)
+	: Base(base)
+	, branch_destination(branch_destination)
+	{}
+
+std::vector<uint32_t> Semantics::Instruction::BranchZero::get_input_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::BranchZero::get_working_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::BranchZero::get_output_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::BranchZero::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
+
+std::vector<Semantics::Output::Line> Semantics::Instruction::BranchZero::emit(const std::vector<Storage> &storages) const {
+	// TODO
+}
+
+Semantics::Instruction::BranchNonnegative::BranchNonnegative()
+	{}
+
+Semantics::Instruction::BranchNonnegative::BranchNonnegative(const Base &base, Symbol branch_destination)
+	: Base(base)
+	, branch_destination(branch_destination)
+	{}
+
+std::vector<uint32_t> Semantics::Instruction::BranchNonnegative::get_input_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::BranchNonnegative::get_working_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::BranchNonnegative::get_output_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::BranchNonnegative::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
+
+std::vector<Semantics::Output::Line> Semantics::Instruction::BranchNonnegative::emit(const std::vector<Storage> &storages) const {
+	// TODO
+}
+
 Semantics::Instruction::Instruction(tag_t tag, const data_t &data)
 	: tag(tag)
 	, data(data)
@@ -5648,6 +5786,11 @@ Semantics::Instruction::Instruction(tag_t tag, const data_t &data)
 Semantics::Instruction::Instruction(tag_t tag, data_t &&data)
 	: tag(tag)
 	, data(std::move(data))
+	{}
+
+Semantics::Instruction::Instruction(const Ignore &ignore)
+	: tag(ignore_tag)
+	, data(ignore)
 	{}
 
 Semantics::Instruction::Instruction(const LoadImmediate &load_immediate)
@@ -5695,8 +5838,40 @@ Semantics::Instruction::Instruction(const DivFrom &div_from)
 	, data(div_from)
 	{}
 
+Semantics::Instruction::Instruction(const JumpTo &jump_to)
+	: tag(jump_to_tag)
+	, data(jump_to)
+	{}
+
+Semantics::Instruction::Instruction(const Jump &jump)
+	: tag(jump_tag)
+	, data(jump)
+	{}
+
+Semantics::Instruction::Instruction(const Call &call)
+	: tag(call_tag)
+	, data(call)
+	{}
+
+Semantics::Instruction::Instruction(const Return &return_)
+	: tag(return_tag)
+	, data(return_)
+	{}
+
+Semantics::Instruction::Instruction(const BranchZero &branch_zero)
+	: tag(branch_zero_tag)
+	, data(branch_zero)
+	{}
+
+Semantics::Instruction::Instruction(const BranchNonnegative &branch_nonnegative)
+	: tag(branch_nonnegative_tag)
+	, data(branch_nonnegative)
+	{}
+
 const Semantics::Instruction::Base &Semantics::Instruction::get_base() const {
 	switch(tag) {
+		case ignore_tag:
+			return get_ignore();
 		case load_immediate_tag:
 			return get_load_immediate();
 		case load_from_tag:
@@ -5715,6 +5890,18 @@ const Semantics::Instruction::Base &Semantics::Instruction::get_base() const {
 			return get_mult_from();
 		case div_from_tag:
 			return get_div_from();
+		case jump_to_tag:
+			return get_jump_to();
+		case jump_tag:
+			return get_jump();
+		case call_tag:
+			return get_call();
+		case return_tag:
+			return get_return();
+		case branch_zero_tag:
+			return get_branch_zero();
+		case branch_nonnegative_tag:
+			return get_branch_nonnegative();
 
 		case null_tag:
 		default:
@@ -5726,6 +5913,8 @@ const Semantics::Instruction::Base &Semantics::Instruction::get_base() const {
 
 Semantics::Instruction::Base &&Semantics::Instruction::get_base() {
 	switch(tag) {
+		case ignore_tag:
+			return std::move(get_ignore());
 		case load_immediate_tag:
 			return std::move(get_load_immediate());
 		case load_from_tag:
@@ -5744,6 +5933,18 @@ Semantics::Instruction::Base &&Semantics::Instruction::get_base() {
 			return std::move(get_mult_from());
 		case div_from_tag:
 			return std::move(get_div_from());
+		case jump_to_tag:
+			return std::move(get_jump_to());
+		case jump_tag:
+			return std::move(get_jump());
+		case call_tag:
+			return std::move(get_call());
+		case return_tag:
+			return std::move(get_return());
+		case branch_zero_tag:
+			return std::move(get_branch_zero());
+		case branch_nonnegative_tag:
+			return std::move(get_branch_nonnegative());
 
 		case null_tag:
 		default:
@@ -5755,6 +5956,8 @@ Semantics::Instruction::Base &&Semantics::Instruction::get_base() {
 
 Semantics::Instruction::Base &Semantics::Instruction::get_base_mutable() {
 	switch(tag) {
+		case ignore_tag:
+			return get_ignore_mutable();
 		case load_immediate_tag:
 			return get_load_immediate_mutable();
 		case load_from_tag:
@@ -5773,6 +5976,18 @@ Semantics::Instruction::Base &Semantics::Instruction::get_base_mutable() {
 			return get_mult_from_mutable();
 		case div_from_tag:
 			return get_div_from_mutable();
+		case jump_to_tag:
+			return get_jump_to_mutable();
+		case jump_tag:
+			return get_jump_mutable();
+		case call_tag:
+			return get_call_mutable();
+		case return_tag:
+			return get_return_mutable();
+		case branch_zero_tag:
+			return get_branch_zero_mutable();
+		case branch_nonnegative_tag:
+			return get_branch_nonnegative_mutable();
 
 		case null_tag:
 		default:
@@ -5782,8 +5997,39 @@ Semantics::Instruction::Base &Semantics::Instruction::get_base_mutable() {
 	}
 }
 
+bool Semantics::Instruction::is_ignore() const {
+	switch(tag) {
+		case ignore_tag:
+			return true;
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::is_ignore: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
 bool Semantics::Instruction::is_load_immediate() const {
 	switch(tag) {
+		case ignore_tag:
+			return false;
 		case load_immediate_tag:
 			return true;
 		case load_from_tag:
@@ -5794,6 +6040,12 @@ bool Semantics::Instruction::is_load_immediate() const {
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			return false;
 
 		case null_tag:
@@ -5806,6 +6058,7 @@ bool Semantics::Instruction::is_load_immediate() const {
 
 bool Semantics::Instruction::is_load_from() const {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 			return false;
 		case load_from_tag:
@@ -5817,6 +6070,12 @@ bool Semantics::Instruction::is_load_from() const {
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			return false;
 
 		case null_tag:
@@ -5829,6 +6088,7 @@ bool Semantics::Instruction::is_load_from() const {
 
 bool Semantics::Instruction::is_nor_from() const {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 			return false;
@@ -5840,6 +6100,12 @@ bool Semantics::Instruction::is_nor_from() const {
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			return false;
 
 		case null_tag:
@@ -5852,6 +6118,7 @@ bool Semantics::Instruction::is_nor_from() const {
 
 bool Semantics::Instruction::is_and_from() const {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -5863,6 +6130,12 @@ bool Semantics::Instruction::is_and_from() const {
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			return false;
 
 		case null_tag:
@@ -5875,6 +6148,7 @@ bool Semantics::Instruction::is_and_from() const {
 
 bool Semantics::Instruction::is_or_from() const {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -5886,6 +6160,12 @@ bool Semantics::Instruction::is_or_from() const {
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			return false;
 
 		case null_tag:
@@ -5898,6 +6178,7 @@ bool Semantics::Instruction::is_or_from() const {
 
 bool Semantics::Instruction::is_add_from() const {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -5909,6 +6190,12 @@ bool Semantics::Instruction::is_add_from() const {
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			return false;
 
 		case null_tag:
@@ -5921,6 +6208,7 @@ bool Semantics::Instruction::is_add_from() const {
 
 bool Semantics::Instruction::is_sub_from() const {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -5932,6 +6220,12 @@ bool Semantics::Instruction::is_sub_from() const {
 			return true;
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			return false;
 
 		case null_tag:
@@ -5944,6 +6238,7 @@ bool Semantics::Instruction::is_sub_from() const {
 
 bool Semantics::Instruction::is_mult_from() const {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -5955,6 +6250,12 @@ bool Semantics::Instruction::is_mult_from() const {
 		case mult_from_tag:
 			return true;
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			return false;
 
 		case null_tag:
@@ -5967,6 +6268,7 @@ bool Semantics::Instruction::is_mult_from() const {
 
 bool Semantics::Instruction::is_div_from() const {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -5978,6 +6280,13 @@ bool Semantics::Instruction::is_div_from() const {
 			return false;
 		case div_from_tag:
 			return true;
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			return false;
 
 		case null_tag:
 		default:
@@ -5987,9 +6296,222 @@ bool Semantics::Instruction::is_div_from() const {
 	}
 }
 
+bool Semantics::Instruction::is_jump_to() const {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+			return false;
+		case jump_to_tag:
+			return true;
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::is_jump_to: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::Instruction::is_jump() const {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+			return false;
+		case jump_tag:
+			return true;
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::is_jump: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::Instruction::is_call() const {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+			return false;
+		case call_tag:
+			return true;
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::is_call: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::Instruction::is_return() const {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+			return false;
+		case return_tag:
+			return true;
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::is_return: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::Instruction::is_branch_zero() const {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+			return false;
+		case branch_zero_tag:
+			return true;
+		case branch_nonnegative_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::is_branch_zero: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::Instruction::is_branch_nonnegative() const {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+			return false;
+		case branch_nonnegative_tag:
+			return true;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::is_branch_nonnegative: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
 // | The tags must be correct, or else an exception will be thrown, including for set_*.
+const Semantics::Instruction::Ignore &Semantics::Instruction::get_ignore() const {
+	switch(tag) {
+		case ignore_tag:
+			return std::get<Ignore>(data);
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_ignore: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_ignore: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
 const Semantics::Instruction::LoadImmediate &Semantics::Instruction::get_load_immediate() const {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 			return std::get<LoadImmediate>(data);
 		case load_from_tag:
@@ -6000,6 +6522,12 @@ const Semantics::Instruction::LoadImmediate &Semantics::Instruction::get_load_im
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6016,6 +6544,7 @@ const Semantics::Instruction::LoadImmediate &Semantics::Instruction::get_load_im
 
 const Semantics::Instruction::LoadFrom &Semantics::Instruction::get_load_from() const {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 			break;
 		case load_from_tag:
@@ -6027,6 +6556,12 @@ const Semantics::Instruction::LoadFrom &Semantics::Instruction::get_load_from() 
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6043,6 +6578,7 @@ const Semantics::Instruction::LoadFrom &Semantics::Instruction::get_load_from() 
 
 const Semantics::Instruction::NorFrom &Semantics::Instruction::get_nor_from() const {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 			break;
@@ -6054,6 +6590,12 @@ const Semantics::Instruction::NorFrom &Semantics::Instruction::get_nor_from() co
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6070,6 +6612,7 @@ const Semantics::Instruction::NorFrom &Semantics::Instruction::get_nor_from() co
 
 const Semantics::Instruction::AndFrom &Semantics::Instruction::get_and_from() const {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -6081,6 +6624,12 @@ const Semantics::Instruction::AndFrom &Semantics::Instruction::get_and_from() co
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6097,6 +6646,7 @@ const Semantics::Instruction::AndFrom &Semantics::Instruction::get_and_from() co
 
 const Semantics::Instruction::OrFrom &Semantics::Instruction::get_or_from() const {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -6108,6 +6658,12 @@ const Semantics::Instruction::OrFrom &Semantics::Instruction::get_or_from() cons
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6124,6 +6680,7 @@ const Semantics::Instruction::OrFrom &Semantics::Instruction::get_or_from() cons
 
 const Semantics::Instruction::AddFrom &Semantics::Instruction::get_add_from() const {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -6135,6 +6692,12 @@ const Semantics::Instruction::AddFrom &Semantics::Instruction::get_add_from() co
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6151,6 +6714,7 @@ const Semantics::Instruction::AddFrom &Semantics::Instruction::get_add_from() co
 
 const Semantics::Instruction::SubFrom &Semantics::Instruction::get_sub_from() const {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -6162,6 +6726,12 @@ const Semantics::Instruction::SubFrom &Semantics::Instruction::get_sub_from() co
 			return std::get<SubFrom>(data);
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6178,6 +6748,7 @@ const Semantics::Instruction::SubFrom &Semantics::Instruction::get_sub_from() co
 
 const Semantics::Instruction::MultFrom &Semantics::Instruction::get_mult_from() const {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -6189,6 +6760,12 @@ const Semantics::Instruction::MultFrom &Semantics::Instruction::get_mult_from() 
 		case mult_from_tag:
 			return std::get<MultFrom>(data);
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6205,6 +6782,7 @@ const Semantics::Instruction::MultFrom &Semantics::Instruction::get_mult_from() 
 
 const Semantics::Instruction::DivFrom &Semantics::Instruction::get_div_from() const {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -6216,6 +6794,13 @@ const Semantics::Instruction::DivFrom &Semantics::Instruction::get_div_from() co
 			break;
 		case div_from_tag:
 			return std::get<DivFrom>(data);
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
 
 		case null_tag:
 		default:
@@ -6229,8 +6814,246 @@ const Semantics::Instruction::DivFrom &Semantics::Instruction::get_div_from() co
 	throw SemanticsError(sstr.str());
 }
 
+const Semantics::Instruction::JumpTo &Semantics::Instruction::get_jump_to() const {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+			break;
+		case jump_to_tag:
+			return std::get<JumpTo>(data);
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_jump_to: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_jump_to: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+const Semantics::Instruction::Jump &Semantics::Instruction::get_jump() const {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+			break;
+		case jump_tag:
+			return std::get<Jump>(data);
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_jump: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_jump: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+const Semantics::Instruction::Call &Semantics::Instruction::get_call() const {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+			break;
+		case call_tag:
+			return std::get<Call>(data);
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_call: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_call: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+const Semantics::Instruction::Return &Semantics::Instruction::get_return() const {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+			break;
+		case return_tag:
+			return std::get<Return>(data);
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_return: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_return: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+const Semantics::Instruction::BranchZero &Semantics::Instruction::get_branch_zero() const {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+			break;
+		case branch_zero_tag:
+			return std::get<BranchZero>(data);
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_branch_zero: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_branch_zero: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+const Semantics::Instruction::BranchNonnegative &Semantics::Instruction::get_branch_nonnegative() const {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+			break;
+		case branch_nonnegative_tag:
+			return std::get<BranchNonnegative>(data);
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_branch_nonnegative: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_branch_nonnegative: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+Semantics::Instruction::Ignore &&Semantics::Instruction::get_ignore() {
+	switch(tag) {
+		case ignore_tag:
+			return std::get<Ignore>(std::move(data));
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_ignore: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_ignore: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
 Semantics::Instruction::LoadImmediate &&Semantics::Instruction::get_load_immediate() {
 	switch(tag) {
+		case ignore_tag:
+			break;
 		case load_immediate_tag:
 			return std::get<LoadImmediate>(std::move(data));
 		case load_from_tag:
@@ -6241,6 +7064,12 @@ Semantics::Instruction::LoadImmediate &&Semantics::Instruction::get_load_immedia
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6257,6 +7086,7 @@ Semantics::Instruction::LoadImmediate &&Semantics::Instruction::get_load_immedia
 
 Semantics::Instruction::LoadFrom &&Semantics::Instruction::get_load_from() {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 			break;
 		case load_from_tag:
@@ -6268,22 +7098,29 @@ Semantics::Instruction::LoadFrom &&Semantics::Instruction::get_load_from() {
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
 		default:
 			std::ostringstream sstr;
-			sstr << "Semantics::Instruction::get_load_immediate: invalid tag: " << tag;
+			sstr << "Semantics::Instruction::get_load_from: invalid tag: " << tag;
 			throw SemanticsError(sstr.str());
 	}
 
 	std::ostringstream sstr;
-	sstr << "Semantics::Instruction::get_load_immediate: binding has a different type tag: " << tag;
+	sstr << "Semantics::Instruction::get_load_from: binding has a different type tag: " << tag;
 	throw SemanticsError(sstr.str());
 }
 
 Semantics::Instruction::NorFrom &&Semantics::Instruction::get_nor_from() {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 			break;
@@ -6295,6 +7132,12 @@ Semantics::Instruction::NorFrom &&Semantics::Instruction::get_nor_from() {
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6311,6 +7154,7 @@ Semantics::Instruction::NorFrom &&Semantics::Instruction::get_nor_from() {
 
 Semantics::Instruction::AndFrom &&Semantics::Instruction::get_and_from() {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -6322,6 +7166,12 @@ Semantics::Instruction::AndFrom &&Semantics::Instruction::get_and_from() {
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6338,6 +7188,7 @@ Semantics::Instruction::AndFrom &&Semantics::Instruction::get_and_from() {
 
 Semantics::Instruction::OrFrom &&Semantics::Instruction::get_or_from() {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -6349,6 +7200,12 @@ Semantics::Instruction::OrFrom &&Semantics::Instruction::get_or_from() {
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6365,6 +7222,7 @@ Semantics::Instruction::OrFrom &&Semantics::Instruction::get_or_from() {
 
 Semantics::Instruction::AddFrom &&Semantics::Instruction::get_add_from() {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -6376,6 +7234,12 @@ Semantics::Instruction::AddFrom &&Semantics::Instruction::get_add_from() {
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6392,6 +7256,7 @@ Semantics::Instruction::AddFrom &&Semantics::Instruction::get_add_from() {
 
 Semantics::Instruction::SubFrom &&Semantics::Instruction::get_sub_from() {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -6403,6 +7268,12 @@ Semantics::Instruction::SubFrom &&Semantics::Instruction::get_sub_from() {
 			return std::get<SubFrom>(std::move(data));
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6419,6 +7290,7 @@ Semantics::Instruction::SubFrom &&Semantics::Instruction::get_sub_from() {
 
 Semantics::Instruction::MultFrom &&Semantics::Instruction::get_mult_from() {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -6430,6 +7302,12 @@ Semantics::Instruction::MultFrom &&Semantics::Instruction::get_mult_from() {
 		case mult_from_tag:
 			return std::get<MultFrom>(std::move(data));
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6446,6 +7324,7 @@ Semantics::Instruction::MultFrom &&Semantics::Instruction::get_mult_from() {
 
 Semantics::Instruction::DivFrom &&Semantics::Instruction::get_div_from() {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -6457,6 +7336,13 @@ Semantics::Instruction::DivFrom &&Semantics::Instruction::get_div_from() {
 			break;
 		case div_from_tag:
 			return std::get<DivFrom>(std::move(data));
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
 
 		case null_tag:
 		default:
@@ -6470,9 +7356,247 @@ Semantics::Instruction::DivFrom &&Semantics::Instruction::get_div_from() {
 	throw SemanticsError(sstr.str());
 }
 
+Semantics::Instruction::JumpTo &&Semantics::Instruction::get_jump_to() {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+			break;
+		case jump_to_tag:
+			return std::get<JumpTo>(std::move(data));
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_jump_to: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_jump_to: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+Semantics::Instruction::Jump &&Semantics::Instruction::get_jump() {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+			break;
+		case jump_tag:
+			return std::get<Jump>(std::move(data));
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_jump: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_jump: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+Semantics::Instruction::Call &&Semantics::Instruction::get_call() {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+			break;
+		case call_tag:
+			return std::get<Call>(std::move(data));
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_call: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_call: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+Semantics::Instruction::Return &&Semantics::Instruction::get_return() {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+			break;
+		case return_tag:
+			return std::get<Return>(std::move(data));
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_return: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_return: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+Semantics::Instruction::BranchZero &&Semantics::Instruction::get_branch_zero() {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+			break;
+		case branch_zero_tag:
+			return std::get<BranchZero>(std::move(data));
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_branch_zero: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_branch_zero: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+Semantics::Instruction::BranchNonnegative &&Semantics::Instruction::get_branch_nonnegative() {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+			break;
+		case branch_nonnegative_tag:
+			return std::get<BranchNonnegative>(std::move(data));
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_branch_nonnegative: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_branch_nonnegative: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
 // Non-constant lvalue references.
+Semantics::Instruction::Ignore &Semantics::Instruction::get_ignore_mutable() {
+	switch(tag) {
+		case ignore_tag:
+			return std::get<Ignore>(data);
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_ignore_mutable: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_ignore_mutable: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
 Semantics::Instruction::LoadImmediate &Semantics::Instruction::get_load_immediate_mutable() {
 	switch(tag) {
+		case ignore_tag:
+			break;
 		case load_immediate_tag:
 			return std::get<LoadImmediate>(data);
 		case load_from_tag:
@@ -6483,6 +7607,12 @@ Semantics::Instruction::LoadImmediate &Semantics::Instruction::get_load_immediat
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6499,6 +7629,7 @@ Semantics::Instruction::LoadImmediate &Semantics::Instruction::get_load_immediat
 
 Semantics::Instruction::LoadFrom &Semantics::Instruction::get_load_from_mutable() {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 			break;
 		case load_from_tag:
@@ -6510,6 +7641,12 @@ Semantics::Instruction::LoadFrom &Semantics::Instruction::get_load_from_mutable(
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6526,6 +7663,7 @@ Semantics::Instruction::LoadFrom &Semantics::Instruction::get_load_from_mutable(
 
 Semantics::Instruction::NorFrom &Semantics::Instruction::get_nor_from_mutable() {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 			break;
@@ -6537,6 +7675,12 @@ Semantics::Instruction::NorFrom &Semantics::Instruction::get_nor_from_mutable() 
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6553,6 +7697,7 @@ Semantics::Instruction::NorFrom &Semantics::Instruction::get_nor_from_mutable() 
 
 Semantics::Instruction::AndFrom &Semantics::Instruction::get_and_from_mutable() {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -6564,6 +7709,12 @@ Semantics::Instruction::AndFrom &Semantics::Instruction::get_and_from_mutable() 
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6580,6 +7731,7 @@ Semantics::Instruction::AndFrom &Semantics::Instruction::get_and_from_mutable() 
 
 Semantics::Instruction::OrFrom &Semantics::Instruction::get_or_from_mutable() {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -6591,6 +7743,12 @@ Semantics::Instruction::OrFrom &Semantics::Instruction::get_or_from_mutable() {
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6607,6 +7765,7 @@ Semantics::Instruction::OrFrom &Semantics::Instruction::get_or_from_mutable() {
 
 Semantics::Instruction::AddFrom &Semantics::Instruction::get_add_from_mutable() {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -6618,6 +7777,12 @@ Semantics::Instruction::AddFrom &Semantics::Instruction::get_add_from_mutable() 
 		case sub_from_tag:
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6634,6 +7799,7 @@ Semantics::Instruction::AddFrom &Semantics::Instruction::get_add_from_mutable() 
 
 Semantics::Instruction::SubFrom &Semantics::Instruction::get_sub_from_mutable() {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -6645,6 +7811,12 @@ Semantics::Instruction::SubFrom &Semantics::Instruction::get_sub_from_mutable() 
 			return std::get<SubFrom>(data);
 		case mult_from_tag:
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6661,6 +7833,7 @@ Semantics::Instruction::SubFrom &Semantics::Instruction::get_sub_from_mutable() 
 
 Semantics::Instruction::MultFrom &Semantics::Instruction::get_mult_from_mutable() {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -6672,6 +7845,12 @@ Semantics::Instruction::MultFrom &Semantics::Instruction::get_mult_from_mutable(
 		case mult_from_tag:
 			return std::get<MultFrom>(data);
 		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
 			break;
 
 		case null_tag:
@@ -6688,6 +7867,7 @@ Semantics::Instruction::MultFrom &Semantics::Instruction::get_mult_from_mutable(
 
 Semantics::Instruction::DivFrom &Semantics::Instruction::get_div_from_mutable() {
 	switch(tag) {
+		case ignore_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case nor_from_tag:
@@ -6699,6 +7879,13 @@ Semantics::Instruction::DivFrom &Semantics::Instruction::get_div_from_mutable() 
 			break;
 		case div_from_tag:
 			return std::get<DivFrom>(data);
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
 
 		case null_tag:
 		default:
@@ -6712,9 +7899,214 @@ Semantics::Instruction::DivFrom &Semantics::Instruction::get_div_from_mutable() 
 	throw SemanticsError(sstr.str());
 }
 
+Semantics::Instruction::JumpTo &Semantics::Instruction::get_jump_to_mutable() {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+			break;
+		case jump_to_tag:
+			return std::get<JumpTo>(data);
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_jump_to_mutable: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_jump_to_mutable: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+Semantics::Instruction::Jump &Semantics::Instruction::get_jump_mutable() {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+			break;
+		case jump_tag:
+			return std::get<Jump>(data);
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_jump_mutable: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_jump_mutable: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+Semantics::Instruction::Call &Semantics::Instruction::get_call_mutable() {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+			break;
+		case call_tag:
+			return std::get<Call>(data);
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_call_mutable: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_call_mutable: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+Semantics::Instruction::Return &Semantics::Instruction::get_return_mutable() {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+			break;
+		case return_tag:
+			return std::get<Return>(data);
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_return_mutable: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_return_mutable: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+Semantics::Instruction::BranchZero &Semantics::Instruction::get_branch_zero_mutable() {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+			break;
+		case branch_zero_tag:
+			return std::get<BranchZero>(data);
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_branch_zero_mutable: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_branch_zero_mutable: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+Semantics::Instruction::BranchNonnegative &Semantics::Instruction::get_branch_nonnegative_mutable() {
+	switch(tag) {
+		case ignore_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+			break;
+		case branch_nonnegative_tag:
+			return std::get<BranchNonnegative>(data);
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_branch_nonnegative_mutable: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_branch_nonnegative_mutable: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
 // | Return "load_immediate", "load_from", or "nor_from", etc.
 std::string Semantics::Instruction::get_tag_repr(tag_t tag) {
 	switch(tag) {
+		case ignore_tag:
+			return "ignore";
 		case load_immediate_tag:
 			return "load_immediate";
 		case load_from_tag:
@@ -6733,6 +8125,18 @@ std::string Semantics::Instruction::get_tag_repr(tag_t tag) {
 			return "mult_from";
 		case div_from_tag:
 			return "div_from";
+		case jump_to_tag:
+			return "jump_to";
+		case jump_tag:
+			return "jump";
+		case call_tag:
+			return "call";
+		case return_tag:
+			return "return";
+		case branch_zero_tag:
+			return "branch_zero";
+		case branch_nonnegative_tag:
+			return "branch_nonnegative";
 
 		case null_tag:
 		default:
@@ -6748,6 +8152,8 @@ std::string Semantics::Instruction::get_tag_repr() const {
 
 std::vector<uint32_t> Semantics::Instruction::get_input_sizes() const {
 	switch(tag) {
+		case ignore_tag:
+			return get_ignore().get_input_sizes();
 		case load_immediate_tag:
 			return get_load_immediate().get_input_sizes();
 		case load_from_tag:
@@ -6766,6 +8172,18 @@ std::vector<uint32_t> Semantics::Instruction::get_input_sizes() const {
 			return get_mult_from().get_input_sizes();
 		case div_from_tag:
 			return get_div_from().get_input_sizes();
+		case jump_to_tag:
+			return get_jump_to().get_input_sizes();
+		case jump_tag:
+			return get_jump().get_input_sizes();
+		case call_tag:
+			return get_call().get_input_sizes();
+		case return_tag:
+			return get_return().get_input_sizes();
+		case branch_zero_tag:
+			return get_branch_zero().get_input_sizes();
+		case branch_nonnegative_tag:
+			return get_branch_nonnegative().get_input_sizes();
 
 		case null_tag:
 		default:
@@ -6777,6 +8195,8 @@ std::vector<uint32_t> Semantics::Instruction::get_input_sizes() const {
 
 std::vector<uint32_t> Semantics::Instruction::get_working_sizes() const {
 	switch(tag) {
+		case ignore_tag:
+			return get_ignore().get_working_sizes();
 		case load_immediate_tag:
 			return get_load_immediate().get_working_sizes();
 		case load_from_tag:
@@ -6795,6 +8215,18 @@ std::vector<uint32_t> Semantics::Instruction::get_working_sizes() const {
 			return get_mult_from().get_working_sizes();
 		case div_from_tag:
 			return get_div_from().get_working_sizes();
+		case jump_to_tag:
+			return get_jump_to().get_working_sizes();
+		case jump_tag:
+			return get_jump().get_working_sizes();
+		case call_tag:
+			return get_call().get_working_sizes();
+		case return_tag:
+			return get_return().get_working_sizes();
+		case branch_zero_tag:
+			return get_branch_zero().get_working_sizes();
+		case branch_nonnegative_tag:
+			return get_branch_nonnegative().get_working_sizes();
 
 		case null_tag:
 		default:
@@ -6806,6 +8238,8 @@ std::vector<uint32_t> Semantics::Instruction::get_working_sizes() const {
 
 std::vector<uint32_t> Semantics::Instruction::get_output_sizes() const {
 	switch(tag) {
+		case ignore_tag:
+			return get_ignore().get_output_sizes();
 		case load_immediate_tag:
 			return get_load_immediate().get_output_sizes();
 		case load_from_tag:
@@ -6824,6 +8258,18 @@ std::vector<uint32_t> Semantics::Instruction::get_output_sizes() const {
 			return get_mult_from().get_output_sizes();
 		case div_from_tag:
 			return get_div_from().get_output_sizes();
+		case jump_to_tag:
+			return get_jump_to().get_output_sizes();
+		case jump_tag:
+			return get_jump().get_output_sizes();
+		case call_tag:
+			return get_call().get_output_sizes();
+		case return_tag:
+			return get_return().get_output_sizes();
+		case branch_zero_tag:
+			return get_branch_zero().get_output_sizes();
+		case branch_nonnegative_tag:
+			return get_branch_nonnegative().get_output_sizes();
 
 		case null_tag:
 		default:
@@ -6835,6 +8281,8 @@ std::vector<uint32_t> Semantics::Instruction::get_output_sizes() const {
 
 std::vector<uint32_t> Semantics::Instruction::get_all_sizes() const {
 	switch(tag) {
+		case ignore_tag:
+			return get_ignore().get_all_sizes();
 		case load_immediate_tag:
 			return get_load_immediate().get_all_sizes();
 		case load_from_tag:
@@ -6853,6 +8301,18 @@ std::vector<uint32_t> Semantics::Instruction::get_all_sizes() const {
 			return get_mult_from().get_all_sizes();
 		case div_from_tag:
 			return get_div_from().get_all_sizes();
+		case jump_to_tag:
+			return get_jump_to().get_all_sizes();
+		case jump_tag:
+			return get_jump().get_all_sizes();
+		case call_tag:
+			return get_call().get_all_sizes();
+		case return_tag:
+			return get_return().get_all_sizes();
+		case branch_zero_tag:
+			return get_branch_zero().get_all_sizes();
+		case branch_nonnegative_tag:
+			return get_branch_nonnegative().get_all_sizes();
 
 		case null_tag:
 		default:
@@ -6864,6 +8324,8 @@ std::vector<uint32_t> Semantics::Instruction::get_all_sizes() const {
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::emit(const std::vector<Storage> &storages) const {
 	switch(tag) {
+		case ignore_tag:
+			return get_ignore().emit(storages);
 		case load_immediate_tag:
 			return get_load_immediate().emit(storages);
 		case load_from_tag:
@@ -6882,6 +8344,18 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::emit(const std::vec
 			return get_mult_from().emit(storages);
 		case div_from_tag:
 			return get_div_from().emit(storages);
+		case jump_to_tag:
+			return get_jump_to().emit(storages);
+		case jump_tag:
+			return get_jump().emit(storages);
+		case call_tag:
+			return get_call().emit(storages);
+		case return_tag:
+			return get_return().emit(storages);
+		case branch_zero_tag:
+			return get_branch_zero().emit(storages);
+		case branch_nonnegative_tag:
+			return get_branch_nonnegative().emit(storages);
 
 		case null_tag:
 		default:
