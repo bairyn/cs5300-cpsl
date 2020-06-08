@@ -4476,8 +4476,6 @@ std::vector<uint32_t> Semantics::Instruction::AddFrom::get_output_sizes() const 
 std::vector<uint32_t> Semantics::Instruction::AddFrom::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::AddFrom::emit(const std::vector<Storage> &storages) const {
-	// TODO
-
 	// Check sizes.
 	if (Storage::get_sizes(storages) != get_all_sizes()) {
 		std::ostringstream sstr;
@@ -4486,8 +4484,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::AddFrom::emit(const
 	}
 	const Storage &left_source_storage  = storages[0];
 	const Storage &right_source_storage = storages[1];
-	const Storage &working_storage      = storages[2];
-	const Storage &destination_storage  = storages[3];
+	const Storage &destination_storage  = storages[2];
 
 	// Prepare output vector.
 	std::vector<Output::Line> lines;
