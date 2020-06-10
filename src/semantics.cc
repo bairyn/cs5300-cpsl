@@ -13182,6 +13182,11 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 	// Prepare the block.
 	Block block;
 
+	// Make sure front and back are valid by making sure there is at least one instruction.
+	if (block.instructions.instructions.size() <= 0) {
+		block.front = block.back = block.instructions.add_instruction({I::Ignore(B(), false, false)});
+	}
+
 	// Handle each statement.
 	for (const uint64_t &statement_index : std::as_const(statements)) {
 		const Statement &statement = grammar.statement_storage.at(statement_index);
@@ -13390,7 +13395,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 	IdentifierScope local_combined_scope(combined_scope);
 
 	// Get cleanup symbol.
-	const Symbol cleanup_symbol(routine_declaration.location.prefix, "_cleanup", routine_declaration.location.unique_identifier);
+	const Symbol cleanup_symbol(routine_declaration.location.prefix, routine_declaration.location.requested_suffix + "_cleanup", routine_declaration.location.unique_identifier);
 
 	// Prepare output vector.
 	std::vector<Output::Line> output_lines;
@@ -13433,8 +13438,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			sstr
 				<< "Semantics::analyze_block: error: local variable ``"
 				<< local_variable_identifier
-				<< "\" has a non-fixed-width size in function or procedure with symbol prefix ``"
-				<< routine_declaration.location.prefix
+				<< "\" has a non-fixed-width size in function or procedure with requested symbol suffix ``"
+				<< routine_declaration.location.requested_suffix
 				<< "\"; non-fixed-width size variable are currently unsupported."
 				;
 			throw SemanticsError(sstr.str());
@@ -13454,8 +13459,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			sstr
 				<< "Semantics::analyze_block: error: local variable ``"
 				<< local_variable_identifier
-				<< "\" would shadow an outer-level variable in function or procedure with symbol prefix ``"
-				<< routine_declaration.location.prefix
+				<< "\" would shadow an outer-level variable in function or procedure with requested symbol suffix ``"
+				<< routine_declaration.location.requested_suffix
 				<< "\"."
 				;
 			if (permit_shadowing) {
@@ -13472,8 +13477,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			sstr
 				<< "Semantics::analyze_block: error: local variable ``"
 				<< local_variable_identifier
-				<< "\" would shadow a top-level variable in function or procedure with symbol prefix ``"
-				<< routine_declaration.location.prefix
+				<< "\" would shadow a top-level variable in function or procedure with requested symbol suffix ``"
+				<< routine_declaration.location.requested_suffix
 				<< "\"."
 				;
 			throw SemanticsError(sstr.str());
@@ -13487,8 +13492,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			sstr
 				<< "Semantics::analyze_block: error: local variable ``"
 				<< local_variable_identifier
-				<< "\" has an identifier that is already assigned in another namespace in function or procedure with symbol prefix ``"
-				<< routine_declaration.location.prefix
+				<< "\" has an identifier that is already assigned in another namespace in function or procedure with requested symbol suffix ``"
+				<< routine_declaration.location.requested_suffix
 				<< "\"."
 				<< "  Set combine_identifier_namespaces to false to isolate identifier namespaces"
 				<< " from each other and disable this check."
@@ -13528,8 +13533,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			sstr
 				<< "Semantics::analyze_block: error: local variable ``"
 				<< local_variable_identifier
-				<< "\" has a non-fixed-width size in function or procedure with symbol prefix ``"
-				<< routine_declaration.location.prefix
+				<< "\" has a non-fixed-width size in function or procedure with requested symbol suffix ``"
+				<< routine_declaration.location.requested_suffix
 				<< "\"; non-fixed-width size variable are currently unsupported."
 				;
 			throw SemanticsError(sstr.str());
@@ -13543,8 +13548,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			sstr
 				<< "Semantics::analyze_block: error: local variable ``"
 				<< local_variable_identifier
-				<< "\" would shadow a top-level variable in function or procedure with symbol prefix ``"
-				<< routine_declaration.location.prefix
+				<< "\" would shadow a top-level variable in function or procedure with requested symbol suffix ``"
+				<< routine_declaration.location.requested_suffix
 				<< "\"."
 				;
 			throw SemanticsError(sstr.str());
@@ -13558,8 +13563,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			sstr
 				<< "Semantics::analyze_block: error: local variable ``"
 				<< local_variable_identifier
-				<< "\" has an identifier that is already assigned in another namespace in function or procedure with symbol prefix ``"
-				<< routine_declaration.location.prefix
+				<< "\" has an identifier that is already assigned in another namespace in function or procedure with requested symbol suffix ``"
+				<< routine_declaration.location.requested_suffix
 				<< "\"."
 				<< "  Set combine_identifier_namespaces to false to isolate identifier namespaces"
 				<< " from each other and disable this check."
@@ -13658,8 +13663,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 	if (new_working_storage_requirements != working_storage_requirements) {
 		std::ostringstream sstr;
 		sstr
-			<< "Semantics::analyze_block: internal error: adding intro and cleanup sections to a block, with symbol prefix ``"
-			<< routine_declaration.location.prefix
+			<< "Semantics::analyze_block: internal error: adding intro and cleanup sections to a block, with requested symbol suffix ``"
+			<< routine_declaration.location.requested_suffix
 			<< "\", should not have changed the working storage requirements, but it did."
 			;
 		throw SemanticsError(sstr.str());
@@ -15913,7 +15918,7 @@ void Semantics::analyze() {
 	//output.add_line(Output::text_section, "main:");
 
 	// Emit main definition.
-	Symbol main_routine_symbol("main", "", 0);
+	Symbol main_routine_symbol("", "main", 0);
 	std::vector<std::pair<bool, const Type *>> main_parameters;
 	IdentifierScope::IdentifierBinding::RoutineDeclaration main_routine_declaration(main_routine_symbol, main_parameters, std::optional<const Type *>());
 	std::vector<Output::Line> main_routine_definition_lines;
