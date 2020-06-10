@@ -11158,6 +11158,336 @@ const bool Semantics::MIPSIO::permit_sequence_connection_delays = CPSL_CC_SEMANT
 
 const bool Semantics::all_arrays_records_are_refs = CPSL_CC_SEMANTICS_ALL_ARRAY_RECORDS_ARE_REFS;
 
+Semantics::LvalueSourceAnalysis::LvalueSourceAnalysis()
+	{}
+
+Semantics::LvalueSourceAnalysis::LvalueSourceAnalysis(const MIPSIO &instructions, const LexemeIdentifier &lvalue_identifier, const Type &lvalue_type, MIPSIO::Index lvalue_index, const Storage &lvalue_fixed_storage, bool is_lvalue_fixed_storage, uint64_t lexeme_begin, uint64_t lexeme_end)
+	: instructions(instructions)
+	, lvalue_identifier(&lvalue_identifier)
+	, lvalue_type(&lvalue_type)
+	, lvalue_index(lvalue_index)
+	, lvalue_fixed_storage(lvalue_fixed_storage)
+	, is_lvalue_fixed_storage(is_lvalue_fixed_storage)
+	, lexeme_begin(lexeme_begin)
+	, lexeme_end(lexeme_end)
+	{}
+
+Semantics::LvalueSourceAnalysis::LvalueSourceAnalysis(MIPSIO &&instructions, const LexemeIdentifier &lvalue_identifier, const Type &lvalue_type, MIPSIO::Index lvalue_index, const Storage &lvalue_fixed_storage, bool is_lvalue_fixed_storage, uint64_t lexeme_begin, uint64_t lexeme_end)
+	: instructions(std::move(instructions))
+	, lvalue_identifier(&lvalue_identifier)
+	, lvalue_type(&lvalue_type)
+	, lvalue_index(lvalue_index)
+	, lvalue_fixed_storage(lvalue_fixed_storage)
+	, is_lvalue_fixed_storage(is_lvalue_fixed_storage)
+	, lexeme_begin(lexeme_begin)
+	, lexeme_end(lexeme_end)
+	{}
+
+Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &lvalue, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
+	// Some type aliases to improve readability.
+	using M = Semantics::MIPSIO;
+	using I = Semantics::Instruction;
+	using B = Semantics::Instruction::Base;
+	using Index = M::Index;
+	using IO    = M::IO;
+	using ConstantValue = Semantics::ConstantValue;
+	using Output        = Semantics::Output;
+	using Storage       = Semantics::Storage;
+	using Symbol        = Semantics::Symbol;
+	using Var = Semantics::IdentifierScope::IdentifierBinding::Var;
+
+	// Prepare lvalue analysis.
+	LvalueSourceAnalysis lvalue_source_analysis;
+
+	// Unpack the lvalue.
+	const LexemeIdentifier           &lvalue_identifier           = grammar.lexemes.at(lvalue.identifier).get_identifier();
+	const LvalueAccessorClauseList   &lvalue_accessor_clause_list = grammar.lvalue_accessor_clause_list_storage.at(lvalue.lvalue_accessor_clause_list);
+
+	lvalue_source_analysis.lvalue_identifier = &lvalue_identifier;
+
+	lvalue_source_analysis.lexeme_begin = lvalue.identifier;
+
+	// Collect the lvalue accessor clauses in the list.
+	std::vector<const LvalueAccessorClause *> lvalue_accessor_clauses;
+	bool reached_end = false;
+	for (const LvalueAccessorClauseList *last_list = &lvalue_accessor_clause_list; !reached_end; ) {
+		// Unpack the last list encountered.
+		switch(last_list->branch) {
+			case LvalueAccessorClauseList::empty_branch: {
+				// We're done.
+				// (No need to unpack the empty branch.)
+				reached_end = true;
+				break;
+			}
+
+			case LvalueAccessorClauseList::cons_branch: {
+				// Unpack the list.
+				const LvalueAccessorClauseList::Cons &last_lvalue_accessor_clause_list_cons = grammar.lvalue_accessor_clause_list_cons_storage.at(last_list->data);
+				const LvalueAccessorClauseList       &last_lvalue_accessor_clause_list      = grammar.lvalue_accessor_clause_list_storage.at(last_lvalue_accessor_clause_list_cons.lvalue_accessor_clause_list);
+				const LvalueAccessorClause           &last_lvalue_accessor_clause           = grammar.lvalue_accessor_clause_storage.at(last_lvalue_accessor_clause_list_cons.lvalue_accessor_clause);
+
+				// Add the constant assignment.
+				lvalue_accessor_clauses.push_back(&last_lvalue_accessor_clause);
+				last_list = &last_lvalue_accessor_clause_list;
+
+				// Loop.
+				break;
+			}
+
+			// Unrecognized branch.
+			default: {
+				std::ostringstream sstr;
+				sstr << "Semantics::analyze_lvalue_source: internal error: invalid lvalue_accessor_clause_list branch at index " << last_list - &grammar.lvalue_accessor_clause_list_storage[0] << ": " << last_list->branch;
+				throw SemanticsError(sstr.str());
+			}
+		}
+	}
+
+	// Correct the order of the list.
+	std::reverse(lvalue_accessor_clauses.begin(), lvalue_accessor_clauses.end());
+
+	// Lookup the lvalue.
+	if (!combined_scope.has(lvalue_identifier.text)) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::analyze_lvalue_source: error (line "
+			<< lvalue_identifier.line << " col " << lvalue_identifier.column
+			<< "): identifier not found; it is out of scope: "
+			<< lvalue_identifier.text
+			<< "."
+			;
+		throw SemanticsError(sstr.str());
+	}
+
+	// Is it a variable?
+	if        (var_scope.has(lvalue_identifier.text)) {
+		const Var  &var  = var_scope.get(lvalue_identifier.text).get_var();
+		const Type &type = *var.type;
+
+		// What Type is it?
+		const Type &resolved_type = type.resolve_type();
+		if        (resolved_type.is_primitive()) {
+			const Type::Primitive &resolved_primitive_type = resolved_type.get_primitive();
+
+			if (lvalue_accessor_clause_list.branch != LvalueAccessorClauseList::empty_branch) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::analyze_lvalue_source: error (line "
+					<< lvalue_identifier.line << " col " << lvalue_identifier.column
+					<< "): identifier refers to a primitive type, ``"
+					<< resolved_type.get_tag_repr()
+					<< "\", but record (``.\") or array (``[]\") accessors are invalid on this type."
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			// It's a variable.
+			lvalue_source_analysis.lvalue_type             = &type;
+			lvalue_source_analysis.lvalue_index            = 0;
+			lvalue_source_analysis.lvalue_fixed_storage    = var.storage;
+			lvalue_source_analysis.is_lvalue_fixed_storage = true;
+		} else if (resolved_type.is_record() || resolved_type.is_array()) {
+			// Load the base address of the array or record.  Apply any provided accessors.
+			const Type *last_output_type = &type;
+			Index last_output_index = lvalue_source_analysis.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), var.storage)});
+
+			for (const LvalueAccessorClause *lvalue_accessor_clause_ : std::as_const(lvalue_accessor_clauses)) {
+				const LvalueAccessorClause &lvalue_accessor_clause = *lvalue_accessor_clause_;
+				switch (lvalue_accessor_clause.branch) {
+					case LvalueAccessorClause::index_branch: {
+						const LvalueAccessorClause::Index &lvalue_accessor_clause_index = grammar.lvalue_accessor_clause_index_storage.at(lvalue_accessor_clause.data);
+						const LexemeKeyword               &dot_operator0                = grammar.lexemes.at(lvalue_accessor_clause_index.dot_operator0).get_keyword();
+						const LexemeIdentifier            &identifier                   = grammar.lexemes.at(lvalue_accessor_clause_index.identifier).get_identifier();
+
+						lvalue_source_analysis.lexeme_end = lvalue_accessor_clause_index.identifier + 1;
+
+						if (!last_output_type->resolve_type().is_record()) {
+							std::ostringstream sstr;
+							sstr
+								<< "Semantics::analyze_lvalue_source: error (line "
+								<< dot_operator0.line << " col " << dot_operator0.column
+								<< "): ``.\" is used to access a record, but the value being accessed is not a record: "
+								<< resolved_type.get_tag_repr()
+								;
+							throw SemanticsError(sstr.str());
+						}
+
+						// Find the field.
+						bool     found  = false;
+						uint32_t offset = 0;
+						for (const std::pair<std::string, const Type *> &field : std::as_const(last_output_type->resolve_type().get_record().fields)) {
+							const std::string &field_name = field.first;
+							const Type        &field_type = *field.second;
+
+							if (identifier.text == field_name) {
+								found = true;
+								last_output_type = &field_type;
+								break;
+							}
+
+							offset += field_type.get_size();
+						}
+						if (!found) {
+							std::ostringstream sstr;
+							sstr
+								<< "Semantics::analyze_lvalue_source: error (line "
+								<< dot_operator0.line << " col " << dot_operator0.column
+								<< "): ``.\" is used to access a record, but the record has no field with the name: "
+								<< identifier.text
+								;
+							throw SemanticsError(sstr.str());
+						}
+
+						// Get the address of the field.
+						const Index record_offset_index          = lvalue_source_analysis.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(offset), 0, 0))});
+						const Index record_element_address_index = lvalue_source_analysis.instructions.add_instruction({I::AddFrom(B(), true)}, {last_output_index, record_offset_index});
+						// Dereference if the field type is primitive.  If the field type is another record or array, leave the address as is.
+						const Type &last_output_resolved_type = last_output_type->resolve_type();
+						if (true || !last_output_resolved_type.is_primitive()) {
+							last_output_index = record_element_address_index;
+						} else {
+							// Dereference.
+							const Type::Primitive &last_output_resolved_primitive_type = last_output_resolved_type.get_primitive();
+							const Index record_dereference_index = lvalue_source_analysis.instructions.add_instruction(
+								{I::LoadFrom(
+									B(),                                            // base
+									last_output_resolved_primitive_type.is_word(),  // is_word_save
+									last_output_resolved_primitive_type.is_word(),  // is_word_load
+									0,                                              // addition
+									false,                                          // is_save_fixed
+									false,                                          // is_load_fixed
+									{},                                             // fixed_save_storage
+									{},                                             // fixed_load_storage
+									false,                                          // dereference_save
+									true                                            // dereference_load
+								)},
+								{record_element_address_index}
+							);
+							last_output_index = record_dereference_index;
+						}
+
+						break;
+					}
+
+					case LvalueAccessorClause::array_branch: {
+						const LvalueAccessorClause::Array &lvalue_accessor_clause_array = grammar.lvalue_accessor_clause_array_storage.at(lvalue_accessor_clause.data);
+						const LexemeOperator              &leftbracket_operator0        = grammar.lexemes.at(lvalue_accessor_clause_array.leftbracket_operator0).get_operator();
+						const ::Expression                &expression0                  = grammar.expression_storage.at(lvalue_accessor_clause_array.expression);
+						const LexemeOperator              &rightbracket_operator0       = grammar.lexemes.at(lvalue_accessor_clause_array.rightbracket_operator0).get_operator(); (void) rightbracket_operator0;
+
+						lvalue_source_analysis.lexeme_end = lvalue_accessor_clause_array.rightbracket_operator0 + 1;
+
+						if (!last_output_type->resolve_type().is_array()) {
+							std::ostringstream sstr;
+							sstr
+								<< "Semantics::analyze_lvalue_source: error (line "
+								<< leftbracket_operator0.line << " col " << leftbracket_operator0.column
+								<< "): ``[]\" is used to access an array, but the value being accessed is not an array: "
+								<< resolved_type.get_tag_repr()
+								;
+							throw SemanticsError(sstr.str());
+						}
+
+						// Get the index expression, which should be an integer.
+						const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+						const Type &value_resolved_type = value.output_type.resolve_type();
+						if (!value_resolved_type.is_primitive() || !value_resolved_type.get_primitive().is_integer()) {
+							std::ostringstream sstr;
+							sstr
+								<< "Semantics::analyze_lvalue_source: error (line "
+								<< leftbracket_operator0.line << " col " << leftbracket_operator0.column
+								<< "): accessing an array with ``[]\" requires an integer index type, but the index is of a different type: "
+								<< value.output_type.get_tag_repr()
+								;
+							throw SemanticsError(sstr.str());
+						}
+
+						// | The last output type is now the base type.
+						last_output_type = last_output_type->get_array().base_type;
+						// | Get the integer's index.
+						const Index value_index                 = lvalue_source_analysis.instructions.merge(value.instructions) + value.output_index;
+						// | Now dereference the array.
+						const Index load_element_size_index     = lvalue_source_analysis.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(last_output_type->get_size()), 0, 0))});
+						const Index array_element_offset_index  = lvalue_source_analysis.instructions.add_instruction({I::MultFrom(B(), true)}, {load_element_size_index, value_index});
+						const Index ignore_index                = lvalue_source_analysis.instructions.add_instruction_indexed({I::Ignore(B())}, {{array_element_offset_index, 1}}, array_element_offset_index); (void) ignore_index;
+						const Index array_element_address_index = lvalue_source_analysis.instructions.add_instruction({I::AddFrom(B(), true)}, {last_output_index, array_element_offset_index});
+						// Actually dereference if the base type is primitive.  Just leave it at the address if the base type is a record or array.
+						const Type &last_output_resolved_type = last_output_type->resolve_type();
+						if (true || !last_output_resolved_type.is_primitive()) {
+							last_output_index = array_element_address_index;
+						} else {
+							// Dereference.
+							const Type::Primitive &last_output_resolved_primitive_type = last_output_resolved_type.get_primitive();
+							const Index array_dereference_index = lvalue_source_analysis.instructions.add_instruction(
+								{I::LoadFrom(
+									B(),                                            // base
+									last_output_resolved_primitive_type.is_word(),  // is_word_save
+									last_output_resolved_primitive_type.is_word(),  // is_word_load
+									0,                                              // addition
+									false,                                          // is_save_fixed
+									false,                                          // is_load_fixed
+									{},                                             // fixed_save_storage
+									{},                                             // fixed_load_storage
+									false,                                          // dereference_save
+									true                                            // dereference_load
+								)},
+								{array_element_address_index}
+							);
+							last_output_index = array_dereference_index;
+						}
+
+						break;
+					}
+
+					default: {
+						std::ostringstream sstr;
+						sstr << "Semantics::analyze_lvalue_source: internal error: invalid lvalue_accessor_clause branch at index " << &lvalue_accessor_clause - &grammar.lvalue_accessor_clause_storage[0] << ": " << lvalue_accessor_clause.branch;
+						throw SemanticsError(sstr.str());
+					}
+				}
+			}
+
+			lvalue_source_analysis.lvalue_type             = last_output_type;
+			lvalue_source_analysis.lvalue_index            = last_output_index;
+			lvalue_source_analysis.lvalue_fixed_storage    = Storage();
+			lvalue_source_analysis.is_lvalue_fixed_storage = false;
+		} else {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::analyze_lvalue_source: internal error (line "
+				<< lvalue_identifier.line << " col " << lvalue_identifier.column
+				<< "): identifier refers to a variable with a resolved type with an unhandled type tag: "
+				<< resolved_type.tag
+				<< "."
+				;
+			throw SemanticsError(sstr.str());
+		}
+	} else if (constant_scope.has(lvalue_identifier.text)) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::analyze_lvalue_source: internal error (line "
+			<< lvalue_identifier.line << " col " << lvalue_identifier.column
+			<< "): identifier refers to a constant and should have been detected as such but wasn't: "
+			<< lvalue_identifier.text
+			<< "."
+			;
+		throw SemanticsError(sstr.str());
+	} else {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::analyze_lvalue_source: error (line "
+			<< lvalue_identifier.line << " col " << lvalue_identifier.column
+			<< "): identifier does not refer to a variable or constant that is in scope: "
+			<< lvalue_identifier.text
+			<< "."
+			;
+		throw SemanticsError(sstr.str());
+	}
+
+	// Return the analysis.
+	return lvalue_source_analysis;
+}
+
 Semantics::Expression::Expression() {}
 
 Semantics::Expression::Expression(const MIPSIO  &instructions, const Type  &output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(          instructions ), output_type(          output_type ), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
@@ -11181,9 +11511,6 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 	using Storage       = Semantics::Storage;
 	using Symbol        = Semantics::Symbol;
 	using Var = Semantics::IdentifierScope::IdentifierBinding::Var;
-
-	// TODO
-	return Expression();
 
 	// Alias for expression.
 	const ::Expression &expression_symbol = expression;
@@ -13200,6 +13527,61 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				const LexemeOperator &colonequals_operator0 = grammar.lexemes.at(assignment.colonequals_operator0).get_operator(); (void) colonequals_operator0;
 				const ::Expression   &expression0           = grammar.expression_storage.at(assignment.expression);
 
+				block.lexeme_begin = lvalue.identifier;
+
+				// Lookup the lvalue.
+				LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue, constant_scope, type_scope, routine_scope, var_scope, combined_scope);
+
+				// Merge the lvalue lookup instructions if there was not a fixed storage found.
+				Index lvalue_index;
+				if (!lvalue_source_analysis.is_lvalue_fixed_storage) {
+					lvalue_index = block.instructions.merge(lvalue_source_analysis.instructions) + lvalue_source_analysis.lvalue_index;
+					block.instructions.add_sequence_connection(block.back, lvalue_index);
+					block.back = lvalue_index;
+				}
+
+				// LoadFrom to store the output to whatever the lvalue refers to.
+
+				// Analyze the expression.
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+
+				block.lexeme_end = value.lexeme_end;
+
+				// Make sure the expression is of the expected type.
+				if (value.output_type.resolve_type() != lvalue_source_analysis.lvalue_type->resolve_type()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_statements: error (line "
+						<< lvalue_source_analysis.lvalue_identifier->line << " col " << lvalue_source_analysis.lvalue_identifier->column
+						<< "): assignment from an expression of one type into a variable of a different type."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Merge the expression and get the output value.
+				const Index value_index = block.instructions.merge(value.instructions) + value.output_index;
+				block.instructions.add_sequence_connection(block.back, value_index);
+				block.back = value_index;
+
+				// Writing arrays and records (copying them) is currently unimplemented.
+				if (value.output_type.resolve_type().is_record() || value.output_type.resolve_type().is_array()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_statements: error (line "
+						<< lvalue_source_analysis.lvalue_identifier->line << " col " << lvalue_source_analysis.lvalue_identifier->column
+						<< "): assignment of an array or record is currently unimplemented.  TODO: copy array or record."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Write to the lvalue.
+				if (!lvalue_source_analysis.is_lvalue_fixed_storage) {
+					block.back = block.instructions.add_instruction({I::LoadFrom(B(), value.output_type.resolve_type().get_primitive().is_word())}, {lvalue_index, value_index}, {block.back});
+				} else {
+					block.back = block.instructions.add_instruction({I::LoadFrom(B(), lvalue_source_analysis.lvalue_fixed_storage.max_size, value.output_type.resolve_type().get_primitive().is_word(), 0, true, false, lvalue_source_analysis.lvalue_fixed_storage, Storage(), false, false)}, {value_index}, {block.back});
+				}
+
+				// We're done.
 				break;
 			} case Statement::if_branch: {
 				const Statement::If &statement_if = grammar.statement_if_storage.at(statement.data);
@@ -13376,6 +13758,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 }
 
 // | Analyze a BEGIN [statement]... END block.
+// TODO: don't forget to load the arguments > 4!
 std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const std::map<std::string, const Type *> &local_variables, bool is_main) {
 	// Some type aliases to improve readability.
 	using M = Semantics::MIPSIO;
@@ -13628,6 +14011,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 
 	// Set up intro and cleanup sections.
 
+	// TODO: possible optimization: this is unnecessary if there are no calls or jumps.
 	// Push the return address.
 	last_intro_index     = block_semantics.instructions.add_instruction({I::AddSp(B(), -4)}, {}, last_intro_index);
 	last_intro_index     = block_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, Storage("$sp", 4, 0, true), Storage("$ra"), false, false)}, {}, last_intro_index);

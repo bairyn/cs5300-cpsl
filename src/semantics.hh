@@ -43,9 +43,7 @@ public:
 
 // TODO: remove these redefinitions; they're only here to let me know when
 //       sequence connection delays and shadowing happen during development.
-#undef CPSL_CC_SEMANTICS_PERMIT_SEQUENCE_CONNECTION_DELAYS
 #undef CPSL_CC_SEMANTICS_PERMIT_SHADOWING
-#define CPSL_CC_SEMANTICS_PERMIT_SEQUENCE_CONNECTION_DELAYS        false
 #define CPSL_CC_SEMANTICS_PERMIT_SHADOWING                         false
 
 class Semantics {
@@ -1413,6 +1411,22 @@ public:
 
 	static const bool all_arrays_records_are_refs;
 
+	class LvalueSourceAnalysis {
+	public:
+		LvalueSourceAnalysis();
+		LvalueSourceAnalysis(const MIPSIO  &instructions, const LexemeIdentifier &lvalue_identifier, const Type &lvalue_type, MIPSIO::Index lvalue_index, const Storage &lvalue_fixed_storage, bool is_lvalue_fixed_storage, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+		LvalueSourceAnalysis(      MIPSIO &&instructions, const LexemeIdentifier &lvalue_identifier, const Type &lvalue_type, MIPSIO::Index lvalue_index, const Storage &lvalue_fixed_storage, bool is_lvalue_fixed_storage, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+		MIPSIO                  instructions;  // Empty if lvalue_fixed_storage.
+		const LexemeIdentifier *lvalue_identifier;
+		const Type             *lvalue_type;
+		MIPSIO::Index           lvalue_index = 0;
+		Storage                 lvalue_fixed_storage;
+		bool                    is_lvalue_fixed_storage = false;
+		uint64_t                lexeme_begin = 0;
+		uint64_t                lexeme_end   = 0;
+	};
+	LvalueSourceAnalysis analyze_lvalue_source(const Lvalue &lvalue, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
+
 	class Expression {
 	public:
 		MIPSIO            instructions;
@@ -1464,7 +1478,10 @@ public:
 	//
 	// TODO: possible optimization: linear Vars become working storages rather
 	// than fixed storages (i.e. when it is only accessed once (or zero times
-	// ("affine linear")).)
+	// ("affine linear")).)  Actually, this can be made more general: this can
+	// apply after the last possible write to a variable.  (Passing a variable
+	// as a Ref is a possible write, perhaps unless you also analyze the
+	// function or procedure to determine whether it is used or not.)
 	class Block {
 	public:
 		MIPSIO instructions;
