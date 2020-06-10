@@ -10044,15 +10044,15 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::emit(const std::vec
 	}
 }
 
-std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::map<IO, Storage> &capture_outputs) const {
+std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::map<IO, Storage> &capture_outputs, std::optional<Index> back) const {
 	std::set<IO> capture_outputs_;
 	for (const std::map<IO, Storage>::value_type &capture_output_pair : std::as_const(capture_outputs)) {
 		capture_outputs_.insert(capture_output_pair.first);
 	}
-	return prepare(capture_outputs_);
+	return prepare(capture_outputs_, back);
 }
 
-std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_outputs_) const {
+std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_outputs_, std::optional<Index> back) const {
 	// Emulate emit(), except don't emit, and add working storage unit requirements when more are needed.
 	std::vector<Storage> working_storages;
 
@@ -10084,6 +10084,9 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 	std::vector<Index> root_stack;
 	std::vector<Index> children_stack;
 	std::set<Index>    ancestors;  // Detect cycles: DFS can detect already visited notes (e.g. diamond) but not ancestors.
+	if (back.has_value()) {
+		root_stack.push_back(*back);
+	}
 	for (const std::map<Index, std::map<IOIndex, Storage>>::value_type &output_pair : std::as_const(expanded_capture_outputs)) {
 		root_stack.push_back(output_pair.first);
 	}
@@ -10448,7 +10451,7 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 	return Storage::get_sizes(working_storages);
 }
 
-std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, Storage> &input_storages, const std::vector<Storage> &working_storages, const std::map<IO, Storage> &capture_outputs, bool permit_uncaptured_outputs) const {
+std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, Storage> &input_storages, const std::vector<Storage> &working_storages, const std::map<IO, Storage> &capture_outputs, bool permit_uncaptured_outputs, std::optional<Index> back) const {
 	std::map<Index, std::map<IOIndex, Storage>> expanded_capture_outputs = expand_map<Index, IOIndex, Storage>(capture_outputs);
 
 	std::vector<uint32_t> working_storage_sizes = Storage::get_sizes(working_storages);
@@ -10474,6 +10477,9 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 	std::vector<Index> root_stack;
 	std::vector<Index> children_stack;
 	std::set<Index>    ancestors;  // Detect cycles: DFS can detect already visited notes (e.g. diamond) but not ancestors.
+	if (back.has_value()) {
+		root_stack.push_back(*back);
+	}
 	for (const std::map<Index, std::map<IOIndex, Storage>>::value_type &output_pair : std::as_const(expanded_capture_outputs)) {
 		root_stack.push_back(output_pair.first);
 	}
@@ -13123,7 +13129,7 @@ Semantics::Block::Block(MIPSIO &&instructions, MIPSIO::Index front, MIPSIO::Inde
 // Note: this does not need to necessarily correspond to a ::Block in the
 // grammar tree but can be a sequence of statements without a BEGIN and END
 // keyword.
-Semantics::Block Semantics::analyze_statements(const std::vector<uint64_t> &statements, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
+Semantics::Block Semantics::analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<uint64_t> &statements, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const Symbol &cleanup_symbol) {
 	// Some type aliases to improve readability.
 	using M = Semantics::MIPSIO;
 	using I = Semantics::Instruction;
@@ -13266,7 +13272,7 @@ Semantics::Block Semantics::analyze_statements(const std::vector<uint64_t> &stat
 	return block;
 }
 
-Semantics::Block Semantics::analyze_statements(const StatementSequence &statement_sequence, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
+Semantics::Block Semantics::analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const StatementSequence &statement_sequence, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const Symbol &cleanup_symbol) {
 	const Statement             &first_statement         = grammar.statement_storage.at(statement_sequence.statement);
 	const StatementPrefixedList &statement_prefixed_list = grammar.statement_prefixed_list_storage.at(statement_sequence.statement_prefixed_list);
 
@@ -13323,11 +13329,21 @@ Semantics::Block Semantics::analyze_statements(const StatementSequence &statemen
 	}
 
 	// Forward to analyze_statements.
-	return analyze_statements(statement_indices, constant_scope, type_scope, routine_scope, var_scope, combined_scope);
+	return analyze_statements(routine_declaration, statement_indices, constant_scope, type_scope, routine_scope, var_scope, combined_scope, cleanup_symbol);
 }
 
 // | Analyze a BEGIN [statement]... END block.
-std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const std::map<std::string, const Type *> &local_variables) {
+std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const std::map<std::string, const Type *> &local_variables, bool is_main) {
+	// Some type aliases to improve readability.
+	using M = Semantics::MIPSIO;
+	using I = Semantics::Instruction;
+	using B = Semantics::Instruction::Base;
+	using Index = M::Index;
+	using IO    = M::IO;
+	using ConstantValue = Semantics::ConstantValue;
+	using Output        = Semantics::Output;
+	using Storage       = Semantics::Storage;
+	using Symbol        = Semantics::Symbol;
 	const LexemeKeyword      &begin_keyword0     = grammar.lexemes.at(block.begin_keyword0).get_keyword(); (void) begin_keyword0;
 	const StatementSequence  &statement_sequence = grammar.statement_sequence_storage.at(block.statement_sequence);
 	const LexemeKeyword      &end_keyword0       = grammar.lexemes.at(block.end_keyword0).get_keyword(); (void) end_keyword0;
@@ -13335,15 +13351,281 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 	IdentifierScope local_var_scope(var_scope);
 	IdentifierScope local_combined_scope(combined_scope);
 
-	// TODO: local vars from local_variables!
+	// Get cleanup symbol.
+	const Symbol cleanup_symbol(routine_declaration.location.prefix, "_cleanup", routine_declaration.location.unique_identifier);
+
+	// Prepare output vector.
+	std::vector<Output::Line> output_lines;
+
+	// Get temporary registers we can use.
+	static const std::set<std::string> temporary_registers {
+		"$t0",
+		"$t1",
+		"$t2",
+		"$t3",
+		"$t4",
+		"$t5",
+		"$t6",
+		"$t7",
+	};
+	std::set<std::string> available_temporary_registers(temporary_registers);
 
 	// Analyze the statements in the block.
-	Block block_semantics = analyze_statements(statement_sequence, constant_scope, type_scope, routine_scope, local_var_scope, local_combined_scope);
+	Block block_semantics = analyze_statements(routine_declaration, statement_sequence, constant_scope, type_scope, routine_scope, local_var_scope, local_combined_scope, cleanup_symbol);
 
-	// TODO
-	return std::vector<Output::Line>();
+	// Make sure front and back are valid by making sure there is at least one instruction.
+	if (block_semantics.instructions.instructions.size() <= 0) {
+		block_semantics.front = block_semantics.back = block_semantics.instructions.add_instruction({I::Ignore(B(), false, false)});
+	}
 
-	std::vector<Output::Line> output_lines;
+	// Get working storage requirements.
+	std::vector<uint32_t> working_storage_requirements;
+	working_storage_requirements = block_semantics.instructions.prepare(std::set<IO>(), {block_semantics.back});
+
+	// Assign variables and working storage units to Storages and allocate
+	// sufficient space on the stack.
+	uint32_t stack_allocated = 0;
+	for (const std::pair<std::string, const Type *> &local_variable : std::as_const(block_semantics.local_variables)) {
+		const std::string &local_variable_identifier = local_variable.first;
+		const Type        &local_variable_type       = *local_variable.second;
+
+		// Fail if the variable type is not fixed width.
+		if (!local_variable_type.get_fixed_width()) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::analyze_block: error: local variable ``"
+				<< local_variable_identifier
+				<< "\" has a non-fixed-width size in function or procedure with symbol prefix ``"
+				<< routine_declaration.location.prefix
+				<< "\"; non-fixed-width size variable are currently unsupported."
+				;
+			throw SemanticsError(sstr.str());
+		}
+
+		// This is a Semantics::Block variable.  Make sure this doesn't shadow any Body variables.
+		//
+		// Note: if enabling shadowing, the conflict here would need an
+		// alternative implementation to be handled correctly, or else both
+		// variables would refer to the same storage, not to different
+		// storages.
+		if (local_variables.find(local_variable_identifier) != local_variables.cend()) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::analyze_block: error: local variable ``"
+				<< local_variable_identifier
+				<< "\" would shadow an outer-level variable in function or procedure with symbol prefix ``"
+				<< routine_declaration.location.prefix
+				<< "\"."
+				;
+			throw SemanticsError(sstr.str());
+		}
+
+		// Make sure this variable doesn't shadow any top-level variables.
+		//
+		// (This check can safely be disabled if enabling shadowing.)
+		if (var_scope.has(local_variable_identifier)) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::analyze_block: error: local variable ``"
+				<< local_variable_identifier
+				<< "\" would shadow a top-level variable in function or procedure with symbol prefix ``"
+				<< routine_declaration.location.prefix
+				<< "\"."
+				;
+			throw SemanticsError(sstr.str());
+		}
+
+		// Make sure this variable doesn't shadow any top-level variables.
+		//
+		// (This check can safely be disabled if enabling shadowing.)
+		if (combine_identifier_namespaces && combined_scope.has(local_variable_identifier)) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::analyze_block: error: local variable ``"
+				<< local_variable_identifier
+				<< "\" has an identifier that is already assigned in another namespace in function or procedure with symbol prefix ``"
+				<< routine_declaration.location.prefix
+				<< "\"."
+				<< "  Set combine_identifier_namespaces to false to isolate identifier namespaces"
+				<< " from each other and disable this check."
+				;
+			throw SemanticsError(sstr.str());
+		}
+
+		// Add the variable.
+		if (available_temporary_registers.size() > 0 && (local_variable_type.get_size() == 4 || local_variable_type.get_size() == 1)) {
+			const std::string temporary_register = *available_temporary_registers.cbegin();
+			const bool is_word = !local_variable_type.is_primitive() || local_variable_type.get_primitive().is_word();
+			available_temporary_registers.erase(std::as_const(temporary_register));
+			Storage temporary_storage(is_word ? 4 : 1, false, Symbol(), std::as_const(temporary_register), false, 0, true, true);
+			local_var_scope.scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, temporary_storage))});
+			local_combined_scope.scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, temporary_storage))});
+		} else {
+			const uint32_t size = local_variable_type.get_size();
+			Storage stack_storage;
+			if (!local_variable_type.resolve_type().is_record() && !local_variable_type.resolve_type().is_array()) {
+				Storage stack_storage(size, false, Symbol(), "$sp", true, stack_allocated, false, false);
+			} else {
+				Storage stack_storage(4, false, Symbol(), "$sp", false, stack_allocated, false, false);
+			}
+			stack_allocated += Instruction::AddSp::round_to_align(size);
+			local_var_scope.scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
+			local_combined_scope.scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
+		}
+	}
+
+	for (const std::pair<std::string, const Type *> &local_variable : std::as_const(local_variables)) {
+		const std::string &local_variable_identifier = local_variable.first;
+		const Type        &local_variable_type       = *local_variable.second;
+
+		// Fail if the variable type is not fixed width.
+		if (!local_variable_type.get_fixed_width()) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::analyze_block: error: local variable ``"
+				<< local_variable_identifier
+				<< "\" has a non-fixed-width size in function or procedure with symbol prefix ``"
+				<< routine_declaration.location.prefix
+				<< "\"; non-fixed-width size variable are currently unsupported."
+				;
+			throw SemanticsError(sstr.str());
+		}
+
+		// Make sure this variable doesn't shadow any top-level variables.
+		//
+		// (This check can safely be disabled if enabling shadowing.)
+		if (var_scope.has(local_variable_identifier)) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::analyze_block: error: local variable ``"
+				<< local_variable_identifier
+				<< "\" would shadow a top-level variable in function or procedure with symbol prefix ``"
+				<< routine_declaration.location.prefix
+				<< "\"."
+				;
+			throw SemanticsError(sstr.str());
+		}
+
+		// Make sure this variable doesn't shadow any top-level variables.
+		//
+		// (This check can safely be disabled if enabling shadowing.)
+		if (combine_identifier_namespaces && combined_scope.has(local_variable_identifier)) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::analyze_block: error: local variable ``"
+				<< local_variable_identifier
+				<< "\" has an identifier that is already assigned in another namespace in function or procedure with symbol prefix ``"
+				<< routine_declaration.location.prefix
+				<< "\"."
+				<< "  Set combine_identifier_namespaces to false to isolate identifier namespaces"
+				<< " from each other and disable this check."
+				;
+			throw SemanticsError(sstr.str());
+		}
+
+		// Add the variable.
+		if (available_temporary_registers.size() > 0 && (local_variable_type.get_size() == 4 || local_variable_type.get_size() == 1)) {
+			const std::string temporary_register = *available_temporary_registers.cbegin();
+			const bool is_word = !local_variable_type.is_primitive() || local_variable_type.get_primitive().is_word();
+			available_temporary_registers.erase(std::as_const(temporary_register));
+			Storage temporary_storage(is_word ? 4 : 1, false, Symbol(), std::as_const(temporary_register), false, 0, true, true);
+			local_var_scope.scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, temporary_storage))});
+			local_combined_scope.scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, temporary_storage))});
+		} else {
+			const uint32_t size = local_variable_type.get_size();
+			Storage stack_storage;
+			if (!local_variable_type.resolve_type().is_record() && !local_variable_type.resolve_type().is_array()) {
+				Storage stack_storage(size, false, Symbol(), "$sp", true, stack_allocated, false, false);
+			} else {
+				Storage stack_storage(4, false, Symbol(), "$sp", false, stack_allocated, false, false);
+			}
+			stack_allocated += Instruction::AddSp::round_to_align(size);
+			local_var_scope.scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
+			local_combined_scope.scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
+		}
+	}
+
+	// Get working storages.
+	std::vector<Storage> working_storages;
+	for (const uint32_t &working_storage_requirement : std::as_const(working_storage_requirements)) {
+		const std::vector<uint32_t>::size_type working_storage_requirement_index = &working_storage_requirement - &working_storage_requirements[0]; (void) working_storage_requirement_index;
+
+		// Add the working storage.
+		if (available_temporary_registers.size() > 0 && (working_storage_requirement == 4 || working_storage_requirement == 1)) {
+			const std::string temporary_register = *available_temporary_registers.cbegin();
+			const bool is_word = working_storage_requirement == 4;
+			available_temporary_registers.erase(std::as_const(temporary_register));
+			Storage temporary_storage(is_word ? 4 : 1, false, Symbol(), std::as_const(temporary_register), false, 0, true, true);
+			working_storages.push_back(temporary_storage);
+		} else {
+			const uint32_t size = working_storage_requirement;
+			Storage stack_storage;
+			if (true) {
+				Storage stack_storage(size, false, Symbol(), "$sp", true, stack_allocated, false, false);
+			} else {
+				Storage stack_storage(4, false, Symbol(), "$sp", false, stack_allocated, false, false);
+			}
+			stack_allocated += Instruction::AddSp::round_to_align(size);
+			working_storages.push_back(stack_storage);
+		}
+	}
+
+	// Start our chain of sequenced intro instructions.
+	Index last_intro_index = block_semantics.instructions.add_instruction({I::Ignore(B(), false, false)});
+	const Index first_intro_index = last_intro_index;
+
+	// Give the cleanup routine a label.
+	block_semantics.back = block_semantics.instructions.add_instruction({I::Ignore(B(true, cleanup_symbol), false, false)}, {}, block_semantics.back);
+
+	// Set up intro and cleanup sections.
+
+	// Push the return address.
+	last_intro_index     = block_semantics.instructions.add_instruction({I::AddSp(B(), -4)}, {}, last_intro_index);
+	last_intro_index     = block_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, Storage("$sp", 4, 0, true), Storage("$ra"), false, false)}, {}, last_intro_index);
+
+	// Allocate space on the stack.  Bypass AddSp's Storage adjustments since we're manually setting $sp so that our Storages are correct, by using a Custom instruction.
+	last_intro_index     = block_semantics.instructions.add_instruction({I::Custom(B(), {"\taddiu $sp, $sp, " + std::to_string(-stack_allocated)})}, {}, last_intro_index);
+
+	// Reverse what intro did.
+	block_semantics.back = block_semantics.instructions.add_instruction({I::Custom(B(), {"\taddiu $sp, $sp, " + std::to_string(stack_allocated)})}, {}, block_semantics.back);
+	block_semantics.back = block_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, Storage("$ra"), Storage("$sp", 4, 0, true), false, false)}, {}, block_semantics.back);
+	block_semantics.back = block_semantics.instructions.add_instruction({I::AddSp(B(), 4)}, {}, block_semantics.back);
+
+	// Now either return or syscall exit.
+	if (!is_main) {
+		block_semantics.back = block_semantics.instructions.add_instruction({I::Return(B())}, {}, block_semantics.back);
+	} else {
+		std::vector<Output::Line> exit_lines;
+		exit_lines.push_back("\t# exit2(0)");
+		exit_lines.push_back("\tli   $v0, 17");
+		exit_lines.push_back("\tli   $a0, 0");
+		exit_lines.push_back("\tli   $a0, ($a0)");
+		exit_lines.push_back("\tsyscall");
+		block_semantics.back = block_semantics.instructions.add_instruction({I::Custom(B(), std::as_const(exit_lines))}, {}, block_semantics.back);
+	}
+
+	// Connect our chain of sequenced intro instructions.
+	block_semantics.instructions.add_sequence_connection(last_intro_index, block_semantics.front);
+	block_semantics.front = first_intro_index;
+
+	// Verify our working storage requirements have not changed.
+	std::vector<uint32_t> new_working_storage_requirements;
+	new_working_storage_requirements = block_semantics.instructions.prepare(std::set<IO>(), {block_semantics.back});
+	if (new_working_storage_requirements != working_storage_requirements) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::analyze_block: internal error: adding intro and cleanup sections to a block, with symbol prefix ``"
+			<< routine_declaration.location.prefix
+			<< "\", should not have changed the working storage requirements, but it did."
+			;
+		throw SemanticsError(sstr.str());
+	}
+
+	// Emit the block.
+	output_lines = block_semantics.instructions.emit({}, working_storages, {}, false, block_semantics.back);
+
+	// Return the output.
+	return output_lines;
 }
 
 // | Analyze a routine definition.
@@ -13802,7 +14084,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 
 	// We've finished handling extra constants, types, and variables.
 	// Proceed to analyze_block.
-	return analyze_block(routine_declaration, block, local_constant_scope, local_type_scope, routine_scope, var_scope, local_combined_scope, local_variables);
+	return analyze_block(routine_declaration, block, local_constant_scope, local_type_scope, routine_scope, var_scope, local_combined_scope, local_variables, false);
 }
 
 // | Get the symbol to a string literal, tracking it if this is the first time encountering it.
@@ -15589,7 +15871,7 @@ void Semantics::analyze() {
 	std::vector<std::pair<bool, const Type *>> main_parameters;
 	IdentifierScope::IdentifierBinding::RoutineDeclaration main_routine_declaration(main_routine_symbol, main_parameters, std::optional<const Type *>());
 	std::vector<Output::Line> main_routine_definition_lines;
-	main_routine_definition_lines = analyze_block(main_routine_declaration, block, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope);
+	main_routine_definition_lines = analyze_block(main_routine_declaration, block, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope, {}, true);
 	output.add_line(Output::text_section, ":", main_routine_symbol);
 	output.add_lines(Output::text_section, main_routine_definition_lines);
 

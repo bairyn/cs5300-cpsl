@@ -1,5 +1,7 @@
 #ifndef CPSL_CC_SEMANTICS_HH
 #define CPSL_CC_SEMANTICS_HH
+// TODO: constant bool switch to enable shadowing.
+// TODO: 5-space, not 4-space, instruction alignment.
 
 #include <cstdint>    // int32_t, uint32_t, uint64_t
 #include <map>        // std::map
@@ -1313,8 +1315,8 @@ public:
 		// knows which to prioritize as registers.  Storages that are used more
 		// often should appear first, but this is currently unimplemented.
 		// (Count number of locks / claims, and then stable sort the output before returning.)
-		std::vector<uint32_t> prepare(const std::set<IO> &capture_outputs) const;
-		std::vector<uint32_t> prepare(const std::map<IO, Storage> &capture_outputs) const;
+		std::vector<uint32_t> prepare(const std::set<IO> &capture_outputs, std::optional<Index> back = std::optional<Index>()) const;
+		std::vector<uint32_t> prepare(const std::map<IO, Storage> &capture_outputs, std::optional<Index> back = std::optional<Index>()) const;
 		// | Emit the collections of instructions using the provided storages.
 		//
 		// There must be a path between every node and capture_outputs, or an
@@ -1324,7 +1326,7 @@ public:
 		// Uncaptured outputs should be consumed with another connection.  If
 		// it is unused, use the Ignore instruction to consume it.  To disable
 		// this restriction, pass permit_uncaptured_outputs = true.
-		std::vector<Output::Line> emit(const std::map<IO, Storage> &input_storages, const std::vector<Storage> &working_storages, const std::map<IO, Storage> &capture_outputs, bool permit_uncaptured_outputs = false) const;
+		std::vector<Output::Line> emit(const std::map<IO, Storage> &input_storages, const std::vector<Storage> &working_storages, const std::map<IO, Storage> &capture_outputs, bool permit_uncaptured_outputs = false, std::optional<Index> back = std::optional<Index>()) const;
 
 		template<typename A, typename B, typename C>
 		static std::map<A, std::map<B, C>> expand_map(const std::map<std::pair<A, B>, C> &map) {
@@ -1475,7 +1477,7 @@ public:
 		// conflicts / duplicates.
 		MIPSIO::Index    front = 0;  // Ignored if instructions is empty.
 		MIPSIO::Index    back  = 0;  // Ignored if instructions is empty.
-		std::map<std::string, const Type *> local_variables;
+		std::map<std::string, const Type *> local_variables;  // Turns out no statements can introduce local variables, so this is unneeded.
 		uint64_t         lexeme_begin = 0;
 		uint64_t         lexeme_end   = 0;
 
@@ -1489,11 +1491,11 @@ public:
 	// Note: this does not need to necessarily correspond to a ::Block in the
 	// grammar tree but can be a sequence of statements without a BEGIN and END
 	// keyword.
-	Block analyze_statements(const std::vector<uint64_t> &statements, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
-	Block analyze_statements(const StatementSequence &statement_sequence, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
+	Block analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<uint64_t> &statements, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const Symbol &cleanup_symbol);
+	Block analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const StatementSequence &statement_sequence, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const Symbol &cleanup_symbol);
 
 	// | Analyze a BEGIN [statement]... END block.
-	std::vector<Output::Line> analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const std::map<std::string, const Type *> &local_variables = {});
+	std::vector<Output::Line> analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const std::map<std::string, const Type *> &local_variables = {}, bool is_main = false);
 
 	// | Analyze a routine definition.
 	//
