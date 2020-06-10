@@ -363,8 +363,13 @@ Semantics::Output Semantics::Output::normalize(const std::set<std::string> &addi
 
 							// Perform a substitution at each location.
 							for (const SymbolLocation &symbol_location : std::as_const(sorted_symbol_locations)) {
+								// Only expand symbol locations in the current section and line.
+								if (symbol_location.section != section_index || symbol_location.line != line_index) {
+									continue;
+								}
+
 								// Make sure the location is within bounds.
-								if (symbol_location.start_pos >= line.size() || symbol_location.start_pos + symbol_location.length >= line.size()) {
+								if (symbol_location.start_pos > line.size() || symbol_location.start_pos + symbol_location.length > line.size()) {
 									std::ostringstream sstr;
 									sstr
 										<< "Semantics::Output::normalize: error: a symbol location in the output refers to an out-of-bounds location." << std::endl
