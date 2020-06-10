@@ -2259,6 +2259,56 @@ Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::RoutineDeclar
 	, output(output)
 	{}
 
+std::vector<std::pair<bool, Semantics::Type>> Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::get_dereferenced_parameters() const {
+	std::vector<std::pair<bool, Type>> dereferenced_parameters;
+
+	for (const std::pair<bool, const Type *> &parameter : std::as_const(parameters)) {
+		const std::vector<std::pair<bool, const Type *>>::size_type &parameter_index = &parameter - &parameters[0];
+
+		if (!parameter.second) {
+			std::ostringstream sstr;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::get_dereferenced_parameters: error: null field type pointer in record for parameter #" << parameter_index << ".";
+			throw SemanticsError(sstr.str());
+		}
+
+		const bool &parameter_is_ref = parameter.first;
+		const Type &parameter_type   = *parameter.second;
+
+		dereferenced_parameters.push_back({parameter_is_ref, parameter_type});
+	}
+
+	return dereferenced_parameters;
+}
+
+std::optional<Semantics::Type> Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::get_dereferenced_output()     const {
+	if (!output.has_value()) {
+		return std::optional<Type>();
+	} else {
+		const Type *output_type = *output;
+		if (!output_type) {
+			std::ostringstream sstr;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::get_dereferenced_output: error: null output type pointer.";
+			throw SemanticsError(sstr.str());
+		}
+		return std::optional<Type>(*output_type);
+	}
+}
+
+inline bool Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::RoutineDeclaration::operator< (const RoutineDeclaration &other) const {
+	if      (location                      != other.location                     ) { return location                      < other.location;                      }
+	else if (get_dereferenced_parameters() != other.get_dereferenced_parameters()) { return get_dereferenced_parameters() < other.get_dereferenced_parameters(); }
+	else                                                                           { return get_dereferenced_output()     < other.get_dereferenced_output();     }
+}
+
+inline bool Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::RoutineDeclaration::operator> (const RoutineDeclaration &other) const { return   other < *this;  }
+inline bool Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::RoutineDeclaration::operator<=(const RoutineDeclaration &other) const { return !(*this > other); }
+inline bool Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::RoutineDeclaration::operator>=(const RoutineDeclaration &other) const { return !(*this < other); }
+
+inline bool Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::RoutineDeclaration::operator==(const RoutineDeclaration &other) const {
+	return location == other.location && get_dereferenced_parameters() == other.get_dereferenced_parameters() && get_dereferenced_output() == other.get_dereferenced_output();
+}
+inline bool Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::RoutineDeclaration::operator!=(const RoutineDeclaration &other) const { return !(*this == other); }
+
 Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding()
 	{}
 
@@ -13378,6 +13428,7 @@ void Semantics::reset_output() {
 	anonymous_storage        = IdentifierScope();
 	top_level_vars.clear();
 	string_constants.clear();
+	routine_definitions.clear();
 
 	// Reset.
 
@@ -13637,7 +13688,7 @@ void Semantics::analyze() {
 						<< "Semantics::analyze: error (line "
 						<< identifier.line << " col " << identifier.column
 						<< "): type identifier ``" << identifier.text << "\" has already been assigned."
-						<< "  Set combine_identifier_namespaces to 0 to isolate identifier namespaces"
+						<< "  Set combine_identifier_namespaces to false to isolate identifier namespaces"
 						<< " from each other."
 						;
 					throw SemanticsError(sstr.str());
@@ -13820,7 +13871,7 @@ void Semantics::analyze() {
 							<< "Semantics::analyze: error (line "
 							<< next_identifier->line << " col " << next_identifier->column
 							<< "): variable identifier ``" << next_identifier->text << "\" has already been assigned."
-							<< "  Set combine_identifier_namespaces to 0 to isolate identifier namespaces"
+							<< "  Set combine_identifier_namespaces to false to isolate identifier namespaces"
 							<< " from each other."
 							;
 						throw SemanticsError(sstr.str());
@@ -13843,6 +13894,7 @@ void Semantics::analyze() {
 					const IdentifierScope::IdentifierBinding::Var var(*next_semantics_type, var_storage);
 					top_level_vars.push_back(var);
 					top_level_var_scope.scope.insert({next_identifier_text, IdentifierScope::IdentifierBinding(var)});
+					top_level_scope.scope.insert({next_identifier_text, IdentifierScope::IdentifierBinding(var)});
 
 					// Global variable-width variables are currently unsupported.
 					if (!var.type->get_fixed_width()) {
@@ -13956,7 +14008,208 @@ void Semantics::analyze() {
 						const LexemeKeyword          &forward_keyword0           = grammar.lexemes.at(forward.forward_keyword0).get_keyword(); (void) forward_keyword0;
 						const LexemeOperator         &semicolon_operator1        = grammar.lexemes.at(forward.semicolon_operator1).get_operator(); (void) semicolon_operator1;
 
-						// TODO
+						// Prepare parameter name list.
+						std::vector<std::string> parameter_names;
+						std::set<std::string>    in_parameter_names;
+
+						// Is there a routine already declared with this name?
+						if (top_level_routine_scope.has(identifier.text)) {
+							std::ostringstream sstr;
+							sstr
+								<< "Semantics::analyze: error (line "
+								<< identifier.line << " col " << identifier.column
+								<< "): redeclaration of function or procedure ``" << identifier.text << "\"."
+								;
+							throw SemanticsError(sstr.str());
+						}
+						if (combine_identifier_namespaces && top_level_scope.has(identifier.text)) {
+							std::ostringstream sstr;
+							sstr
+								<< "Semantics::analyze: error (line "
+								<< identifier.line << " col " << identifier.column
+								<< "): function or procedure identifier ``" << identifier.text << "\" has already been assigned."
+								<< "  Set combine_identifier_namespaces to false to isolate identifier namespaces"
+								<< " from each other."
+								;
+							throw SemanticsError(sstr.str());
+						}
+
+						// Collect the formal parameters in the list.
+						std::vector<const FormalParameter *> formal_parameter_collection;
+						switch (formal_parameters.branch) {
+							case FormalParameters::empty_branch: {
+								// No need to retrieve the empty value.
+								break;
+							}
+
+							case FormalParameters::first_branch: {
+								const FormalParameters::First      &formal_parameters_first        = grammar.formal_parameters_first_storage.at(formal_parameters.data);
+								const FormalParameter              &first_formal_parameter         = grammar.formal_parameter_storage.at(formal_parameters_first.formal_parameter);
+								const FormalParameterPrefixedList  &formal_parameter_prefixed_list = grammar.formal_parameter_prefixed_list_storage.at(formal_parameters_first.formal_parameter_prefixed_list);
+
+								// Collect the formal parameters in the list.
+								formal_parameter_collection.push_back(&first_formal_parameter);
+								bool reached_end = false;
+								for (const FormalParameterPrefixedList *last_list = &formal_parameter_prefixed_list; !reached_end; ) {
+									// Unpack the last list encountered.
+									switch(last_list->branch) {
+										case FormalParameterPrefixedList::empty_branch: {
+											// We're done.
+											// (No need to unpack the empty branch.)
+											reached_end = true;
+											break;
+										}
+
+										case FormalParameterPrefixedList::cons_branch: {
+											// Unpack the list.
+											const FormalParameterPrefixedList::Cons &last_formal_parameter_prefixed_list_cons = grammar.formal_parameter_prefixed_list_cons_storage.at(last_list->data);
+											const FormalParameterPrefixedList       &last_formal_parameter_prefixed_list      = grammar.formal_parameter_prefixed_list_storage.at(last_formal_parameter_prefixed_list_cons.formal_parameter_prefixed_list);
+											const LexemeOperator                    &last_semicolon_operator0                 = grammar.lexemes.at(last_formal_parameter_prefixed_list_cons.semicolon_operator0).get_operator(); (void) last_semicolon_operator0;
+											const FormalParameter                   &last_formal_parameter                    = grammar.formal_parameter_storage.at(last_formal_parameter_prefixed_list_cons.formal_parameter);
+
+											// Add the formal_parameter.
+											formal_parameter_collection.push_back(&last_formal_parameter);
+											last_list = &last_formal_parameter_prefixed_list;
+
+											// Loop.
+											break;
+										}
+
+										// Unrecognized branch.
+										default: {
+											std::ostringstream sstr;
+											sstr << "Semantics::analyze: internal error: invalid formal_parameter_prefixed_list branch at index " << last_list - &grammar.formal_parameter_prefixed_list_storage[0] << ": " << last_list->branch;
+											throw SemanticsError(sstr.str());
+										}
+									}
+								}
+
+								// Correct the order of the list.
+								std::reverse(formal_parameter_collection.begin() + 1, formal_parameter_collection.end());
+
+								// We've finished collecting the formal parameters.
+								break;
+							}
+
+							// Unrecognized branch.
+							default: {
+								std::ostringstream sstr;
+								sstr << "Semantics::analyze: internal error: invalid formal_parameters branch at index " << forward.formal_parameters << ": " << formal_parameters.branch;
+								throw SemanticsError(sstr.str());
+							}
+						}
+
+						// Handle the formal parameters.
+						std::vector<std::pair<bool, const Type *>> parameters;
+						for (const FormalParameter *next_formal_parameter : std::as_const(formal_parameter_collection)) {
+							const VarOrRef       &var_or_ref      = grammar.var_or_ref_storage.at(next_formal_parameter->var_or_ref);
+							const IdentList      &ident_list      = grammar.ident_list_storage.at(next_formal_parameter->ident_list);
+							const LexemeOperator &colon_operator0 = grammar.lexemes.at(next_formal_parameter->colon_operator0).get_operator(); (void) colon_operator0;
+							const ::Type         &type            = grammar.type_storage.at(next_formal_parameter->type);
+
+							// Are these parameters references?
+							bool is_ref;
+							switch (var_or_ref.branch) {
+								case VarOrRef::var_branch: {
+									const VarOrRef::Var &var_or_ref_var = grammar.var_or_ref_var_storage.at(var_or_ref.data);
+									const LexemeKeyword &var_keyword0   = grammar.lexemes.at(var_or_ref_var.var_keyword0).get_keyword(); (void) var_keyword0;
+									is_ref = false;
+									break;
+								};
+
+								case VarOrRef::ref_branch: {
+									const VarOrRef::Ref &var_or_ref_ref = grammar.var_or_ref_ref_storage.at(var_or_ref.data);
+									const LexemeKeyword &ref_keyword0   = grammar.lexemes.at(var_or_ref_ref.ref_keyword0).get_keyword(); (void) ref_keyword0;
+									is_ref = true;
+									break;
+								};
+
+								// Unrecognized branch.
+								default: {
+									std::ostringstream sstr;
+									sstr << "Semantics::analyze: internal error: invalid var_or_ref branch at index " << next_formal_parameter->var_or_ref << ": " << var_or_ref.branch;
+									throw SemanticsError(sstr.str());
+								}
+							}
+
+							// Get the type.
+							// Get the parameter type.
+							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
+							// Store a copy of this type in our anonymous type storage.
+							anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(temporary_type));
+							const Type *parameter_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
+
+							// Unpack the ident_list.
+							const LexemeIdentifier       &first_identifier         = grammar.lexemes.at(ident_list.identifier).get_identifier();
+							const IdentifierPrefixedList &identifier_prefixed_list = grammar.identifier_prefixed_list_storage.at(ident_list.identifier_prefixed_list);
+
+							// Collect the identifiers in the list.
+							std::vector<const LexemeIdentifier *> identifiers;
+							identifiers.push_back(&first_identifier);
+							bool reached_end = false;
+							for (const IdentifierPrefixedList *last_list = &identifier_prefixed_list; !reached_end; ) {
+								// Unpack the last list encountered.
+								switch(last_list->branch) {
+									case IdentifierPrefixedList::empty_branch: {
+										// We're done.
+										// (No need to unpack the empty branch.)
+										reached_end = true;
+										break;
+									}
+
+									case IdentifierPrefixedList::cons_branch: {
+										// Unpack the list.
+										const IdentifierPrefixedList::Cons &last_identifier_prefixed_list_cons = grammar.identifier_prefixed_list_cons_storage.at(last_list->data);
+										const IdentifierPrefixedList       &last_identifier_prefixed_list      = grammar.identifier_prefixed_list_storage.at(last_identifier_prefixed_list_cons.identifier_prefixed_list);
+										const LexemeOperator               &last_comma_operator0               = grammar.lexemes.at(last_identifier_prefixed_list_cons.comma_operator0).get_operator(); (void) last_comma_operator0;
+										const LexemeIdentifier             &last_identifier                    = grammar.lexemes.at(last_identifier_prefixed_list_cons.identifier).get_identifier();
+
+										// Add the identifier.
+										identifiers.push_back(&last_identifier);
+										last_list = &last_identifier_prefixed_list;
+
+										// Loop.
+										break;
+									}
+
+									// Unrecognized branch.
+									default: {
+										std::ostringstream sstr;
+										sstr << "Semantics::analyze: internal error: invalid identifier_prefixed_list branch at index " << last_list - &grammar.identifier_prefixed_list_storage[0] << ": " << last_list->branch;
+										throw SemanticsError(sstr.str());
+									}
+								}
+							}
+
+							// Correct the order of the list.
+							std::reverse(identifiers.begin() + 1, identifiers.end());
+
+							// Handle the identifiers.
+							for (const LexemeIdentifier *next_identifier : identifiers) {
+								if (in_parameter_names.find(next_identifier->text) != in_parameter_names.cend()) {
+									std::ostringstream sstr;
+									sstr
+										<< "Semantics::analyze: error (line "
+										<< next_identifier->line << " col " << next_identifier->column
+										<< "): duplicate parameter name ``" << next_identifier->text << "\" in routine declaration for ``" << identifier.text << "\"."
+										;
+									throw SemanticsError(sstr.str());
+								}
+								in_parameter_names.insert(next_identifier->text);
+								parameter_names.push_back(next_identifier->text);
+								parameters.push_back({is_ref, parameter_type});
+							}
+						}
+
+						// Add the routine declaration to scope.
+						Symbol routine_symbol("routine_", identifier.text, forward.identifier);
+						IdentifierScope::IdentifierBinding::RoutineDeclaration routine_declaration(routine_symbol, parameters, std::optional<const Type *>());
+						IdentifierScope::IdentifierBinding binding {routine_declaration};
+						top_level_routine_scope.scope.insert({identifier.text, binding});
+						top_level_scope.scope.insert({identifier.text, binding});
+
+						// parameter_names is unused here.
+						(void) parameter_names;
 
 						// We're done handling the forward declaration.
 						break;
@@ -13974,7 +14227,240 @@ void Semantics::analyze() {
 						const Body                      &body                       = grammar.body_storage.at(definition.body);
 						const LexemeOperator            &semicolon_operator1        = grammar.lexemes.at(definition.semicolon_operator1).get_operator(); (void) semicolon_operator1;
 
-						// TODO
+						// Prepare parameter name list.
+						std::vector<std::string> parameter_names;
+						std::set<std::string>    in_parameter_names;
+
+						// Is there a routine already declared with this name?
+						if (top_level_routine_scope.has(identifier.text)) {
+							if (routine_definitions.find(identifier.text) != routine_definitions.cend()) {
+								std::ostringstream sstr;
+								sstr
+									<< "Semantics::analyze: error (line "
+									<< identifier.line << " col " << identifier.column
+									<< "): redefinition of function or procedure ``" << identifier.text << "\"."
+									;
+								throw SemanticsError(sstr.str());
+							}
+
+							// We'll check to make sure the formal parameters
+							// in the definition are the same as those in the
+							// declaration after we analyze them.
+						} else {
+							if (combine_identifier_namespaces && top_level_scope.has(identifier.text)) {
+								std::ostringstream sstr;
+								sstr
+									<< "Semantics::analyze: error (line "
+									<< identifier.line << " col " << identifier.column
+									<< "): function or procedure identifier ``" << identifier.text << "\" has already been assigned."
+									<< "  Set combine_identifier_namespaces to false to isolate identifier namespaces"
+									<< " from each other."
+									;
+								throw SemanticsError(sstr.str());
+							}
+							routine_definitions.insert(identifier.text);
+						}
+
+						// Collect the formal parameters in the list.
+						std::vector<const FormalParameter *> formal_parameter_collection;
+						switch (formal_parameters.branch) {
+							case FormalParameters::empty_branch: {
+								// No need to retrieve the empty value.
+								break;
+							}
+
+							case FormalParameters::first_branch: {
+								const FormalParameters::First      &formal_parameters_first        = grammar.formal_parameters_first_storage.at(formal_parameters.data);
+								const FormalParameter              &first_formal_parameter         = grammar.formal_parameter_storage.at(formal_parameters_first.formal_parameter);
+								const FormalParameterPrefixedList  &formal_parameter_prefixed_list = grammar.formal_parameter_prefixed_list_storage.at(formal_parameters_first.formal_parameter_prefixed_list);
+
+								// Collect the formal parameters in the list.
+								formal_parameter_collection.push_back(&first_formal_parameter);
+								bool reached_end = false;
+								for (const FormalParameterPrefixedList *last_list = &formal_parameter_prefixed_list; !reached_end; ) {
+									// Unpack the last list encountered.
+									switch(last_list->branch) {
+										case FormalParameterPrefixedList::empty_branch: {
+											// We're done.
+											// (No need to unpack the empty branch.)
+											reached_end = true;
+											break;
+										}
+
+										case FormalParameterPrefixedList::cons_branch: {
+											// Unpack the list.
+											const FormalParameterPrefixedList::Cons &last_formal_parameter_prefixed_list_cons = grammar.formal_parameter_prefixed_list_cons_storage.at(last_list->data);
+											const FormalParameterPrefixedList       &last_formal_parameter_prefixed_list      = grammar.formal_parameter_prefixed_list_storage.at(last_formal_parameter_prefixed_list_cons.formal_parameter_prefixed_list);
+											const LexemeOperator                    &last_semicolon_operator0                 = grammar.lexemes.at(last_formal_parameter_prefixed_list_cons.semicolon_operator0).get_operator(); (void) last_semicolon_operator0;
+											const FormalParameter                   &last_formal_parameter                    = grammar.formal_parameter_storage.at(last_formal_parameter_prefixed_list_cons.formal_parameter);
+
+											// Add the formal_parameter.
+											formal_parameter_collection.push_back(&last_formal_parameter);
+											last_list = &last_formal_parameter_prefixed_list;
+
+											// Loop.
+											break;
+										}
+
+										// Unrecognized branch.
+										default: {
+											std::ostringstream sstr;
+											sstr << "Semantics::analyze: internal error: invalid formal_parameter_prefixed_list branch at index " << last_list - &grammar.formal_parameter_prefixed_list_storage[0] << ": " << last_list->branch;
+											throw SemanticsError(sstr.str());
+										}
+									}
+								}
+
+								// Correct the order of the list.
+								std::reverse(formal_parameter_collection.begin() + 1, formal_parameter_collection.end());
+
+								// We've finished collecting the formal parameters.
+								break;
+							}
+
+							// Unrecognized branch.
+							default: {
+								std::ostringstream sstr;
+								sstr << "Semantics::analyze: internal error: invalid formal_parameters branch at index " << definition.formal_parameters << ": " << formal_parameters.branch;
+								throw SemanticsError(sstr.str());
+							}
+						}
+
+						// Handle the formal parameters.
+						std::vector<std::pair<bool, const Type *>> parameters;
+						for (const FormalParameter *next_formal_parameter : std::as_const(formal_parameter_collection)) {
+							const VarOrRef       &var_or_ref      = grammar.var_or_ref_storage.at(next_formal_parameter->var_or_ref);
+							const IdentList      &ident_list      = grammar.ident_list_storage.at(next_formal_parameter->ident_list);
+							const LexemeOperator &colon_operator0 = grammar.lexemes.at(next_formal_parameter->colon_operator0).get_operator(); (void) colon_operator0;
+							const ::Type         &type            = grammar.type_storage.at(next_formal_parameter->type);
+
+							// Are these parameters references?
+							bool is_ref;
+							switch (var_or_ref.branch) {
+								case VarOrRef::var_branch: {
+									const VarOrRef::Var &var_or_ref_var = grammar.var_or_ref_var_storage.at(var_or_ref.data);
+									const LexemeKeyword &var_keyword0   = grammar.lexemes.at(var_or_ref_var.var_keyword0).get_keyword(); (void) var_keyword0;
+									is_ref = false;
+									break;
+								};
+
+								case VarOrRef::ref_branch: {
+									const VarOrRef::Ref &var_or_ref_ref = grammar.var_or_ref_ref_storage.at(var_or_ref.data);
+									const LexemeKeyword &ref_keyword0   = grammar.lexemes.at(var_or_ref_ref.ref_keyword0).get_keyword(); (void) ref_keyword0;
+									is_ref = true;
+									break;
+								};
+
+								// Unrecognized branch.
+								default: {
+									std::ostringstream sstr;
+									sstr << "Semantics::analyze: internal error: invalid var_or_ref branch at index " << next_formal_parameter->var_or_ref << ": " << var_or_ref.branch;
+									throw SemanticsError(sstr.str());
+								}
+							}
+
+							// Get the type.
+							// Get the parameter type.
+							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
+							// Store a copy of this type in our anonymous type storage.
+							anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(temporary_type));
+							const Type *parameter_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
+
+							// Unpack the ident_list.
+							const LexemeIdentifier       &first_identifier         = grammar.lexemes.at(ident_list.identifier).get_identifier();
+							const IdentifierPrefixedList &identifier_prefixed_list = grammar.identifier_prefixed_list_storage.at(ident_list.identifier_prefixed_list);
+
+							// Collect the identifiers in the list.
+							std::vector<const LexemeIdentifier *> identifiers;
+							identifiers.push_back(&first_identifier);
+							bool reached_end = false;
+							for (const IdentifierPrefixedList *last_list = &identifier_prefixed_list; !reached_end; ) {
+								// Unpack the last list encountered.
+								switch(last_list->branch) {
+									case IdentifierPrefixedList::empty_branch: {
+										// We're done.
+										// (No need to unpack the empty branch.)
+										reached_end = true;
+										break;
+									}
+
+									case IdentifierPrefixedList::cons_branch: {
+										// Unpack the list.
+										const IdentifierPrefixedList::Cons &last_identifier_prefixed_list_cons = grammar.identifier_prefixed_list_cons_storage.at(last_list->data);
+										const IdentifierPrefixedList       &last_identifier_prefixed_list      = grammar.identifier_prefixed_list_storage.at(last_identifier_prefixed_list_cons.identifier_prefixed_list);
+										const LexemeOperator               &last_comma_operator0               = grammar.lexemes.at(last_identifier_prefixed_list_cons.comma_operator0).get_operator(); (void) last_comma_operator0;
+										const LexemeIdentifier             &last_identifier                    = grammar.lexemes.at(last_identifier_prefixed_list_cons.identifier).get_identifier();
+
+										// Add the identifier.
+										identifiers.push_back(&last_identifier);
+										last_list = &last_identifier_prefixed_list;
+
+										// Loop.
+										break;
+									}
+
+									// Unrecognized branch.
+									default: {
+										std::ostringstream sstr;
+										sstr << "Semantics::analyze: internal error: invalid identifier_prefixed_list branch at index " << last_list - &grammar.identifier_prefixed_list_storage[0] << ": " << last_list->branch;
+										throw SemanticsError(sstr.str());
+									}
+								}
+							}
+
+							// Correct the order of the list.
+							std::reverse(identifiers.begin() + 1, identifiers.end());
+
+							// Handle the identifiers.
+							for (const LexemeIdentifier *next_identifier : identifiers) {
+								if (in_parameter_names.find(next_identifier->text) != in_parameter_names.cend()) {
+									std::ostringstream sstr;
+									sstr
+										<< "Semantics::analyze: error (line "
+										<< next_identifier->line << " col " << next_identifier->column
+										<< "): duplicate parameter name ``" << next_identifier->text << "\" in routine declaration for ``" << identifier.text << "\"."
+										;
+									throw SemanticsError(sstr.str());
+								}
+								in_parameter_names.insert(next_identifier->text);
+								parameter_names.push_back(next_identifier->text);
+								parameters.push_back({is_ref, parameter_type});
+							}
+						}
+
+						// Is there a routine already declared with this name as a forward declaration?
+						if (!top_level_routine_scope.has(identifier.text)) {
+							// Get the analyzed routine declaration.
+							Symbol routine_symbol("routine_", identifier.text, definition.identifier);
+							IdentifierScope::IdentifierBinding::RoutineDeclaration routine_declaration(routine_symbol, parameters, std::optional<const Type *>());
+
+							// Add the routine declaration to scope.
+							IdentifierScope::IdentifierBinding binding {routine_declaration};
+							top_level_routine_scope.scope.insert({identifier.text, binding});
+							top_level_scope.scope.insert({identifier.text, binding});
+							routine_definitions.insert(identifier.text);
+						} else {
+							// Check to make sure the formal parameters in the
+							// definition are the same as those in the
+							// declaration.
+							const IdentifierScope::IdentifierBinding::RoutineDeclaration &declared_routine_declaration = top_level_routine_scope.get(identifier.text).get_routine_declaration();
+
+							// Get the analyzed routine declaration.
+							Symbol routine_symbol = declared_routine_declaration.location;
+							IdentifierScope::IdentifierBinding::RoutineDeclaration routine_declaration(routine_symbol, parameters, std::optional<const Type *>());
+
+							if (routine_declaration != declared_routine_declaration) {
+								std::ostringstream sstr;
+								sstr
+									<< "Semantics::analyze: error (line "
+									<< identifier.line << " col " << identifier.column
+									<< "): the function or procedure with identifier ``" << identifier.text << "\" has different formal parameters than those in the forward declaration."
+									;
+								throw SemanticsError(sstr.str());
+							}
+						}
+
+						// TODO: emit function definition.
 
 						// We're done handling the procedure definition.
 						break;
@@ -13987,8 +14473,6 @@ void Semantics::analyze() {
 						throw SemanticsError(sstr.str());
 					}
 				}
-
-				// TODO
 
 				// We're done handling the procedure.
 				break;
@@ -14015,7 +14499,214 @@ void Semantics::analyze() {
 						const LexemeKeyword         &forward_keyword0           = grammar.lexemes.at(forward.forward_keyword0).get_keyword(); (void) forward_keyword0;
 						const LexemeOperator        &semicolon_operator1        = grammar.lexemes.at(forward.semicolon_operator1).get_operator(); (void) semicolon_operator1;
 
-						// TODO
+						// Prepare parameter name list.
+						std::vector<std::string> parameter_names;
+						std::set<std::string>    in_parameter_names;
+
+						// Is there a routine already declared with this name?
+						if (top_level_routine_scope.has(identifier.text)) {
+							std::ostringstream sstr;
+							sstr
+								<< "Semantics::analyze: error (line "
+								<< identifier.line << " col " << identifier.column
+								<< "): redeclaration of function or procedure ``" << identifier.text << "\"."
+								;
+							throw SemanticsError(sstr.str());
+						}
+						if (combine_identifier_namespaces && top_level_scope.has(identifier.text)) {
+							std::ostringstream sstr;
+							sstr
+								<< "Semantics::analyze: error (line "
+								<< identifier.line << " col " << identifier.column
+								<< "): function or procedure identifier ``" << identifier.text << "\" has already been assigned."
+								<< "  Set combine_identifier_namespaces to false to isolate identifier namespaces"
+								<< " from each other."
+								;
+							throw SemanticsError(sstr.str());
+						}
+
+						// Get the output type.
+						Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
+						// Store a copy of this type in our anonymous type storage.
+						anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(temporary_type));
+						const Type *output_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
+
+						// Collect the formal parameters in the list.
+						std::vector<const FormalParameter *> formal_parameter_collection;
+						switch (formal_parameters.branch) {
+							case FormalParameters::empty_branch: {
+								// No need to retrieve the empty value.
+								break;
+							}
+
+							case FormalParameters::first_branch: {
+								const FormalParameters::First      &formal_parameters_first        = grammar.formal_parameters_first_storage.at(formal_parameters.data);
+								const FormalParameter              &first_formal_parameter         = grammar.formal_parameter_storage.at(formal_parameters_first.formal_parameter);
+								const FormalParameterPrefixedList  &formal_parameter_prefixed_list = grammar.formal_parameter_prefixed_list_storage.at(formal_parameters_first.formal_parameter_prefixed_list);
+
+								// Collect the formal parameters in the list.
+								formal_parameter_collection.push_back(&first_formal_parameter);
+								bool reached_end = false;
+								for (const FormalParameterPrefixedList *last_list = &formal_parameter_prefixed_list; !reached_end; ) {
+									// Unpack the last list encountered.
+									switch(last_list->branch) {
+										case FormalParameterPrefixedList::empty_branch: {
+											// We're done.
+											// (No need to unpack the empty branch.)
+											reached_end = true;
+											break;
+										}
+
+										case FormalParameterPrefixedList::cons_branch: {
+											// Unpack the list.
+											const FormalParameterPrefixedList::Cons &last_formal_parameter_prefixed_list_cons = grammar.formal_parameter_prefixed_list_cons_storage.at(last_list->data);
+											const FormalParameterPrefixedList       &last_formal_parameter_prefixed_list      = grammar.formal_parameter_prefixed_list_storage.at(last_formal_parameter_prefixed_list_cons.formal_parameter_prefixed_list);
+											const LexemeOperator                    &last_semicolon_operator0                 = grammar.lexemes.at(last_formal_parameter_prefixed_list_cons.semicolon_operator0).get_operator(); (void) last_semicolon_operator0;
+											const FormalParameter                   &last_formal_parameter                    = grammar.formal_parameter_storage.at(last_formal_parameter_prefixed_list_cons.formal_parameter);
+
+											// Add the formal_parameter.
+											formal_parameter_collection.push_back(&last_formal_parameter);
+											last_list = &last_formal_parameter_prefixed_list;
+
+											// Loop.
+											break;
+										}
+
+										// Unrecognized branch.
+										default: {
+											std::ostringstream sstr;
+											sstr << "Semantics::analyze: internal error: invalid formal_parameter_prefixed_list branch at index " << last_list - &grammar.formal_parameter_prefixed_list_storage[0] << ": " << last_list->branch;
+											throw SemanticsError(sstr.str());
+										}
+									}
+								}
+
+								// Correct the order of the list.
+								std::reverse(formal_parameter_collection.begin() + 1, formal_parameter_collection.end());
+
+								// We've finished collecting the formal parameters.
+								break;
+							}
+
+							// Unrecognized branch.
+							default: {
+								std::ostringstream sstr;
+								sstr << "Semantics::analyze: internal error: invalid formal_parameters branch at index " << forward.formal_parameters << ": " << formal_parameters.branch;
+								throw SemanticsError(sstr.str());
+							}
+						}
+
+						// Handle the formal parameters.
+						std::vector<std::pair<bool, const Type *>> parameters;
+						for (const FormalParameter *next_formal_parameter : std::as_const(formal_parameter_collection)) {
+							const VarOrRef       &var_or_ref      = grammar.var_or_ref_storage.at(next_formal_parameter->var_or_ref);
+							const IdentList      &ident_list      = grammar.ident_list_storage.at(next_formal_parameter->ident_list);
+							const LexemeOperator &colon_operator0 = grammar.lexemes.at(next_formal_parameter->colon_operator0).get_operator(); (void) colon_operator0;
+							const ::Type         &type            = grammar.type_storage.at(next_formal_parameter->type);
+
+							// Are these parameters references?
+							bool is_ref;
+							switch (var_or_ref.branch) {
+								case VarOrRef::var_branch: {
+									const VarOrRef::Var &var_or_ref_var = grammar.var_or_ref_var_storage.at(var_or_ref.data);
+									const LexemeKeyword &var_keyword0   = grammar.lexemes.at(var_or_ref_var.var_keyword0).get_keyword(); (void) var_keyword0;
+									is_ref = false;
+									break;
+								};
+
+								case VarOrRef::ref_branch: {
+									const VarOrRef::Ref &var_or_ref_ref = grammar.var_or_ref_ref_storage.at(var_or_ref.data);
+									const LexemeKeyword &ref_keyword0   = grammar.lexemes.at(var_or_ref_ref.ref_keyword0).get_keyword(); (void) ref_keyword0;
+									is_ref = true;
+									break;
+								};
+
+								// Unrecognized branch.
+								default: {
+									std::ostringstream sstr;
+									sstr << "Semantics::analyze: internal error: invalid var_or_ref branch at index " << next_formal_parameter->var_or_ref << ": " << var_or_ref.branch;
+									throw SemanticsError(sstr.str());
+								}
+							}
+
+							// Get the type.
+							// Get the parameter type.
+							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
+							// Store a copy of this type in our anonymous type storage.
+							anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(temporary_type));
+							const Type *parameter_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
+
+							// Unpack the ident_list.
+							const LexemeIdentifier       &first_identifier         = grammar.lexemes.at(ident_list.identifier).get_identifier();
+							const IdentifierPrefixedList &identifier_prefixed_list = grammar.identifier_prefixed_list_storage.at(ident_list.identifier_prefixed_list);
+
+							// Collect the identifiers in the list.
+							std::vector<const LexemeIdentifier *> identifiers;
+							identifiers.push_back(&first_identifier);
+							bool reached_end = false;
+							for (const IdentifierPrefixedList *last_list = &identifier_prefixed_list; !reached_end; ) {
+								// Unpack the last list encountered.
+								switch(last_list->branch) {
+									case IdentifierPrefixedList::empty_branch: {
+										// We're done.
+										// (No need to unpack the empty branch.)
+										reached_end = true;
+										break;
+									}
+
+									case IdentifierPrefixedList::cons_branch: {
+										// Unpack the list.
+										const IdentifierPrefixedList::Cons &last_identifier_prefixed_list_cons = grammar.identifier_prefixed_list_cons_storage.at(last_list->data);
+										const IdentifierPrefixedList       &last_identifier_prefixed_list      = grammar.identifier_prefixed_list_storage.at(last_identifier_prefixed_list_cons.identifier_prefixed_list);
+										const LexemeOperator               &last_comma_operator0               = grammar.lexemes.at(last_identifier_prefixed_list_cons.comma_operator0).get_operator(); (void) last_comma_operator0;
+										const LexemeIdentifier             &last_identifier                    = grammar.lexemes.at(last_identifier_prefixed_list_cons.identifier).get_identifier();
+
+										// Add the identifier.
+										identifiers.push_back(&last_identifier);
+										last_list = &last_identifier_prefixed_list;
+
+										// Loop.
+										break;
+									}
+
+									// Unrecognized branch.
+									default: {
+										std::ostringstream sstr;
+										sstr << "Semantics::analyze: internal error: invalid identifier_prefixed_list branch at index " << last_list - &grammar.identifier_prefixed_list_storage[0] << ": " << last_list->branch;
+										throw SemanticsError(sstr.str());
+									}
+								}
+							}
+
+							// Correct the order of the list.
+							std::reverse(identifiers.begin() + 1, identifiers.end());
+
+							// Handle the identifiers.
+							for (const LexemeIdentifier *next_identifier : identifiers) {
+								if (in_parameter_names.find(next_identifier->text) != in_parameter_names.cend()) {
+									std::ostringstream sstr;
+									sstr
+										<< "Semantics::analyze: error (line "
+										<< next_identifier->line << " col " << next_identifier->column
+										<< "): duplicate parameter name ``" << next_identifier->text << "\" in routine declaration for ``" << identifier.text << "\"."
+										;
+									throw SemanticsError(sstr.str());
+								}
+								in_parameter_names.insert(next_identifier->text);
+								parameter_names.push_back(next_identifier->text);
+								parameters.push_back({is_ref, parameter_type});
+							}
+						}
+
+						// Add the routine declaration to scope.
+						Symbol routine_symbol("routine_", identifier.text, forward.identifier);
+						IdentifierScope::IdentifierBinding::RoutineDeclaration routine_declaration(routine_symbol, parameters, std::optional<const Type *>(output_type));
+						IdentifierScope::IdentifierBinding binding {routine_declaration};
+						top_level_routine_scope.scope.insert({identifier.text, binding});
+						top_level_scope.scope.insert({identifier.text, binding});
+
+						// parameter_names is unused here.
+						(void) parameter_names;
 
 						// We're done handling the forward declaration.
 						break;
@@ -14035,7 +14726,246 @@ void Semantics::analyze() {
 						const Body                     &body                       = grammar.body_storage.at(definition.body);
 						const LexemeOperator           &semicolon_operator1        = grammar.lexemes.at(definition.semicolon_operator1).get_operator(); (void) semicolon_operator1;
 
-						// TODO
+						// Prepare parameter name list.
+						std::vector<std::string> parameter_names;
+						std::set<std::string>    in_parameter_names;
+
+						// Is there a routine already declared with this name?
+						if (top_level_routine_scope.has(identifier.text)) {
+							if (routine_definitions.find(identifier.text) != routine_definitions.cend()) {
+								std::ostringstream sstr;
+								sstr
+									<< "Semantics::analyze: error (line "
+									<< identifier.line << " col " << identifier.column
+									<< "): redefinition of function or procedure ``" << identifier.text << "\"."
+									;
+								throw SemanticsError(sstr.str());
+							}
+
+							// We'll check to make sure the formal parameters
+							// in the definition are the same as those in the
+							// declaration after we analyze them.
+						} else {
+							if (combine_identifier_namespaces && top_level_scope.has(identifier.text)) {
+								std::ostringstream sstr;
+								sstr
+									<< "Semantics::analyze: error (line "
+									<< identifier.line << " col " << identifier.column
+									<< "): function or procedure identifier ``" << identifier.text << "\" has already been assigned."
+									<< "  Set combine_identifier_namespaces to false to isolate identifier namespaces"
+									<< " from each other."
+									;
+								throw SemanticsError(sstr.str());
+							}
+							routine_definitions.insert(identifier.text);
+						}
+
+						// Get the output type.
+						Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
+						// Store a copy of this type in our anonymous type storage.
+						anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(temporary_type));
+						const Type *output_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
+
+						// Collect the formal parameters in the list.
+						std::vector<const FormalParameter *> formal_parameter_collection;
+						switch (formal_parameters.branch) {
+							case FormalParameters::empty_branch: {
+								// No need to retrieve the empty value.
+								break;
+							}
+
+							case FormalParameters::first_branch: {
+								const FormalParameters::First      &formal_parameters_first        = grammar.formal_parameters_first_storage.at(formal_parameters.data);
+								const FormalParameter              &first_formal_parameter         = grammar.formal_parameter_storage.at(formal_parameters_first.formal_parameter);
+								const FormalParameterPrefixedList  &formal_parameter_prefixed_list = grammar.formal_parameter_prefixed_list_storage.at(formal_parameters_first.formal_parameter_prefixed_list);
+
+								// Collect the formal parameters in the list.
+								formal_parameter_collection.push_back(&first_formal_parameter);
+								bool reached_end = false;
+								for (const FormalParameterPrefixedList *last_list = &formal_parameter_prefixed_list; !reached_end; ) {
+									// Unpack the last list encountered.
+									switch(last_list->branch) {
+										case FormalParameterPrefixedList::empty_branch: {
+											// We're done.
+											// (No need to unpack the empty branch.)
+											reached_end = true;
+											break;
+										}
+
+										case FormalParameterPrefixedList::cons_branch: {
+											// Unpack the list.
+											const FormalParameterPrefixedList::Cons &last_formal_parameter_prefixed_list_cons = grammar.formal_parameter_prefixed_list_cons_storage.at(last_list->data);
+											const FormalParameterPrefixedList       &last_formal_parameter_prefixed_list      = grammar.formal_parameter_prefixed_list_storage.at(last_formal_parameter_prefixed_list_cons.formal_parameter_prefixed_list);
+											const LexemeOperator                    &last_semicolon_operator0                 = grammar.lexemes.at(last_formal_parameter_prefixed_list_cons.semicolon_operator0).get_operator(); (void) last_semicolon_operator0;
+											const FormalParameter                   &last_formal_parameter                    = grammar.formal_parameter_storage.at(last_formal_parameter_prefixed_list_cons.formal_parameter);
+
+											// Add the formal_parameter.
+											formal_parameter_collection.push_back(&last_formal_parameter);
+											last_list = &last_formal_parameter_prefixed_list;
+
+											// Loop.
+											break;
+										}
+
+										// Unrecognized branch.
+										default: {
+											std::ostringstream sstr;
+											sstr << "Semantics::analyze: internal error: invalid formal_parameter_prefixed_list branch at index " << last_list - &grammar.formal_parameter_prefixed_list_storage[0] << ": " << last_list->branch;
+											throw SemanticsError(sstr.str());
+										}
+									}
+								}
+
+								// Correct the order of the list.
+								std::reverse(formal_parameter_collection.begin() + 1, formal_parameter_collection.end());
+
+								// We've finished collecting the formal parameters.
+								break;
+							}
+
+							// Unrecognized branch.
+							default: {
+								std::ostringstream sstr;
+								sstr << "Semantics::analyze: internal error: invalid formal_parameters branch at index " << definition.formal_parameters << ": " << formal_parameters.branch;
+								throw SemanticsError(sstr.str());
+							}
+						}
+
+						// Handle the formal parameters.
+						std::vector<std::pair<bool, const Type *>> parameters;
+						for (const FormalParameter *next_formal_parameter : std::as_const(formal_parameter_collection)) {
+							const VarOrRef       &var_or_ref      = grammar.var_or_ref_storage.at(next_formal_parameter->var_or_ref);
+							const IdentList      &ident_list      = grammar.ident_list_storage.at(next_formal_parameter->ident_list);
+							const LexemeOperator &colon_operator0 = grammar.lexemes.at(next_formal_parameter->colon_operator0).get_operator(); (void) colon_operator0;
+							const ::Type         &type            = grammar.type_storage.at(next_formal_parameter->type);
+
+							// Are these parameters references?
+							bool is_ref;
+							switch (var_or_ref.branch) {
+								case VarOrRef::var_branch: {
+									const VarOrRef::Var &var_or_ref_var = grammar.var_or_ref_var_storage.at(var_or_ref.data);
+									const LexemeKeyword &var_keyword0   = grammar.lexemes.at(var_or_ref_var.var_keyword0).get_keyword(); (void) var_keyword0;
+									is_ref = false;
+									break;
+								};
+
+								case VarOrRef::ref_branch: {
+									const VarOrRef::Ref &var_or_ref_ref = grammar.var_or_ref_ref_storage.at(var_or_ref.data);
+									const LexemeKeyword &ref_keyword0   = grammar.lexemes.at(var_or_ref_ref.ref_keyword0).get_keyword(); (void) ref_keyword0;
+									is_ref = true;
+									break;
+								};
+
+								// Unrecognized branch.
+								default: {
+									std::ostringstream sstr;
+									sstr << "Semantics::analyze: internal error: invalid var_or_ref branch at index " << next_formal_parameter->var_or_ref << ": " << var_or_ref.branch;
+									throw SemanticsError(sstr.str());
+								}
+							}
+
+							// Get the type.
+							// Get the parameter type.
+							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
+							// Store a copy of this type in our anonymous type storage.
+							anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(temporary_type));
+							const Type *parameter_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
+
+							// Unpack the ident_list.
+							const LexemeIdentifier       &first_identifier         = grammar.lexemes.at(ident_list.identifier).get_identifier();
+							const IdentifierPrefixedList &identifier_prefixed_list = grammar.identifier_prefixed_list_storage.at(ident_list.identifier_prefixed_list);
+
+							// Collect the identifiers in the list.
+							std::vector<const LexemeIdentifier *> identifiers;
+							identifiers.push_back(&first_identifier);
+							bool reached_end = false;
+							for (const IdentifierPrefixedList *last_list = &identifier_prefixed_list; !reached_end; ) {
+								// Unpack the last list encountered.
+								switch(last_list->branch) {
+									case IdentifierPrefixedList::empty_branch: {
+										// We're done.
+										// (No need to unpack the empty branch.)
+										reached_end = true;
+										break;
+									}
+
+									case IdentifierPrefixedList::cons_branch: {
+										// Unpack the list.
+										const IdentifierPrefixedList::Cons &last_identifier_prefixed_list_cons = grammar.identifier_prefixed_list_cons_storage.at(last_list->data);
+										const IdentifierPrefixedList       &last_identifier_prefixed_list      = grammar.identifier_prefixed_list_storage.at(last_identifier_prefixed_list_cons.identifier_prefixed_list);
+										const LexemeOperator               &last_comma_operator0               = grammar.lexemes.at(last_identifier_prefixed_list_cons.comma_operator0).get_operator(); (void) last_comma_operator0;
+										const LexemeIdentifier             &last_identifier                    = grammar.lexemes.at(last_identifier_prefixed_list_cons.identifier).get_identifier();
+
+										// Add the identifier.
+										identifiers.push_back(&last_identifier);
+										last_list = &last_identifier_prefixed_list;
+
+										// Loop.
+										break;
+									}
+
+									// Unrecognized branch.
+									default: {
+										std::ostringstream sstr;
+										sstr << "Semantics::analyze: internal error: invalid identifier_prefixed_list branch at index " << last_list - &grammar.identifier_prefixed_list_storage[0] << ": " << last_list->branch;
+										throw SemanticsError(sstr.str());
+									}
+								}
+							}
+
+							// Correct the order of the list.
+							std::reverse(identifiers.begin() + 1, identifiers.end());
+
+							// Handle the identifiers.
+							for (const LexemeIdentifier *next_identifier : identifiers) {
+								if (in_parameter_names.find(next_identifier->text) != in_parameter_names.cend()) {
+									std::ostringstream sstr;
+									sstr
+										<< "Semantics::analyze: error (line "
+										<< next_identifier->line << " col " << next_identifier->column
+										<< "): duplicate parameter name ``" << next_identifier->text << "\" in routine declaration for ``" << identifier.text << "\"."
+										;
+									throw SemanticsError(sstr.str());
+								}
+								in_parameter_names.insert(next_identifier->text);
+								parameter_names.push_back(next_identifier->text);
+								parameters.push_back({is_ref, parameter_type});
+							}
+						}
+
+						// Is there a routine already declared with this name as a forward declaration?
+						if (!top_level_routine_scope.has(identifier.text)) {
+							// Get the analyzed routine declaration.
+							Symbol routine_symbol("routine_", identifier.text, definition.identifier);
+							IdentifierScope::IdentifierBinding::RoutineDeclaration routine_declaration(routine_symbol, parameters, std::optional<const Type *>(output_type));
+
+							// Add the routine declaration to scope.
+							IdentifierScope::IdentifierBinding binding {routine_declaration};
+							top_level_routine_scope.scope.insert({identifier.text, binding});
+							top_level_scope.scope.insert({identifier.text, binding});
+							routine_definitions.insert(identifier.text);
+						} else {
+							// Check to make sure the formal parameters in the
+							// definition are the same as those in the
+							// declaration.
+							const IdentifierScope::IdentifierBinding::RoutineDeclaration &declared_routine_declaration = top_level_routine_scope.get(identifier.text).get_routine_declaration();
+
+							// Get the analyzed routine declaration.
+							Symbol routine_symbol = declared_routine_declaration.location;
+							IdentifierScope::IdentifierBinding::RoutineDeclaration routine_declaration(routine_symbol, parameters, std::optional<const Type *>(output_type));
+
+							if (routine_declaration != declared_routine_declaration) {
+								std::ostringstream sstr;
+								sstr
+									<< "Semantics::analyze: error (line "
+									<< identifier.line << " col " << identifier.column
+									<< "): the function or procedure with identifier ``" << identifier.text << "\" has different formal parameters than those in the forward declaration."
+									;
+								throw SemanticsError(sstr.str());
+							}
+						}
+
+						// TODO: emit function definition.
 
 						// We're done handling the function definition.
 						break;
@@ -14049,8 +14979,6 @@ void Semantics::analyze() {
 					}
 				}
 
-				// TODO
-
 				// We're done handling the function.
 				break;
 			}
@@ -14062,6 +14990,22 @@ void Semantics::analyze() {
 				throw SemanticsError(sstr.str());
 			}
 		}
+	}
+
+	// Make sure all routine declarations are defined.
+	if (top_level_routine_scope.scope.size() != routine_definitions.size()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::analyze: error: there are forward function or procedure declarations that are missing definitions:";
+		for (const std::map<std::string, IdentifierScope::IdentifierBinding>::value_type &binding_pair : std::as_const(top_level_routine_scope.scope)) {
+			const std::string                        &identifier = binding_pair.first;
+			const IdentifierScope::IdentifierBinding &binding    = binding_pair.second; (void) binding;
+
+			if (routine_definitions.find(identifier) == routine_definitions.cend()) {
+				sstr << std::endl << "\t- " << identifier;
+			}
+		}
+
+		throw SemanticsError(sstr.str());
 	}
 
 	// Next, analyze the top-level block (main).

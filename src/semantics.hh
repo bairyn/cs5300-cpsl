@@ -613,6 +613,17 @@ public:
 				// | <is_ref, type>
 				std::vector<std::pair<bool, const Type *>> parameters;
 				std::optional<const Type *>                output;
+
+				std::vector<std::pair<bool, Type>> get_dereferenced_parameters() const;
+				std::optional<Type>                get_dereferenced_output()     const;
+
+				inline bool operator< (const RoutineDeclaration &other) const;
+				inline bool operator> (const RoutineDeclaration &other) const;
+				inline bool operator<=(const RoutineDeclaration &other) const;
+				inline bool operator>=(const RoutineDeclaration &other) const;
+
+				inline bool operator==(const RoutineDeclaration &other) const;
+				inline bool operator!=(const RoutineDeclaration &other) const;
 			};
 
 			using data_t = std::variant<
@@ -668,11 +679,6 @@ public:
 		std::map<std::string, IdentifierBinding> scope;
 		// | Anonymous identifier bindings mapped by index.
 		std::vector<IdentifierBinding> anonymous_bindings;
-
-		// | The bindings should be Routine Types.
-		std::map<std::string, IdentifierBinding> routine_declarations;
-		// | The bindings should be Blocks.
-		std::map<std::string, IdentifierBinding> routine_definitions;
 
 		bool has(std::string identifier) const;
 
@@ -1535,6 +1541,7 @@ protected:
 	IdentifierScope top_level_scope;
 	// | The lifetime of anonymous_storage should not exceed that of *_scope, since they may contain raw pointers into this storage.
 	IdentifierScope anonymous_storage;
+	std::set<std::string> routine_definitions;
 
 	// | Ordered copy of the Var identifier bindings in top_level_var_scope.
 	std::vector<IdentifierScope::IdentifierBinding::Var> top_level_vars;
