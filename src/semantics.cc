@@ -14024,10 +14024,14 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 	last_intro_index     = block_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, Storage("$sp", 4, 0, true), Storage("$ra"), false, false)}, {}, last_intro_index);
 
 	// Allocate space on the stack.  Bypass AddSp's Storage adjustments since we're manually setting $sp so that our Storages are correct, by using a Custom instruction.
-	last_intro_index     = block_semantics.instructions.add_instruction({I::Custom(B(), {"\taddiu $sp, $sp, " + std::to_string(-stack_allocated)})}, {}, last_intro_index);
+	if (stack_allocated > 0) {
+		last_intro_index     = block_semantics.instructions.add_instruction({I::Custom(B(), {"\taddiu $sp, $sp, " + std::to_string(-stack_allocated)})}, {}, last_intro_index);
+	}
 
 	// Reverse what intro did.
-	block_semantics.back = block_semantics.instructions.add_instruction({I::Custom(B(), {"\taddiu $sp, $sp, " + std::to_string(stack_allocated)})}, {}, block_semantics.back);
+	if (stack_allocated > 0) {
+		block_semantics.back = block_semantics.instructions.add_instruction({I::Custom(B(), {"\taddiu $sp, $sp, " + std::to_string(stack_allocated)})}, {}, block_semantics.back);
+	}
 	block_semantics.back = block_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, Storage("$ra"), Storage("$sp", 4, 0, true), false, false)}, {}, block_semantics.back);
 	block_semantics.back = block_semantics.instructions.add_instruction({I::AddSp(B(), 4)}, {}, block_semantics.back);
 
