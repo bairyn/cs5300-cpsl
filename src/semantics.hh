@@ -1,6 +1,5 @@
 #ifndef CPSL_CC_SEMANTICS_HH
 #define CPSL_CC_SEMANTICS_HH
-// TODO: 5-space, not 4-space, instruction alignment.
 
 #include <cstdint>    // int32_t, uint32_t, uint64_t
 #include <map>        // std::map
@@ -46,7 +45,7 @@ public:
 //       sequence connection delays and shadowing happen during development.
 #undef CPSL_CC_SEMANTICS_PERMIT_SEQUENCE_CONNECTION_DELAYS
 #undef CPSL_CC_SEMANTICS_PERMIT_SHADOWING
-#define CPSL_CC_SEMANTICS_PERMIT_SEQUUENCE_CONNECTION_DELAYS       false
+#define CPSL_CC_SEMANTICS_PERMIT_SEQUENCE_CONNECTION_DELAYS        false
 #define CPSL_CC_SEMANTICS_PERMIT_SHADOWING                         false
 
 class Semantics {
@@ -1462,6 +1461,10 @@ public:
 	// A routine that adds a var adds an input.  A routine that adds a ref adds
 	// an input and output.  A CPSL function as opposed to procedure adds an
 	// output.
+	//
+	// TODO: possible optimization: linear Vars become working storages rather
+	// than fixed storages (i.e. when it is only accessed once (or zero times
+	// ("affine linear")).)
 	class Block {
 	public:
 		MIPSIO instructions;
