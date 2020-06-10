@@ -1490,6 +1490,14 @@ public:
 	// keyword.
 	Block analyze_statements(const std::vector<uint64_t> &statements, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
 
+	// | Analyze a BEGIN [statement]... END block.
+	std::vector<Output::Line> analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
+
+	// | Analyze a routine definition.
+	//
+	// "analyze_block" but look for additional types, constants, and variables.
+	std::vector<Output::Line> analyze_routine(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const Body &body, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
+
 	// | Get the symbol to a string literal, tracking it if this is the first time encountering it.
 	Symbol string_literal(const std::string &string);
 	static const uint64_t max_string_requested_label_suffix_length;

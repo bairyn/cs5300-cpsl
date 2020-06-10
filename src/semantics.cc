@@ -2253,6 +2253,9 @@ Semantics::IdentifierScope::IdentifierBinding::Var::Var(const Type &type, const 
 	, storage(storage)
 	{}
 
+Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::RoutineDeclaration()
+	{}
+
 Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::RoutineDeclaration(const Symbol &location, const std::vector<std::pair<bool, const Type *>> &parameters, std::optional<const Type *> output)
 	: location(location)
 	, parameters(parameters)
@@ -13261,6 +13264,24 @@ Semantics::Block Semantics::analyze_statements(const std::vector<uint64_t> &stat
 	return block;
 }
 
+// | Analyze a BEGIN [statement]... END block.
+std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
+	// TODO
+	return std::vector<Output::Line>();
+
+	std::vector<Output::Line> output_lines;
+}
+
+// | Analyze a routine definition.
+//
+// "analyze_block" but look for additional types, constants, and variables.
+std::vector<Semantics::Output::Line> Semantics::analyze_routine(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const Body &body, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
+	// TODO
+	return std::vector<Output::Line>();
+
+	std::vector<Output::Line> output_lines;
+}
+
 // | Get the symbol to a string literal, tracking it if this is the first time encountering it.
 Semantics::Symbol Semantics::string_literal(const std::string &string) {
 	std::map<std::string, Symbol>::const_iterator string_constants_search = string_constants.find(string);
@@ -13947,6 +13968,14 @@ void Semantics::analyze() {
 	}
 	output.add_line(Output::text_section, ".text");
 
+	// Add the following intro:
+	// start:
+	// 	j main
+	// 
+	output.add_line(Output::text_section, "start:");
+	output.add_line(Output::text_section, "\tj main");
+	output.add_line(Output::text_section, "");
+
 	// Collect the procedure_decl_or_function_decls in the list.
 	std::vector<const ProcedureDeclOrFunctionDecl *> procedure_decl_or_function_decls;
 	bool reached_end = false;
@@ -14429,10 +14458,12 @@ void Semantics::analyze() {
 						}
 
 						// Is there a routine already declared with this name as a forward declaration?
+						Symbol routine_symbol;
+						IdentifierScope::IdentifierBinding::RoutineDeclaration routine_declaration;
 						if (!top_level_routine_scope.has(identifier.text)) {
 							// Get the analyzed routine declaration.
-							Symbol routine_symbol("routine_", identifier.text, definition.identifier);
-							IdentifierScope::IdentifierBinding::RoutineDeclaration routine_declaration(routine_symbol, parameters, std::optional<const Type *>());
+							routine_symbol = Symbol("routine_", identifier.text, definition.identifier);
+							routine_declaration = IdentifierScope::IdentifierBinding::RoutineDeclaration(routine_symbol, parameters, std::optional<const Type *>());
 
 							// Add the routine declaration to scope.
 							IdentifierScope::IdentifierBinding binding {routine_declaration};
@@ -14446,8 +14477,8 @@ void Semantics::analyze() {
 							const IdentifierScope::IdentifierBinding::RoutineDeclaration &declared_routine_declaration = top_level_routine_scope.get(identifier.text).get_routine_declaration();
 
 							// Get the analyzed routine declaration.
-							Symbol routine_symbol = declared_routine_declaration.location;
-							IdentifierScope::IdentifierBinding::RoutineDeclaration routine_declaration(routine_symbol, parameters, std::optional<const Type *>());
+							routine_symbol = std::as_const(declared_routine_declaration.location);
+							routine_declaration = IdentifierScope::IdentifierBinding::RoutineDeclaration(routine_symbol, parameters, std::optional<const Type *>());
 
 							if (routine_declaration != declared_routine_declaration) {
 								std::ostringstream sstr;
@@ -14460,7 +14491,12 @@ void Semantics::analyze() {
 							}
 						}
 
-						// TODO: emit function definition.
+						// Emit function definition.
+						std::vector<Output::Line> routine_definition_lines;
+						routine_definition_lines = analyze_routine(routine_declaration, body, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope);
+						output.add_line(Output::text_section, ":", routine_symbol);
+						output.add_lines(Output::text_section, routine_definition_lines);
+						output.add_line(Output::text_section, "");
 
 						// We're done handling the procedure definition.
 						break;
@@ -14934,10 +14970,12 @@ void Semantics::analyze() {
 						}
 
 						// Is there a routine already declared with this name as a forward declaration?
+						Symbol routine_symbol;
+						IdentifierScope::IdentifierBinding::RoutineDeclaration routine_declaration;
 						if (!top_level_routine_scope.has(identifier.text)) {
 							// Get the analyzed routine declaration.
-							Symbol routine_symbol("routine_", identifier.text, definition.identifier);
-							IdentifierScope::IdentifierBinding::RoutineDeclaration routine_declaration(routine_symbol, parameters, std::optional<const Type *>(output_type));
+							routine_symbol = Symbol("routine_", identifier.text, definition.identifier);
+							routine_declaration = IdentifierScope::IdentifierBinding::RoutineDeclaration(routine_symbol, parameters, std::optional<const Type *>(output_type));
 
 							// Add the routine declaration to scope.
 							IdentifierScope::IdentifierBinding binding {routine_declaration};
@@ -14951,8 +14989,8 @@ void Semantics::analyze() {
 							const IdentifierScope::IdentifierBinding::RoutineDeclaration &declared_routine_declaration = top_level_routine_scope.get(identifier.text).get_routine_declaration();
 
 							// Get the analyzed routine declaration.
-							Symbol routine_symbol = declared_routine_declaration.location;
-							IdentifierScope::IdentifierBinding::RoutineDeclaration routine_declaration(routine_symbol, parameters, std::optional<const Type *>(output_type));
+							routine_symbol = std::as_const(declared_routine_declaration.location);
+							routine_declaration = IdentifierScope::IdentifierBinding::RoutineDeclaration(routine_symbol, parameters, std::optional<const Type *>(output_type));
 
 							if (routine_declaration != declared_routine_declaration) {
 								std::ostringstream sstr;
@@ -14965,7 +15003,12 @@ void Semantics::analyze() {
 							}
 						}
 
-						// TODO: emit function definition.
+						// Emit function definition.
+						std::vector<Output::Line> routine_definition_lines;
+						routine_definition_lines = analyze_routine(routine_declaration, body, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope);
+						output.add_line(Output::text_section, ":", routine_symbol);
+						output.add_lines(Output::text_section, routine_definition_lines);
+						output.add_line(Output::text_section, "");
 
 						// We're done handling the function definition.
 						break;
@@ -15015,7 +15058,17 @@ void Semantics::analyze() {
 	const StatementSequence &statement_sequence = grammar.statement_sequence_storage.at(block.statement_sequence);
 	const LexemeKeyword &end_keyword0           = grammar.lexemes.at(block.end_keyword0).get_keyword(); (void) end_keyword0;
 
-	// TODO
+	// Add the label for main.
+	//output.add_line(Output::text_section, "main:");
+
+	// Emit main definition.
+	Symbol main_routine_symbol("main", "", 0);
+	std::vector<std::pair<bool, const Type *>> main_parameters;
+	IdentifierScope::IdentifierBinding::RoutineDeclaration main_routine_declaration(main_routine_symbol, main_parameters, std::optional<const Type *>());
+	std::vector<Output::Line> main_routine_definition_lines;
+	main_routine_definition_lines = analyze_block(main_routine_declaration, block, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope);
+	output.add_line(Output::text_section, ":", main_routine_symbol);
+	output.add_lines(Output::text_section, main_routine_definition_lines);
 
 	// The string literals have been analyzed by this point.
 	// Add the string literal declarations.
