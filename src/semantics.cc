@@ -10107,6 +10107,7 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 		if (visited_instructions.find(this_node) != visited_instructions.cend()) {
 			children_stack.pop_back();
 			in_children_stack.erase(this_node);
+			continue;
 		}
 
 		// If this node has unvisited children, push them onto the stack, and
@@ -10517,6 +10518,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 		if (visited_instructions.find(this_node) != visited_instructions.cend()) {
 			children_stack.pop_back();
 			in_children_stack.erase(this_node);
+			continue;
 		}
 
 		// If this node has unvisited children, push them onto the stack, and
