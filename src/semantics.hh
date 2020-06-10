@@ -1,6 +1,5 @@
 #ifndef CPSL_CC_SEMANTICS_HH
 #define CPSL_CC_SEMANTICS_HH
-// TODO: constant bool switch to enable shadowing.
 // TODO: 5-space, not 4-space, instruction alignment.
 
 #include <cstdint>    // int32_t, uint32_t, uint64_t
@@ -40,11 +39,20 @@ public:
 #define CPSL_CC_SEMANTICS_MAX_UNIQUE_TRY_ITERATIONS                A_BILLION  // fun
 #define CPSL_CC_SEMANTICS_MAX_STRING_REQUESTED_LABEL_SUFFIX_LENGTH 32
 #define CPSL_CC_SEMANTICS_ALL_ARRAY_RECORDS_ARE_REFS               false
-#define CPSL_CC_SEMANTICS_PERMIT_SEQUENCE_CONNECTION_DELAYS        false
+#define CPSL_CC_SEMANTICS_PERMIT_SEQUENCE_CONNECTION_DELAYS        true
+#define CPSL_CC_SEMANTICS_PERMIT_SHADOWING                         true
+
+// TODO: remove these redefinitions; they're only here to let me know when
+//       sequence connection delays and shadowing happen during development.
+#undef CPSL_CC_SEMANTICS_PERMIT_SEQUENCE_CONNECTION_DELAYS
+#undef CPSL_CC_SEMANTICS_PERMIT_SHADOWING
+#define CPSL_CC_SEMANTICS_PERMIT_SEQUUENCE_CONNECTION_DELAYS       false
+#define CPSL_CC_SEMANTICS_PERMIT_SHADOWING                         false
 
 class Semantics {
 public:
 	static const bool combine_identifier_namespaces;
+	static const bool permit_shadowing;
 
 	// | In the assembled output, locations marked as symbols will be replaced
 	// with a unique and consistent substring.

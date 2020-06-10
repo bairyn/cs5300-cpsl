@@ -36,6 +36,8 @@ SemanticsError::SemanticsError(const std::string &message)
 
 const bool Semantics::combine_identifier_namespaces = CPSL_CC_SEMANTICS_COMBINE_IDENTIFIER_NAMESPACES;
 
+const bool Semantics::permit_shadowing = CPSL_CC_SEMANTICS_PERMIT_SHADOWING;
+
 Semantics::Symbol::Symbol()
 	{}
 
@@ -13444,6 +13446,9 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 		// alternative implementation to be handled correctly, or else both
 		// variables would refer to the same storage, not to different
 		// storages.
+		//
+		// (Actually, semantic block variables won't arise because they aren't
+		// introduced in statements.)
 		if (local_variables.find(local_variable_identifier) != local_variables.cend()) {
 			std::ostringstream sstr;
 			sstr
@@ -13453,13 +13458,16 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 				<< routine_declaration.location.prefix
 				<< "\"."
 				;
+			if (permit_shadowing) {
+				sstr << std::endl << "TODO: implement shadowing of semantic block variables by variables in outer scopes.";
+			}
 			throw SemanticsError(sstr.str());
 		}
 
 		// Make sure this variable doesn't shadow any top-level variables.
 		//
 		// (This check can safely be disabled if enabling shadowing.)
-		if (var_scope.has(local_variable_identifier)) {
+		if (!permit_shadowing && var_scope.has(local_variable_identifier)) {
 			std::ostringstream sstr;
 			sstr
 				<< "Semantics::analyze_block: error: local variable ``"
@@ -13474,7 +13482,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 		// Make sure this variable doesn't shadow any top-level variables.
 		//
 		// (This check can safely be disabled if enabling shadowing.)
-		if (combine_identifier_namespaces && combined_scope.has(local_variable_identifier)) {
+		if (!permit_shadowing && combine_identifier_namespaces && combined_scope.has(local_variable_identifier)) {
 			std::ostringstream sstr;
 			sstr
 				<< "Semantics::analyze_block: error: local variable ``"
@@ -13530,7 +13538,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 		// Make sure this variable doesn't shadow any top-level variables.
 		//
 		// (This check can safely be disabled if enabling shadowing.)
-		if (var_scope.has(local_variable_identifier)) {
+		if (!permit_shadowing && var_scope.has(local_variable_identifier)) {
 			std::ostringstream sstr;
 			sstr
 				<< "Semantics::analyze_block: error: local variable ``"
@@ -13545,7 +13553,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 		// Make sure this variable doesn't shadow any top-level variables.
 		//
 		// (This check can safely be disabled if enabling shadowing.)
-		if (combine_identifier_namespaces && combined_scope.has(local_variable_identifier)) {
+		if (!permit_shadowing && combine_identifier_namespaces && combined_scope.has(local_variable_identifier)) {
 			std::ostringstream sstr;
 			sstr
 				<< "Semantics::analyze_block: error: local variable ``"
@@ -13755,7 +13763,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 				}
 
 				// Add this constant to the local scope.
-				if (top_level_constant_scope.has(identifier.text)) {
+				if (!permit_shadowing && top_level_constant_scope.has(identifier.text)) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_routine: error (line "
@@ -13863,7 +13871,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 				const LexemeOperator   &semicolon_operator0 = grammar.lexemes.at(next_type_assignment->semicolon_operator0).get_operator(); (void) semicolon_operator0;
 
 				// Check for redefinition.
-				if (local_type_scope.has(identifier.text)) {
+				if (!permit_shadowing && local_type_scope.has(identifier.text)) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_routine: error (line "
@@ -14065,7 +14073,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 					}
 
 					// Shadowing variable definition?
-					if (var_scope.has(next_identifier->text)) {
+					if (!permit_shadowing && var_scope.has(next_identifier->text)) {
 						std::ostringstream sstr;
 						sstr
 							<< "Semantics::analyze_routine: error (line "
