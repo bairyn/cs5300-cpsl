@@ -4105,7 +4105,7 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 			std::reverse(typed_identifier_sequences.begin(), typed_identifier_sequences.end());
 
 			// Handle the typed identifier sequences.
-			for (const TypedIdentifierSequence *next_typed_identifier_sequence : typed_identifier_sequences) {
+			for (const TypedIdentifierSequence *next_typed_identifier_sequence : std::as_const(typed_identifier_sequences)) {
 				const IdentList      &ident_list          = grammar.ident_list_storage.at(next_typed_identifier_sequence->ident_list);
 				const LexemeOperator &colon_operator0     = grammar.lexemes.at(next_typed_identifier_sequence->colon_operator0).get_operator(); (void) colon_operator0;
 				const ::Type         &next_type           = grammar.type_storage.at(next_typed_identifier_sequence->type);
@@ -4187,7 +4187,7 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 				std::reverse(identifiers.begin() + 1, identifiers.end());
 
 				// Handle the identifiers.
-				for (const LexemeIdentifier *next_identifier : identifiers) {
+				for (const LexemeIdentifier *next_identifier : std::as_const(identifiers)) {
 					// Duplicate identifier in fields?
 					if (field_identifiers.find(next_identifier->text) != field_identifiers.cend()) {
 						std::ostringstream sstr;
@@ -13100,18 +13100,20 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 Semantics::Block::Block()
 	{}
 
-Semantics::Block::Block(const MIPSIO &instructions, MIPSIO::Index front, MIPSIO::Index back, uint64_t lexeme_begin, uint64_t lexeme_end)
+Semantics::Block::Block(const MIPSIO &instructions, MIPSIO::Index front, MIPSIO::Index back, const std::map<std::string, const Type *> &local_variables, uint64_t lexeme_begin, uint64_t lexeme_end)
 	: instructions(instructions)
 	, front(front)
 	, back(back)
+	, local_variables(local_variables)
 	, lexeme_begin(lexeme_begin)
 	, lexeme_end(lexeme_end)
 	{}
 
-Semantics::Block::Block(MIPSIO &&instructions, MIPSIO::Index front, MIPSIO::Index back, uint64_t lexeme_begin, uint64_t lexeme_end)
+Semantics::Block::Block(MIPSIO &&instructions, MIPSIO::Index front, MIPSIO::Index back, const std::map<std::string, const Type *> &local_variables, uint64_t lexeme_begin, uint64_t lexeme_end)
 	: instructions(std::move(instructions))
 	, front(front)
 	, back(back)
+	, local_variables(local_variables)
 	, lexeme_begin(lexeme_begin)
 	, lexeme_end(lexeme_end)
 	{}
@@ -13264,8 +13266,68 @@ Semantics::Block Semantics::analyze_statements(const std::vector<uint64_t> &stat
 	return block;
 }
 
+Semantics::Block Semantics::analyze_statements(const StatementSequence &statement_sequence, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
+	const Statement             &first_statement         = grammar.statement_storage.at(statement_sequence.statement);
+	const StatementPrefixedList &statement_prefixed_list = grammar.statement_prefixed_list_storage.at(statement_sequence.statement_prefixed_list);
+
+	// Prepare statement indices vector.
+	std::vector<uint64_t> statement_indices;
+
+	// Collect the statements in the list.
+	std::vector<const Statement *> statements;
+	statements.push_back(&first_statement);
+	bool reached_end = false;
+	for (const StatementPrefixedList *last_list = &statement_prefixed_list; !reached_end; ) {
+		// Unpack the last list encountered.
+		switch(last_list->branch) {
+			case StatementPrefixedList::empty_branch: {
+				// We're done.
+				// (No need to unpack the empty branch.)
+				reached_end = true;
+				break;
+			}
+
+			case StatementPrefixedList::cons_branch: {
+				// Unpack the list.
+				const StatementPrefixedList::Cons &last_statement_prefixed_list_cons = grammar.statement_prefixed_list_cons_storage.at(last_list->data);
+				const StatementPrefixedList       &last_statement_prefixed_list      = grammar.statement_prefixed_list_storage.at(last_statement_prefixed_list_cons.statement_prefixed_list);
+				const LexemeOperator              &last_semicolon_operator0          = grammar.lexemes.at(last_statement_prefixed_list_cons.semicolon_operator0).get_operator(); (void) last_semicolon_operator0;
+				const Statement                   &last_statement                    = grammar.statement_storage.at(last_statement_prefixed_list_cons.statement);
+
+				// Add the statement.
+				statements.push_back(&last_statement);
+				last_list = &last_statement_prefixed_list;
+
+				// Loop.
+				break;
+			}
+
+			// Unrecognized branch.
+			default: {
+				std::ostringstream sstr;
+				sstr << "Semantics::analyze_statements: internal error: invalid statement_prefixed_list branch at index " << last_list - &grammar.statement_prefixed_list_storage[0] << ": " << last_list->branch;
+				throw SemanticsError(sstr.str());
+			}
+		}
+	}
+
+	// Correct the order of the list.
+	std::reverse(statements.begin() + 1, statements.end());
+
+	// Handle the statements.
+	for (const Statement *next_statement : std::as_const(statements)) {
+		const Statement &statement       = *next_statement;
+		const uint64_t   statement_index = &statement - &grammar.statement_storage[0];
+
+		statement_indices.push_back(statement_index);
+	}
+
+	// Forward to analyze_statements.
+	return analyze_statements(statement_indices, constant_scope, type_scope, routine_scope, var_scope, combined_scope);
+}
+
 // | Analyze a BEGIN [statement]... END block.
-std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
+std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const std::map<std::string, const Type *> &local_variables) {
 	// TODO
 	return std::vector<Output::Line>();
 
@@ -13276,6 +13338,12 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 //
 // "analyze_block" but look for additional types, constants, and variables.
 std::vector<Semantics::Output::Line> Semantics::analyze_routine(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const Body &body, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
+	IdentifierScope local_constant_scope(constant_scope);
+	IdentifierScope local_type_scope(type_scope);
+	IdentifierScope local_var_scope(var_scope);
+	IdentifierScope local_combined_scope(combined_scope);
+
+	//return analyze_block();
 	// TODO
 	return std::vector<Output::Line>();
 
@@ -13585,7 +13653,7 @@ void Semantics::analyze() {
 			std::reverse(constant_assignments.begin() + 1, constant_assignments.end());
 
 			// Handle the constant assignments.
-			for (const ConstantAssignment *next_constant_assignment : constant_assignments) {
+			for (const ConstantAssignment *next_constant_assignment : std::as_const(constant_assignments)) {
 				const LexemeIdentifier   &identifier          = grammar.lexemes.at(next_constant_assignment->identifier).get_identifier();
 				const LexemeOperator     &equals_operator0    = grammar.lexemes.at(next_constant_assignment->equals_operator0).get_operator(); (void) equals_operator0;
 				const ::Expression       &expression          = grammar.expression_storage.at(next_constant_assignment->expression);
@@ -13687,7 +13755,7 @@ void Semantics::analyze() {
 			std::reverse(type_assignments.begin() + 1, type_assignments.end());
 
 			// Handle the type assignments.
-			for (const TypeAssignment *next_type_assignment : type_assignments) {
+			for (const TypeAssignment *next_type_assignment : std::as_const(type_assignments)) {
 				const LexemeIdentifier &identifier          = grammar.lexemes.at(next_type_assignment->identifier).get_identifier();
 				const LexemeOperator   &equals_operator0    = grammar.lexemes.at(next_type_assignment->equals_operator0).get_operator(); (void) equals_operator0;
 				const ::Type           &type                = grammar.type_storage.at(next_type_assignment->type);
@@ -13791,7 +13859,7 @@ void Semantics::analyze() {
 			std::reverse(typed_identifier_sequences.begin() + 1, typed_identifier_sequences.end());
 
 			// Handle the typed identifier sequences.
-			for (const TypedIdentifierSequence *next_typed_identifier_sequence : typed_identifier_sequences) {
+			for (const TypedIdentifierSequence *next_typed_identifier_sequence : std::as_const(typed_identifier_sequences)) {
 				const IdentList      &ident_list          = grammar.ident_list_storage.at(next_typed_identifier_sequence->ident_list);
 				const LexemeOperator &colon_operator0     = grammar.lexemes.at(next_typed_identifier_sequence->colon_operator0).get_operator(); (void) colon_operator0;
 				const ::Type         &next_type           = grammar.type_storage.at(next_typed_identifier_sequence->type);
@@ -13873,7 +13941,7 @@ void Semantics::analyze() {
 				std::reverse(identifiers.begin() + 1, identifiers.end());
 
 				// Handle the identifiers.
-				for (const LexemeIdentifier *next_identifier : identifiers) {
+				for (const LexemeIdentifier *next_identifier : std::as_const(identifiers)) {
 					// Duplicate variable definition?
 					if (top_level_var_scope.has(next_identifier->text)) {
 						std::ostringstream sstr;
@@ -14016,7 +14084,7 @@ void Semantics::analyze() {
 	std::reverse(procedure_decl_or_function_decls.begin(), procedure_decl_or_function_decls.end());
 
 	// Handle the procedure_decl_or_function_decls.
-	for (const ProcedureDeclOrFunctionDecl *next_procedure_decl_or_function_decl : procedure_decl_or_function_decls) {
+	for (const ProcedureDeclOrFunctionDecl *next_procedure_decl_or_function_decl : std::as_const(procedure_decl_or_function_decls)) {
 		switch (next_procedure_decl_or_function_decl->branch) {
 			case ProcedureDeclOrFunctionDecl::procedure_branch: {
 				// Unpack the procedure.
@@ -14214,7 +14282,7 @@ void Semantics::analyze() {
 							std::reverse(identifiers.begin() + 1, identifiers.end());
 
 							// Handle the identifiers.
-							for (const LexemeIdentifier *next_identifier : identifiers) {
+							for (const LexemeIdentifier *next_identifier : std::as_const(identifiers)) {
 								if (in_parameter_names.find(next_identifier->text) != in_parameter_names.cend()) {
 									std::ostringstream sstr;
 									sstr
@@ -14441,7 +14509,7 @@ void Semantics::analyze() {
 							std::reverse(identifiers.begin() + 1, identifiers.end());
 
 							// Handle the identifiers.
-							for (const LexemeIdentifier *next_identifier : identifiers) {
+							for (const LexemeIdentifier *next_identifier : std::as_const(identifiers)) {
 								if (in_parameter_names.find(next_identifier->text) != in_parameter_names.cend()) {
 									std::ostringstream sstr;
 									sstr
@@ -14718,7 +14786,7 @@ void Semantics::analyze() {
 							std::reverse(identifiers.begin() + 1, identifiers.end());
 
 							// Handle the identifiers.
-							for (const LexemeIdentifier *next_identifier : identifiers) {
+							for (const LexemeIdentifier *next_identifier : std::as_const(identifiers)) {
 								if (in_parameter_names.find(next_identifier->text) != in_parameter_names.cend()) {
 									std::ostringstream sstr;
 									sstr
@@ -14953,7 +15021,7 @@ void Semantics::analyze() {
 							std::reverse(identifiers.begin() + 1, identifiers.end());
 
 							// Handle the identifiers.
-							for (const LexemeIdentifier *next_identifier : identifiers) {
+							for (const LexemeIdentifier *next_identifier : std::as_const(identifiers)) {
 								if (in_parameter_names.find(next_identifier->text) != in_parameter_names.cend()) {
 									std::ostringstream sstr;
 									sstr

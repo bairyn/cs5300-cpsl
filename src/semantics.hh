@@ -1475,12 +1475,13 @@ public:
 		// conflicts / duplicates.
 		MIPSIO::Index    front = 0;  // Ignored if instructions is empty.
 		MIPSIO::Index    back  = 0;  // Ignored if instructions is empty.
+		std::map<std::string, const Type *> local_variables;
 		uint64_t         lexeme_begin = 0;
 		uint64_t         lexeme_end   = 0;
 
 		Block();
-		Block(const MIPSIO  &instructions, MIPSIO::Index front, MIPSIO::Index back, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
-		Block(      MIPSIO &&instructions, MIPSIO::Index front, MIPSIO::Index back, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+		Block(const MIPSIO  &instructions, MIPSIO::Index front, MIPSIO::Index back, const std::map<std::string, const Type *> &local_variables, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+		Block(      MIPSIO &&instructions, MIPSIO::Index front, MIPSIO::Index back, const std::map<std::string, const Type *> &local_variables, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
 	};
 
 	// | Analyze a sequence of statements.
@@ -1489,9 +1490,10 @@ public:
 	// grammar tree but can be a sequence of statements without a BEGIN and END
 	// keyword.
 	Block analyze_statements(const std::vector<uint64_t> &statements, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
+	Block analyze_statements(const StatementSequence &statement_sequence, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
 
 	// | Analyze a BEGIN [statement]... END block.
-	std::vector<Output::Line> analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
+	std::vector<Output::Line> analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const std::map<std::string, const Type *> &local_variables = {});
 
 	// | Analyze a routine definition.
 	//
