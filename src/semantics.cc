@@ -799,6 +799,22 @@ bool Semantics::Type::Primitive::is_word(bool permit_in_between_size) const {
 	}
 }
 
+inline bool Semantics::Type::Primitive::operator< (const Primitive &other) const {
+	if      (tag         != other.tag        ) { return tag         < other.tag;         }
+	else if (identifier  != other.identifier ) { return identifier  < other.identifier;  }
+	else if (fixed_width != other.fixed_width) { return fixed_width < other.fixed_width; }
+	else                                       { return size        < other.size;        }
+}
+
+inline bool Semantics::Type::Primitive::operator> (const Primitive &other) const { return   other < *this;  }
+inline bool Semantics::Type::Primitive::operator<=(const Primitive &other) const { return !(*this > other); }
+inline bool Semantics::Type::Primitive::operator>=(const Primitive &other) const { return !(*this < other); }
+
+inline bool Semantics::Type::Primitive::operator==(const Primitive &other) const {
+	return tag == other.tag && identifier == other.identifier && fixed_width == other.fixed_width && size == other.size;
+}
+inline bool Semantics::Type::Primitive::operator!=(const Primitive &other) const { return !(*this == other); }
+
 Semantics::Type::Simple::Simple()
 	{}
 
@@ -825,14 +841,51 @@ Semantics::Type::Simple::Simple(const std::string &identifier, const Type &refer
 	{}
 
 // | Resolve a chain of aliases.
-// TODO: check for cycles and null.
-const Semantics::Type &Semantics::Type::Simple::resolve_type() const {
-	const Type *type = referent;
-	while (type->is_simple()) {
-		type = type->get_simple().referent;
+const Semantics::Type &Semantics::Type::Simple::resolve_type(bool check_cycles) const {
+	if (!check_cycles) {
+		const Type *type = referent;
+		while (type->is_simple()) {
+			type = type->get_simple().referent;
+		}
+		return *type;
+	} else {
+		const Type *type = referent;
+		std::set<const Type *> visited;
+		while (type && type->is_simple()) {
+			if (visited.find(type) != visited.cend()) {
+				std::ostringstream sstr;
+				sstr << "Semantics::Type::Simple::resolve_type: error: found cycle in simple type alias declarations.";
+				throw SemanticsError(sstr.str());
+			}
+			visited.insert(type);
+			type = type->get_simple().referent;
+		}
+		if (!type) {
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::Simple::resolve_type: error: found a null type pointer in simple type alias resolution!";
+			throw SemanticsError(sstr.str());
+		}
+		return *type;
 	}
-	return *type;
 }
+
+inline bool Semantics::Type::Simple::operator< (const Simple &other) const {
+	if      (identifier  != other.identifier ) { return identifier  < other.identifier;  }
+	else if (fixed_width != other.fixed_width) { return fixed_width < other.fixed_width; }
+	else if (size        != other.size       ) { return size        < other.size;        }
+	else if (!!referent  != !!other.referent ) { return !!referent  < !!other.referent;  }
+	else if (!referent)                        { return false;  /* == */                 }
+	else                                       { return *referent   < *other.referent;   }
+}
+
+inline bool Semantics::Type::Simple::operator> (const Simple &other) const { return   other < *this;  }
+inline bool Semantics::Type::Simple::operator<=(const Simple &other) const { return !(*this > other); }
+inline bool Semantics::Type::Simple::operator>=(const Simple &other) const { return !(*this < other); }
+
+inline bool Semantics::Type::Simple::operator==(const Simple &other) const {
+	return identifier == other.identifier && fixed_width == other.fixed_width && size == other.size && (!!referent) == (!!other.referent) && (!referent || (*referent == *other.referent));
+}
+inline bool Semantics::Type::Simple::operator!=(const Simple &other) const { return !(*this == other); }
 
 Semantics::Type::Record::Record()
 	{}
@@ -860,6 +913,56 @@ Semantics::Type::Record::Record(const std::string &identifier, std::vector<std::
 		size += field_type.get_size();
 	}
 }
+
+// | Used for comparison and equality checking.
+std::vector<std::pair<std::string, Semantics::Type>> Semantics::Type::Record::get_dereferenced_fields() const {
+	std::vector<std::pair<std::string, Semantics::Type>> dereferenced_fields;
+
+	for (const std::pair<std::string, const Type *> &field : std::as_const(fields)) {
+		const std::vector<std::pair<std::string, const Type *>>::size_type &field_index = &field - &fields[0];
+
+		if (!field.second) {
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::Record::get_dereferenced_fields: error: null field type pointer in record for field #" << field_index << ".";
+			if (identifier.size() > 0) {
+				sstr
+					<< std::endl
+					<< "\ttype identifier  : " << identifier
+					;
+			}
+			if (field.first.size() > 0) {
+				sstr
+					<< std::endl
+					<< "\tfield identifier : " << field.first
+					;
+			}
+			throw SemanticsError(sstr.str());
+		}
+
+		const std::string &field_identifier = field.first;
+		const Type        &field_type       = *field.second;
+
+		dereferenced_fields.push_back({field_identifier, field_type});
+	}
+
+	return dereferenced_fields;
+}
+
+inline bool Semantics::Type::Record::operator< (const Record &other) const {
+	if      (identifier  != other.identifier ) { return identifier                < other.identifier;                }
+	else if (fixed_width != other.fixed_width) { return fixed_width               < other.fixed_width;               }
+	else if (size        != other.size       ) { return size                      < other.size;                      }
+	else                                       { return get_dereferenced_fields() < other.get_dereferenced_fields(); }
+}
+
+inline bool Semantics::Type::Record::operator> (const Record &other) const { return   other < *this;  }
+inline bool Semantics::Type::Record::operator<=(const Record &other) const { return !(*this > other); }
+inline bool Semantics::Type::Record::operator>=(const Record &other) const { return !(*this < other); }
+
+inline bool Semantics::Type::Record::operator==(const Record &other) const {
+	return identifier == other.identifier && fixed_width == other.fixed_width && size == other.size && get_dereferenced_fields() == other.get_dereferenced_fields();
+}
+inline bool Semantics::Type::Record::operator!=(const Record &other) const { return !(*this == other); }
 
 Semantics::Type::Array::Array()
 	{}
@@ -945,6 +1048,22 @@ int32_t Semantics::Type::Array::get_index_of_offset(uint32_t offset) const {
 
 	return get_begin_index() + offset;
 }
+
+inline bool Semantics::Type::Array::operator< (const Array &other) const {
+	if      (identifier  != other.identifier ) { return identifier  < other.identifier;  }
+	else if (fixed_width != other.fixed_width) { return fixed_width < other.fixed_width; }
+	else if (min_index   != other.min_index  ) { return min_index   < other.min_index;   }
+	else                                       { return max_index   < other.max_index;   }
+}
+
+inline bool Semantics::Type::Array::operator> (const Array &other) const { return   other < *this;  }
+inline bool Semantics::Type::Array::operator<=(const Array &other) const { return !(*this > other); }
+inline bool Semantics::Type::Array::operator>=(const Array &other) const { return !(*this < other); }
+
+inline bool Semantics::Type::Array::operator==(const Array &other) const {
+	return identifier == other.identifier && fixed_width == other.fixed_width && size == other.size && min_index == other.min_index && max_index == other.max_index;
+}
+inline bool Semantics::Type::Array::operator!=(const Array &other) const { return !(*this == other); }
 
 Semantics::Type::Type()
 	{}
@@ -1336,13 +1455,63 @@ std::string Semantics::Type::get_tag_repr() const {
 
 // | If this is a type alias, resolve the type to get the base type;
 // otherwise, just return this type.
-const Semantics::Type &Semantics::Type::resolve_type() const {
+const Semantics::Type &Semantics::Type::resolve_type(bool check_cycles) const {
 	if (is_simple()) {
-		return get_simple().resolve_type();
+		return get_simple().resolve_type(check_cycles);
 	} else {
 		return *this;
 	}
 }
+
+inline bool Semantics::Type::operator< (const Type &other) const {
+	if (tag != other.tag) {
+		return tag < other.tag;
+	}
+
+	switch(tag) {
+		case primitive_tag:
+			return get_primitive() < other.get_primitive();
+		case simple_tag:
+			return get_simple()    < other.get_simple();
+		case record_tag:
+			return get_record()    < other.get_record();
+		case array_tag:
+			return get_array()     < other.get_array();
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::operator<: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+inline bool Semantics::Type::operator> (const Type &other) const { return   other < *this;  }
+inline bool Semantics::Type::operator<=(const Type &other) const { return !(*this > other); }
+inline bool Semantics::Type::operator>=(const Type &other) const { return !(*this < other); }
+
+inline bool Semantics::Type::operator==(const Type &other) const {
+	if (tag != other.tag) {
+		return false;
+	}
+
+	switch(tag) {
+		case primitive_tag:
+			return get_primitive() == other.get_primitive();
+		case simple_tag:
+			return get_simple()    == other.get_simple();
+		case record_tag:
+			return get_record()    == other.get_record();
+		case array_tag:
+			return get_array()     == other.get_array();
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::ConstantValue::operator==: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+inline bool Semantics::Type::operator!=(const Type &other) const { return !(*this == other); }
 
 const Semantics::ConstantValue::Dynamic Semantics::ConstantValue::Dynamic::dynamic {};
 
@@ -12659,7 +12828,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						const Type *last_output_type = &type;
 						Index last_output_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), var.storage)});
 
-						for (const LvalueAccessorClause &lvalue_accessor_clause : std::as_const(lvalue_accessor_clauses)) {
+						for (const LvalueAccessorClause *lvalue_accessor_clause_ : std::as_const(lvalue_accessor_clauses)) {
+							const LvalueAccessorClause &lvalue_accessor_clause = *lvalue_accessor_clause_;
 							switch (lvalue_accessor_clause.branch) {
 								case LvalueAccessorClause::index_branch: {
 									const LvalueAccessorClause::Index &lvalue_accessor_clause_index = grammar.lvalue_accessor_clause_index_storage.at(lvalue_accessor_clause.data);
@@ -13283,7 +13453,7 @@ void Semantics::analyze() {
 	const TypeDeclOpt                     &type_decl_opt                        = grammar.type_decl_opt_storage.at(program.type_decl_opt);
 	const VarDeclOpt                      &var_decl_opt                         = grammar.var_decl_opt_storage.at(program.var_decl_opt);
 	const ProcedureDeclOrFunctionDeclList &procedure_decl_or_function_decl_list = grammar.procedure_decl_or_function_decl_list_storage.at(program.procedure_decl_or_function_decl_list);
-	const Block                           &block                                = grammar.block_storage.at(program.block);
+	const ::Block                         &block                                = grammar.block_storage.at(program.block);
 	const LexemeOperator                  &dot_operator0                        = grammar.lexemes.at(program.dot_operator0).get_operator(); (void) dot_operator0;
 
 	// First, analyze top-level constants.  These are at the beginning of the

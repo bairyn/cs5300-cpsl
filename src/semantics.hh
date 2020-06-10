@@ -234,6 +234,14 @@ public:
 			// | Determine whether a 4-byte MIPS word is needed to store this value rather than only 1 byte.
 			// All constant value types can fit into either 4 bytes or 1 bytes; they are fixed size.
 			bool is_word(bool permit_in_between_size = true) const;
+
+			inline bool operator< (const Primitive &other) const;
+			inline bool operator> (const Primitive &other) const;
+			inline bool operator<=(const Primitive &other) const;
+			inline bool operator>=(const Primitive &other) const;
+
+			inline bool operator==(const Primitive &other) const;
+			inline bool operator!=(const Primitive &other) const;
 		};
 
 		class Simple : public Base {
@@ -250,10 +258,15 @@ public:
 			const Type *referent;
 
 			// | Resolve a chain of aliases.
-			//
-			// This is not checked for cycles!
-			// TODO: check for cycles and null.
-			const Type &resolve_type() const;
+			const Type &resolve_type(bool check_cycles = true) const;
+
+			inline bool operator< (const Simple &other) const;
+			inline bool operator> (const Simple &other) const;
+			inline bool operator<=(const Simple &other) const;
+			inline bool operator>=(const Simple &other) const;
+
+			inline bool operator==(const Simple &other) const;
+			inline bool operator!=(const Simple &other) const;
 		};
 
 		class Record : public Base {
@@ -265,6 +278,17 @@ public:
 			std::vector<std::pair<std::string, const Type *>> fields;
 			// | Storage of anonymous types used by this record.
 			IdentifierScope *anonymous_storage;
+
+			// | Used for comparison and equality checking.
+			std::vector<std::pair<std::string, Type>> get_dereferenced_fields() const;
+
+			inline bool operator< (const Record &other) const;
+			inline bool operator> (const Record &other) const;
+			inline bool operator<=(const Record &other) const;
+			inline bool operator>=(const Record &other) const;
+
+			inline bool operator==(const Record &other) const;
+			inline bool operator!=(const Record &other) const;
 		};
 
 		class Array : public Base {
@@ -285,6 +309,14 @@ public:
 			uint32_t get_index_range() const;
 			uint32_t get_offset_of_index(int32_t index) const;
 			int32_t get_index_of_offset(uint32_t offset) const;
+
+			inline bool operator< (const Array &other) const;
+			inline bool operator> (const Array &other) const;
+			inline bool operator<=(const Array &other) const;
+			inline bool operator>=(const Array &other) const;
+
+			inline bool operator==(const Array &other) const;
+			inline bool operator!=(const Array &other) const;
 		};
 
 		enum tag_e {
@@ -355,7 +387,15 @@ public:
 
 		// | If this is a type alias, resolve the type to get the base type;
 		// otherwise, just return this type.
-		const Type &resolve_type() const;
+		const Type &resolve_type(bool check_cycles = true) const;
+
+		inline bool operator< (const Type &other) const;
+		inline bool operator> (const Type &other) const;
+		inline bool operator<=(const Type &other) const;
+		inline bool operator>=(const Type &other) const;
+
+		inline bool operator==(const Type &other) const;
+		inline bool operator!=(const Type &other) const;
 	};
 
 	// | The result of a constant expression.
