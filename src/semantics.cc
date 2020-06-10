@@ -864,14 +864,14 @@ Semantics::Type::Record::Record(const std::string &identifier, std::vector<std::
 Semantics::Type::Array::Array()
 	{}
 
-Semantics::Type::Array::Array(const std::string &identifier, const Type *base_type, int32_t min_index, int32_t max_index, IdentifierScope &anonymous_storage)
-	: base_type(base_type)
+Semantics::Type::Array::Array(const std::string &identifier, const Type &base_type, int32_t min_index, int32_t max_index, IdentifierScope &anonymous_storage)
+	: base_type(&base_type)
 	, min_index(min_index)
 	, max_index(max_index)
 	, anonymous_storage(&anonymous_storage)
 {
 	this->identifier = identifier;
-	fixed_width = base_type->get_fixed_width();
+	fixed_width = base_type.get_fixed_width();
 	if (min_index > max_index) {
 		std::ostringstream sstr;
 		if (identifier.size() <= 0) {
@@ -881,17 +881,17 @@ Semantics::Type::Array::Array(const std::string &identifier, const Type *base_ty
 		}
 		throw SemanticsError(sstr.str());
 	}
-	if (would_addition_overflow(get_index_range(), 1) || would_multiplication_overflow(get_index_range() + 1, base_type->get_size())) {
+	if (would_addition_overflow(get_index_range(), 1) || would_multiplication_overflow(get_index_range() + 1, base_type.get_size())) {
 		std::ostringstream sstr;
 		if (identifier.size() <= 0) {
 			sstr << "Semantics::Type::Array::Array: attempt to construct an anonymous array type with a size that is too large: some indices would be too big to fit into a 32-bit signed integer.";
 		} else {
 			sstr << "Semantics::Type::Array::Array: attempt to construct an array type (``" << identifier << "\") with a size that is too large: some indices would be too big to fit into a 32-bit signed integer.";
 		}
-		sstr << "  Index range: " << get_index_range() << "; base type size: " << base_type->get_size();
+		sstr << "  Index range: " << get_index_range() << "; base type size: " << base_type.get_size();
 		throw SemanticsError(sstr.str());
 	}
-	size = get_index_range() * base_type->get_size();
+	size = get_index_range() * base_type.get_size();
 }
 
 int32_t Semantics::Type::Array::get_min_index() const {
@@ -1977,6 +1977,94 @@ std::string Semantics::ConstantValue::quote_string(const std::string &string) {
 	return std::move(quoted);
 }
 
+Semantics::Storage::Storage()
+	{}
+
+Semantics::Storage::Storage(uint32_t max_size, bool is_global, Symbol global_address, const std::string &register_, bool dereference, int32_t offset, bool no_sp_adjust, bool is_caller_preserved)
+	: max_size(max_size)
+	, is_global(is_global)
+	, global_address(global_address)
+	, register_(register_)
+	, dereference(dereference)
+	, offset(offset)
+	, no_sp_adjust(no_sp_adjust)
+	, is_caller_preserved(is_caller_preserved)
+	{}
+
+// Specialized storage constructors.
+// | Storage type #1: (&global) + x, and
+// | Storage type #2: ((uint8_t *) &global)[x];  -- if global is already a byte pointer/array, global[x].
+Semantics::Storage::Storage(Symbol global_address, bool dereference, uint32_t max_size, int32_t offset)
+	: max_size(max_size)
+	, is_global(true)
+	, global_address(global_address)
+	, register_("")
+	, dereference(dereference)
+	, offset(offset)
+	, no_sp_adjust(false)
+	, is_caller_preserved(false)
+	{}
+
+// | Storage type #3: 4-byte direct register.  (No dereference.)
+Semantics::Storage::Storage(const std::string &register_, bool no_sp_adjust)
+	: max_size(4)
+	, is_global(false)
+	, global_address(Symbol())
+	, register_(register_)
+	, dereference(false)
+	, offset(0)
+	, no_sp_adjust(no_sp_adjust)
+	, is_caller_preserved(false)
+	{}
+
+// | Storage type #4: dereferenced register.
+Semantics::Storage::Storage(const std::string &register_, uint32_t max_size, int32_t offset, bool no_sp_adjust)
+	: max_size(max_size)
+	, is_global(false)
+	, global_address(Symbol())
+	, register_(register_)
+	, dereference(true)
+	, offset(offset)
+	, no_sp_adjust(no_sp_adjust)
+	, is_caller_preserved(false)
+	{}
+
+// | Is this size ideal with for this storage?  (Does it equal max_size?)
+bool Semantics::Storage::ideal_size(uint32_t size) const {
+	return size == max_size;
+}
+
+// | Is this size compatible with this storage?  (Is it <= max_size?)
+bool Semantics::Storage::compatible_size(uint32_t size) const {
+	return size <= max_size;
+}
+
+std::vector<uint32_t> Semantics::Storage::get_sizes(const std::vector<Storage> &storage) {
+	std::vector<uint32_t> sizes;
+	for (const Storage &storage_unit : std::as_const(storage)) {
+		sizes.push_back(storage_unit.max_size);
+	}
+	return sizes;
+}
+
+// Type of the register.
+Semantics::Storage::type_t Semantics::Storage::get_type() const {
+	if           ( is_global && !dereference) {
+		return global_address_type;
+	} else if    ( is_global &&  dereference) {
+		return global_dereference_type;
+	} else if    (!is_global && !dereference) {
+		return register_direct_type;
+	} else {  // (!is_global &&  dereference) {
+		return register_dereference_type;
+	}
+}
+
+bool Semantics::Storage::is_global_address()       const { return get_type() == global_address_type; }
+bool Semantics::Storage::is_global_dereference()   const { return get_type() == global_dereference_type; }
+bool Semantics::Storage::is_register_direct()      const { return get_type() == register_direct_type; }
+bool Semantics::Storage::is_register_dereference() const { return get_type() == register_dereference_type; }
+
 Semantics::IdentifierScope::IdentifierBinding::Static::Static()
 	{}
 
@@ -1991,24 +2079,15 @@ Semantics::IdentifierScope::IdentifierBinding::Static::Static(ConstantValue &&co
 Semantics::IdentifierScope::IdentifierBinding::Var::Var()
 	{}
 
-Semantics::IdentifierScope::IdentifierBinding::Var::Var(bool ref, const Type &type, bool global, Symbol symbol, bool register_, uint8_t arg_register_id, uint32_t offset)
-	: ref(ref)
-	, type(type)
-	, global(global)
-	, symbol(symbol)
-	, register_(register_)
-	, arg_register_id(arg_register_id)
-	, offset(offset)
+Semantics::IdentifierScope::IdentifierBinding::Var::Var(const Type &type, const Storage &storage)
+	: type(&type)
+	, storage(storage)
 	{}
 
-Semantics::IdentifierScope::IdentifierBinding::Ref::Ref()
-	{}
-
-Semantics::IdentifierScope::IdentifierBinding::Ref::Ref(const Type &type, bool register_, uint8_t arg_register_id, uint32_t offset)
-	: type(type)
-	, register_(register_)
-	, arg_register_id(arg_register_id)
-	, offset(offset)
+Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::RoutineDeclaration(const Symbol &location, const std::vector<std::pair<bool, const Type *>> &parameters, std::optional<const Type *> output)
+	: location(location)
+	, parameters(parameters)
+	, output(output)
 	{}
 
 Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding()
@@ -2028,10 +2107,6 @@ Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(const Static &s
 	: IdentifierBinding(static_tag, static_)
 	{}
 
-Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(const Dynamic &dynamic)
-	: IdentifierBinding(dynamic_tag, dynamic)
-	{}
-
 Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(const Type &type)
 	: IdentifierBinding(type_tag, type)
 	{}
@@ -2040,16 +2115,12 @@ Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(const Var &var)
 	: IdentifierBinding(var_tag, var)
 	{}
 
-Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(const Ref &ref)
-	: IdentifierBinding(ref_tag, ref)
+Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(const RoutineDeclaration &routine_declaration)
+	: IdentifierBinding(routine_declaration_tag, routine_declaration)
 	{}
 
 Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(Static &&static_)
 	: IdentifierBinding(static_tag, std::move(static_))
-	{}
-
-Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(Dynamic &&dynamic)
-	: IdentifierBinding(dynamic_tag, std::move(dynamic))
 	{}
 
 Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(Type &&type)
@@ -2060,18 +2131,17 @@ Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(Var &&var)
 	: IdentifierBinding(var_tag, std::move(var))
 	{}
 
-Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(Ref &&ref)
-	: IdentifierBinding(ref_tag, std::move(ref))
+Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding(RoutineDeclaration &&routine_declaration)
+	: IdentifierBinding(routine_declaration_tag, std::move(routine_declaration))
 	{}
 
 bool Semantics::IdentifierScope::IdentifierBinding::is_static() const {
 	switch(tag) {
 		case static_tag:
 			return true;
-		case dynamic_tag:
 		case type_tag:
 		case var_tag:
-		case ref_tag:
+		case routine_declaration_tag:
 			return false;
 
 		case null_tag:
@@ -2082,34 +2152,14 @@ bool Semantics::IdentifierScope::IdentifierBinding::is_static() const {
 	}
 }
 
-bool Semantics::IdentifierScope::IdentifierBinding::is_dynamic() const {
-	switch(tag) {
-		case static_tag:
-			return false;
-		case dynamic_tag:
-			return true;
-		case type_tag:
-		case var_tag:
-		case ref_tag:
-			return false;
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::IdentifierScope::IdentifierBinding::is_dynamic: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-}
-
 bool Semantics::IdentifierScope::IdentifierBinding::is_type() const {
 	switch(tag) {
 		case static_tag:
-		case dynamic_tag:
 			return false;
 		case type_tag:
 			return true;
 		case var_tag:
-		case ref_tag:
+		case routine_declaration_tag:
 			return false;
 
 		case null_tag:
@@ -2123,12 +2173,11 @@ bool Semantics::IdentifierScope::IdentifierBinding::is_type() const {
 bool Semantics::IdentifierScope::IdentifierBinding::is_var() const {
 	switch(tag) {
 		case static_tag:
-		case dynamic_tag:
 		case type_tag:
 			return false;
 		case var_tag:
 			return true;
-		case ref_tag:
+		case routine_declaration_tag:
 			return false;
 
 		case null_tag:
@@ -2139,20 +2188,19 @@ bool Semantics::IdentifierScope::IdentifierBinding::is_var() const {
 	}
 }
 
-bool Semantics::IdentifierScope::IdentifierBinding::is_ref() const {
+bool Semantics::IdentifierScope::IdentifierBinding::is_routine_declaration() const {
 	switch(tag) {
 		case static_tag:
-		case dynamic_tag:
 		case type_tag:
 		case var_tag:
 			return false;
-		case ref_tag:
+		case routine_declaration_tag:
 			return true;
 
 		case null_tag:
 		default:
 			std::ostringstream sstr;
-			sstr << "Semantics::IdentifierScope::IdentifierBinding::is_ref: invalid tag: " << tag;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::is_routine_declaration: invalid tag: " << tag;
 			throw SemanticsError(sstr.str());
 	}
 }
@@ -2161,10 +2209,9 @@ bool Semantics::IdentifierScope::IdentifierBinding::is_ref() const {
 const Semantics::IdentifierScope::IdentifierBinding::Static &Semantics::IdentifierScope::IdentifierBinding::get_static() const {
 	switch(tag) {
 		case static_tag:
-		case dynamic_tag:
 		case type_tag:
 		case var_tag:
-		case ref_tag:
+		case routine_declaration_tag:
 			break;
 
 		case null_tag:
@@ -2183,38 +2230,12 @@ const Semantics::IdentifierScope::IdentifierBinding::Static &Semantics::Identifi
 	return std::get<Static>(data);
 }
 
-const Semantics::IdentifierScope::IdentifierBinding::Dynamic &Semantics::IdentifierScope::IdentifierBinding::get_dynamic() const {
-	switch(tag) {
-		case static_tag:
-		case dynamic_tag:
-		case type_tag:
-		case var_tag:
-		case ref_tag:
-			break;
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::IdentifierScope::IdentifierBinding::get_dynamic: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-
-	if (!is_dynamic()) {
-		std::ostringstream sstr;
-		sstr << "Semantics::IdentifierScope::IdentifierBinding::get_dynamic: binding has a different type tag: " << tag;
-		throw SemanticsError(sstr.str());
-	}
-
-	return std::get<Dynamic>(data);
-}
-
 const Semantics::IdentifierScope::IdentifierBinding::Type &Semantics::IdentifierScope::IdentifierBinding::get_type() const {
 	switch(tag) {
 		case static_tag:
-		case dynamic_tag:
 		case type_tag:
 		case var_tag:
-		case ref_tag:
+		case routine_declaration_tag:
 			break;
 
 		case null_tag:
@@ -2236,10 +2257,9 @@ const Semantics::IdentifierScope::IdentifierBinding::Type &Semantics::Identifier
 const Semantics::IdentifierScope::IdentifierBinding::Var &Semantics::IdentifierScope::IdentifierBinding::get_var() const {
 	switch(tag) {
 		case static_tag:
-		case dynamic_tag:
 		case type_tag:
 		case var_tag:
-		case ref_tag:
+		case routine_declaration_tag:
 			break;
 
 		case null_tag:
@@ -2258,38 +2278,36 @@ const Semantics::IdentifierScope::IdentifierBinding::Var &Semantics::IdentifierS
 	return std::get<Var>(data);
 }
 
-const Semantics::IdentifierScope::IdentifierBinding::Ref &Semantics::IdentifierScope::IdentifierBinding::get_ref() const {
+const Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration &Semantics::IdentifierScope::IdentifierBinding::get_routine_declaration() const {
 	switch(tag) {
 		case static_tag:
-		case dynamic_tag:
 		case type_tag:
 		case var_tag:
-		case ref_tag:
+		case routine_declaration_tag:
 			break;
 
 		case null_tag:
 		default:
 			std::ostringstream sstr;
-			sstr << "Semantics::IdentifierScope::IdentifierBinding::get_ref: invalid tag: " << tag;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::get_routine_declaration: invalid tag: " << tag;
 			throw SemanticsError(sstr.str());
 	}
 
-	if (!is_ref()) {
+	if (!is_routine_declaration()) {
 		std::ostringstream sstr;
-		sstr << "Semantics::IdentifierScope::IdentifierBinding::get_ref: binding has a different type tag: " << tag;
+		sstr << "Semantics::IdentifierScope::IdentifierBinding::get_routine_declaration: binding has a different type tag: " << tag;
 		throw SemanticsError(sstr.str());
 	}
 
-	return std::get<Ref>(data);
+	return std::get<RoutineDeclaration>(data);
 }
 
 Semantics::IdentifierScope::IdentifierBinding::Static &Semantics::IdentifierScope::IdentifierBinding::get_static() {
 	switch(tag) {
 		case static_tag:
-		case dynamic_tag:
 		case type_tag:
 		case var_tag:
-		case ref_tag:
+		case routine_declaration_tag:
 			break;
 
 		case null_tag:
@@ -2308,38 +2326,12 @@ Semantics::IdentifierScope::IdentifierBinding::Static &Semantics::IdentifierScop
 	return std::get<Static>(data);
 }
 
-Semantics::IdentifierScope::IdentifierBinding::Dynamic &Semantics::IdentifierScope::IdentifierBinding::get_dynamic() {
-	switch(tag) {
-		case static_tag:
-		case dynamic_tag:
-		case type_tag:
-		case var_tag:
-		case ref_tag:
-			break;
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::IdentifierScope::IdentifierBinding::get_dynamic: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-
-	if (!is_dynamic()) {
-		std::ostringstream sstr;
-		sstr << "Semantics::IdentifierScope::IdentifierBinding::get_dynamic: binding has a different type tag: " << tag;
-		throw SemanticsError(sstr.str());
-	}
-
-	return std::get<Dynamic>(data);
-}
-
 Semantics::IdentifierScope::IdentifierBinding::Type &Semantics::IdentifierScope::IdentifierBinding::get_type() {
 	switch(tag) {
 		case static_tag:
-		case dynamic_tag:
 		case type_tag:
 		case var_tag:
-		case ref_tag:
+		case routine_declaration_tag:
 			break;
 
 		case null_tag:
@@ -2361,10 +2353,9 @@ Semantics::IdentifierScope::IdentifierBinding::Type &Semantics::IdentifierScope:
 Semantics::IdentifierScope::IdentifierBinding::Var &Semantics::IdentifierScope::IdentifierBinding::get_var() {
 	switch(tag) {
 		case static_tag:
-		case dynamic_tag:
 		case type_tag:
 		case var_tag:
-		case ref_tag:
+		case routine_declaration_tag:
 			break;
 
 		case null_tag:
@@ -2383,29 +2374,28 @@ Semantics::IdentifierScope::IdentifierBinding::Var &Semantics::IdentifierScope::
 	return std::get<Var>(data);
 }
 
-Semantics::IdentifierScope::IdentifierBinding::Ref &Semantics::IdentifierScope::IdentifierBinding::get_ref() {
+Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration &Semantics::IdentifierScope::IdentifierBinding::get_routine_declaration() {
 	switch(tag) {
 		case static_tag:
-		case dynamic_tag:
 		case type_tag:
 		case var_tag:
-		case ref_tag:
+		case routine_declaration_tag:
 			break;
 
 		case null_tag:
 		default:
 			std::ostringstream sstr;
-			sstr << "Semantics::IdentifierScope::IdentifierBinding::get_ref: invalid tag: " << tag;
+			sstr << "Semantics::IdentifierScope::IdentifierBinding::get_routine_declaration: invalid tag: " << tag;
 			throw SemanticsError(sstr.str());
 	}
 
-	if (!is_ref()) {
+	if (!is_routine_declaration()) {
 		std::ostringstream sstr;
-		sstr << "Semantics::IdentifierScope::IdentifierBinding::get_ref: binding has a different type tag: " << tag;
+		sstr << "Semantics::IdentifierScope::IdentifierBinding::get_routine_declaration: binding has a different type tag: " << tag;
 		throw SemanticsError(sstr.str());
 	}
 
-	return std::get<Ref>(data);
+	return std::get<RoutineDeclaration>(data);
 }
 
 // | Return "static", "dynamic", "type", "var", or "ref".
@@ -2413,14 +2403,12 @@ std::string Semantics::IdentifierScope::IdentifierBinding::get_tag_repr(tag_t ta
 	switch(tag) {
 		case static_tag:
 			return "static";
-		case dynamic_tag:
-			return "dynamic";
 		case type_tag:
 			return "type";
 		case var_tag:
 			return "var";
-		case ref_tag:
-			return "ref";
+		case routine_declaration_tag:
+			return "routine_declaration";
 
 		case null_tag:
 		default:
@@ -3953,7 +3941,7 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 							// Unpack the list.
 							const IdentifierPrefixedList::Cons &last_identifier_prefixed_list_cons = grammar.identifier_prefixed_list_cons_storage.at(last_list->data);
 							const IdentifierPrefixedList       &last_identifier_prefixed_list      = grammar.identifier_prefixed_list_storage.at(last_identifier_prefixed_list_cons.identifier_prefixed_list);
-							const LexemeOperator               &last_colon_operator0               = grammar.lexemes.at(last_identifier_prefixed_list_cons.comma_operator0).get_operator(); (void) last_colon_operator0;
+							const LexemeOperator               &last_comma_operator0               = grammar.lexemes.at(last_identifier_prefixed_list_cons.comma_operator0).get_operator(); (void) last_comma_operator0;
 							const LexemeIdentifier             &last_identifier                    = grammar.lexemes.at(last_identifier_prefixed_list_cons.identifier).get_identifier();
 
 							// Add the identifier.
@@ -4118,7 +4106,7 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 			}
 
 			// Construct the Array type.
-			Type::Array semantics_array(identifier, base_semantics_type, min_index, max_index, anonymous_storage);
+			Type::Array semantics_array(identifier, *base_semantics_type, min_index, max_index, anonymous_storage);
 
 			// Return the constructed array type.
 			return Type(semantics_array);
@@ -4132,86 +4120,6 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 		}
 	}
 }
-
-Semantics::Storage::Storage()
-	{}
-
-Semantics::Storage::Storage(uint32_t max_size, bool is_global, Symbol global_address, const std::string &register_, bool dereference, int32_t offset)
-	: max_size(max_size)
-	, is_global(is_global)
-	, global_address(global_address)
-	, register_(register_)
-	, dereference(dereference)
-	, offset(offset)
-	{}
-
-// Specialized storage constructors.
-// | Storage type #1: (&global) + x, and
-// | Storage type #2: ((uint8_t *) &global)[x];  -- if global is already a byte pointer/array, global[x].
-Semantics::Storage::Storage(Symbol global_address, bool dereference, uint32_t max_size, int32_t offset)
-	: max_size(max_size)
-	, is_global(true)
-	, global_address(global_address)
-	, register_("")
-	, dereference(dereference)
-	, offset(offset)
-	{}
-
-// | Storage type #3: 4-byte direct register.  (No dereference.)
-Semantics::Storage::Storage(const std::string &register_)
-	: max_size(4)
-	, is_global(false)
-	, global_address(Symbol())
-	, register_(register_)
-	, dereference(false)
-	, offset(0)
-	{}
-
-// | Storage type #4: dereferenced register.
-Semantics::Storage::Storage(const std::string &register_, uint32_t max_size, int32_t offset)
-	: max_size(max_size)
-	, is_global(false)
-	, global_address(Symbol())
-	, register_(register_)
-	, dereference(true)
-	, offset(offset)
-	{}
-
-// | Is this size ideal with for this storage?  (Does it equal max_size?)
-bool Semantics::Storage::ideal_size(uint32_t size) const {
-	return size == max_size;
-}
-
-// | Is this size compatible with this storage?  (Is it <= max_size?)
-bool Semantics::Storage::compatible_size(uint32_t size) const {
-	return size <= max_size;
-}
-
-std::vector<uint32_t> Semantics::Storage::get_sizes(const std::vector<Storage> &storage) {
-	std::vector<uint32_t> sizes;
-	for (const Storage &storage_unit : std::as_const(storage)) {
-		sizes.push_back(storage_unit.max_size);
-	}
-	return sizes;
-}
-
-// Type of the register.
-Semantics::Storage::type_t Semantics::Storage::get_type() const {
-	if           ( is_global && !dereference) {
-		return global_address_type;
-	} else if    ( is_global &&  dereference) {
-		return global_dereference_type;
-	} else if    (!is_global && !dereference) {
-		return register_direct_type;
-	} else {  // (!is_global &&  dereference) {
-		return register_dereference_type;
-	}
-}
-
-bool Semantics::Storage::is_global_address()       const { return get_type() == global_address_type; }
-bool Semantics::Storage::is_global_dereference()   const { return get_type() == global_dereference_type; }
-bool Semantics::Storage::is_register_direct()      const { return get_type() == register_direct_type; }
-bool Semantics::Storage::is_register_dereference() const { return get_type() == register_dereference_type; }
 
 Semantics::Instruction::Base::Base()
 	: has_symbol(false)
@@ -4286,6 +4194,157 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::Ignore::emit(const 
 
 	// Return the output.
 	return lines;
+}
+
+Semantics::Instruction::Custom::Custom()
+	{}
+
+Semantics::Instruction::Custom::Custom(const Base &base, const std::vector<Output::Line> &lines)
+	: Base(base)
+	, lines(lines)
+	{}
+
+std::vector<uint32_t> Semantics::Instruction::Custom::get_input_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::Custom::get_working_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::Custom::get_output_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::Custom::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
+
+std::vector<Semantics::Output::Line> Semantics::Instruction::Custom::emit(const std::vector<Storage> &storages) const {
+	// Check sizes.
+	if (Storage::get_sizes(storages) != get_all_sizes()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::Custom::emit: the number or sizes of storage units provided does not match what was expected.";
+		throw SemanticsError(sstr.str());
+	}
+
+	// Prepare output vector.
+	std::vector<Output::Line> lines;
+
+	// Emit a symbol for this instruction if there is one.
+	if (has_symbol) {
+		lines.push_back({":", symbol});
+	}
+
+	// Emit the custom lines.
+	lines.insert(lines.end(), this->lines.cbegin(), this->lines.cend());
+
+	// Return the output.
+	return lines;
+}
+
+Semantics::Instruction::Syscall::Syscall()
+	{}
+
+Semantics::Instruction::Syscall::Syscall(const Base &base)
+	: Base(base)
+	{}
+
+std::vector<uint32_t> Semantics::Instruction::Syscall::get_input_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::Syscall::get_working_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::Syscall::get_output_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::Syscall::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
+
+std::vector<Semantics::Output::Line> Semantics::Instruction::Syscall::emit(const std::vector<Storage> &storages) const {
+	// Check sizes.
+	if (Storage::get_sizes(storages) != get_all_sizes()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::Syscall::emit: the number or sizes of storage units provided does not match what was expected.";
+		throw SemanticsError(sstr.str());
+	}
+
+	// Prepare output vector.
+	std::vector<Output::Line> lines;
+
+	// Emit a symbol for this instruction if there is one.
+	if (has_symbol) {
+		lines.push_back({":", symbol});
+	}
+
+	// Emit "syscall".
+	lines.push_back("\tsyscall");
+
+	// Return the output.
+	return lines;
+}
+
+Semantics::Instruction::AddSp::AddSp()
+	{}
+
+Semantics::Instruction::AddSp::AddSp(const Base &base, int32_t offset)
+	: Base(base)
+	, offset(offset)
+{
+	int32_t rounded_offset = this->offset < 0 ? -this->offset : this->offset;
+	if (rounded_offset % 8 != 0) {
+		rounded_offset += 8 - rounded_offset % 8;
+	}
+	if (this->offset < 0) {
+		rounded_offset = -rounded_offset;
+	}
+	this->offset = rounded_offset;
+}
+
+std::vector<uint32_t> Semantics::Instruction::AddSp::get_input_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::AddSp::get_working_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::AddSp::get_output_sizes() const { return {}; }
+std::vector<uint32_t> Semantics::Instruction::AddSp::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
+
+std::vector<Semantics::Output::Line> Semantics::Instruction::AddSp::emit(const std::vector<Storage> &storages) const {
+	// Check sizes.
+	if (Storage::get_sizes(storages) != get_all_sizes()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::AddSp::emit: the number or sizes of storage units provided does not match what was expected.";
+		throw SemanticsError(sstr.str());
+	}
+
+	// Make sure offset is 8-byte aligned.
+	if (offset % 8 != 0) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::Instruction::AddSp::emit: error: an AddSp instruction is not 8-byte aligned, but this should have automatically been rounded away from 0.  Was it modified at some point?" << std::endl
+			<< "\toffset : " << offset
+			;
+		throw SemanticsError(sstr.str());
+	}
+
+	// Prepare output vector.
+	std::vector<Output::Line> lines;
+
+	// Emit a symbol for this instruction if there is one.
+	if (has_symbol) {
+		lines.push_back({":", symbol});
+	}
+
+	// Emit the addition or subtraction.
+	lines.push_back("\taddiu $sp, $sp, " + std::to_string(offset));
+
+	// Return the output.
+	return lines;
+}
+
+int32_t Semantics::Instruction::AddSp::round_to_align(int32_t offset, uint32_t alignment) {
+	if (alignment <= 0) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::Instruction::AddSp::round_to_align: error: alignment cannot be 0!" << std::endl
+			<< "\toffset : " << offset
+			;
+		throw SemanticsError(sstr.str());
+	}
+
+	if (offset >= 0) {
+		if (offset % alignment == 0) {
+			return offset;
+		} else {
+			return offset + alignment - offset % alignment;
+		}
+	} else {
+		if (-offset % alignment == 0) {
+			return offset;
+		} else {
+			return -((-offset) + alignment - (-offset) % alignment);
+		}
+	}
 }
 
 Semantics::Instruction::LoadImmediate::LoadImmediate()
@@ -4391,6 +4450,19 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadImmediate::emit
 Semantics::Instruction::LoadFrom::LoadFrom()
 	{}
 
+Semantics::Instruction::LoadFrom::LoadFrom(const Base &base, bool is_word_save, bool is_word_load, int32_t addition, bool is_save_fixed, bool is_load_fixed, const Storage &fixed_save_storage, const Storage &fixed_load_storage, bool dereference_save, bool dereference_load)
+	: Base(base)
+	, is_word_save(is_word_save)
+	, is_word_load(is_word_load)
+	, addition(addition)
+	, is_save_fixed(is_save_fixed)
+	, is_load_fixed(is_load_fixed)
+	, fixed_save_storage(fixed_save_storage)
+	, fixed_load_storage(fixed_load_storage)
+	, dereference_save(dereference_save)
+	, dereference_load(dereference_load)
+	{}
+
 Semantics::Instruction::LoadFrom::LoadFrom(const Base &base, bool is_word_save, bool is_word_load, int32_t addition)
 	: Base(base)
 	, is_word_save(is_word_save)
@@ -4405,20 +4477,54 @@ Semantics::Instruction::LoadFrom::LoadFrom(const Base &base, bool is_word, int32
 	, addition(addition)
 	{}
 
-std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_input_sizes() const { return {static_cast<uint32_t>(is_word_load ? 4 : 1)}; }
+std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_input_sizes() const { if (is_load_fixed) { return {}; } else { return {static_cast<uint32_t>(is_word_load || dereference_load ? 4 : 1)}; } }
 std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_working_sizes() const { return {}; }
-std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_output_sizes() const { return {static_cast<uint32_t>(is_word_save ? 4 : 1)}; }
+std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_output_sizes() const { if (is_save_fixed) { return {}; } else { return {static_cast<uint32_t>(is_word_save || dereference_save ? 4 : 1)}; } }
 std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(const std::vector<Storage> &storages) const {
+	// TODO: handle dereference_{load,save}!!!
 	// Check sizes.
 	if (Storage::get_sizes(storages) != get_all_sizes()) {
 		std::ostringstream sstr;
 		sstr << "Semantics::Instruction::LoadFrom::emit: the number or sizes of storage units provided does not match what was expected.";
 		throw SemanticsError(sstr.str());
 	}
-	const Storage &source_storage      = storages[0];
-	const Storage &destination_storage = storages[1];
+	std::vector<Storage>::size_type next_storage_index = 0;
+	const Storage &source_storage      = is_load_fixed ? fixed_load_storage : storages[next_storage_index++];
+	const Storage &destination_storage = is_save_fixed ? fixed_save_storage : storages[next_storage_index++];
+	if (source_storage.max_size != 1 && source_storage.max_size != 4) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::LoadFrom::emit: error: LoadFrom currently only supports source storages of size 4 or 1, not " << source_storage.max_size << ".";
+		throw SemanticsError(sstr.str());
+	}
+	if (destination_storage.max_size != 1 && destination_storage.max_size != 4) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::LoadFrom::emit: error: LoadFrom currently only supports source storages of size 4 or 1, not " << destination_storage.max_size << ".";
+		throw SemanticsError(sstr.str());
+	}
+	if ((source_storage.max_size == 4) != (dereference_load || is_word_load)) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::Instruction::LoadFrom::emit: error: LoadFrom was constructed with "
+			<< (is_word_load ? 4 : 1)
+			<< "-byte word-sized loading but was constructed with a fixed source storage size of "
+			<< source_storage.max_size
+			<< "."
+			;
+		throw SemanticsError(sstr.str());
+	}
+	if ((destination_storage.max_size == 4) != (dereference_save || is_word_save)) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::Instruction::LoadFrom::emit: error: LoadFrom was constructed with "
+			<< (is_word_save ? 4 : 1)
+			<< "-byte word-sized saving but was constructed with a fixed destination storage size of "
+			<< destination_storage.max_size
+			<< "."
+			;
+		throw SemanticsError(sstr.str());
+	}
 
 	// Prepare output vector.
 	std::vector<Output::Line> lines;
@@ -4428,167 +4534,176 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 		lines.push_back({":", symbol});
 	}
 
-	// If !this->is_word, replace sw with sb and lw with lb.
-	//
-	// 4 storage types for destination:
-	// 	1: global_address + x  (Store into this address.)
-	// 	2: x(global_address)   (Store into this dereferenced address.)
-	// 	3: $reg                (Store into this register.)
-	// 	4: x($reg)             (Store into this dereferenced register.)
-	//
-	// 4 storage types for source:
-	// 	1: global_address + x  (Read from this address.)
-	// 	2: x(global_address)   (Read from this dereferenced address.)
-	// 	3: $reg                (Read from this register.)
-	// 	4: x($reg)             (Read from this dereferenced register.)
-	//
-	// 16 cases:
-	//
-	// 1:  global_address + x <- global_address + x
-	// 2:  global_address + x <- x(global_address)
-	// 3:  global_address + x <- $reg
-	// 4:  global_address + x <- x($reg)
-	//
-	// 5:  x(global_address) <- global_address + x
-	// 6:  x(global_address) <- x(global_address)
-	// 7:  x(global_address) <- $reg
-	// 8:  x(global_address) <- x($reg)
-	//
-	// 9:  $reg <- global_address + x
-	// 10: $reg <- x(global_address)
-	// 11: $reg <- $reg
-	// 12: $reg <- x($reg)
-	//
-	// 13: x($reg) <- global_address + x
-	// 14: x($reg) <- x(global_address)
-	// 15: x($reg) <- $reg
-	// 16: x($reg) <- x($reg)
-	//
-	// Equivalent:
-	//
-	// 1: global_address + x <- global_address + x:
-	// 	# Part 1: get destination address.
-	// 	la   $t9, destination_storage.global_address
-	// 	la   $t9, destination_storage.offset($t9)     if != 0
-	//
-	// 	# Part 2: get source address.
-	// 	la   $t8, source_storage.global_address
-	// 	la   $t8, source_storage.offset($t8)          if != 0
-	//
-	// 	# Part 3: load source.
-	// 	lw   $t8, ($t8)
-	// 	la   $t8, addition($t8)                       if != 0
-	//
-	// 	# Part 4: write destination.
-	// 	sw   $t8, ($t9)
-	// 2: global_address + x <- x(global_address):
-	// 	...
-	//
-	// 5-8:
-	// 	Copy #1-4.  3{s/la/lw/; s/if.*$//}
-	//
-	// ...
+	if (!dereference_save && !dereference_load) {
+		// If !this->is_word, replace sw with sb and lw with lb.
+		//
+		// 4 storage types for destination:
+		// 	1: global_address + x  (Store into this address.)
+		// 	2: x(global_address)   (Store into this dereferenced address.)
+		// 	3: $reg                (Store into this register.)
+		// 	4: x($reg)             (Store into this dereferenced register.)
+		//
+		// 4 storage types for source:
+		// 	1: global_address + x  (Read from this address.)
+		// 	2: x(global_address)   (Read from this dereferenced address.)
+		// 	3: $reg                (Read from this register.)
+		// 	4: x($reg)             (Read from this dereferenced register.)
+		//
+		// 16 cases:
+		//
+		// 1:  global_address + x <- global_address + x
+		// 2:  global_address + x <- x(global_address)
+		// 3:  global_address + x <- $reg
+		// 4:  global_address + x <- x($reg)
+		//
+		// 5:  x(global_address) <- global_address + x
+		// 6:  x(global_address) <- x(global_address)
+		// 7:  x(global_address) <- $reg
+		// 8:  x(global_address) <- x($reg)
+		//
+		// 9:  $reg <- global_address + x
+		// 10: $reg <- x(global_address)
+		// 11: $reg <- $reg
+		// 12: $reg <- x($reg)
+		//
+		// 13: x($reg) <- global_address + x
+		// 14: x($reg) <- x(global_address)
+		// 15: x($reg) <- $reg
+		// 16: x($reg) <- x($reg)
+		//
+		// Equivalent:
+		//
+		// 1: global_address + x <- global_address + x:
+		// 	# Part 1: get destination address.
+		// 	la   $t9, destination_storage.global_address
+		// 	la   $t9, destination_storage.offset($t9)     if != 0
+		//
+		// 	# Part 2: get source address.
+		// 	la   $t8, source_storage.global_address
+		// 	la   $t8, source_storage.offset($t8)          if != 0
+		//
+		// 	# Part 3: load source.
+		// 	lw   $t8, ($t8)
+		// 	la   $t8, addition($t8)                       if != 0
+		//
+		// 	# Part 4: write destination.
+		// 	sw   $t8, ($t9)
+		// 2: global_address + x <- x(global_address):
+		// 	...
+		//
+		// 5-8:
+		// 	Copy #1-4.  3{s/la/lw/; s/if.*$//}
+		//
+		// ...
 
-	Output::Line sized_load;
-	Output::Line sized_save;
+		Output::Line sized_load;
+		Output::Line sized_save;
 
-	if (is_word_load) {
-		sized_load = "\tlw   ";
+		if (is_word_load) {
+			sized_load = "\tlw   ";
+		} else {
+			sized_load = "\tlb   ";
+		}
+
+		if (is_word_save) {
+			sized_save = "\tsw   ";
+		} else {
+			sized_save = "\tsb   ";
+		}
+
+		// Part 1: get destination address.
+		if           ( destination_storage.is_global && !destination_storage.dereference) {
+			lines.push_back("\tla   $t9, " + destination_storage.global_address);
+			if (destination_storage.offset != 0) {
+				lines.push_back("\tla   $t9, " + std::to_string(destination_storage.offset) + "($t9)");
+			}
+		} else if    ( destination_storage.is_global &&  destination_storage.dereference) {
+			lines.push_back("\tla   $t9, " + destination_storage.global_address);
+			lines.push_back("\tlw   $t9, " + std::to_string(destination_storage.offset) + "($t9)");
+		} else if    (!destination_storage.is_global && !destination_storage.dereference) {
+		} else {  // (!destination_storage.is_global &&  destination_storage.dereference) {
+			lines.push_back("\tla   $t9, " + std::to_string(destination_storage.offset) + "(" + destination_storage.register_ + ")");
+		}
+
+		// Part 2: get source address.
+		if           ( source_storage.is_global && !source_storage.dereference) {
+			lines.push_back("\tla   $t8, " + source_storage.global_address);
+			if (source_storage.offset != 0) {
+				lines.push_back("\tla   $t8, " + std::to_string(source_storage.offset) + "($t8)");
+			}
+		} else if    ( source_storage.is_global &&  source_storage.dereference) {
+			lines.push_back("\tla   $t8, " + source_storage.global_address);
+			lines.push_back("\tlw   $t8, " + std::to_string(source_storage.offset) + "($t8)");
+		} else if    (!source_storage.is_global && !source_storage.dereference) {
+		} else {  // (!source_storage.is_global &&  source_storage.dereference) {
+			lines.push_back("\tla   $t8, " + std::to_string(source_storage.offset) + "(" + source_storage.register_ + ")");
+		}
+
+		// Part 3: load source.  (Don't apply addition yet.)
+		if           ( source_storage.is_global && !source_storage.dereference) {
+			lines.push_back(sized_load + "$t8, ($t8)");
+		} else if    ( source_storage.is_global &&  source_storage.dereference) {
+			lines.push_back(sized_load + "$t8, ($t8)");
+		} else if    (!source_storage.is_global && !source_storage.dereference) {
+		} else {  // (!source_storage.is_global &&  source_storage.dereference) {
+			lines.push_back(sized_load + "$t8, ($t8)");
+		}
+
+		// Part 4: write destination.
+		if           ( destination_storage.is_global && !destination_storage.dereference) {
+			if (!source_storage.is_global && !source_storage.dereference) {
+				if (addition != 0) {
+					lines.push_back("\tla   $t8, " + std::to_string(addition) + "(" + source_storage.register_ + ")");
+					lines.push_back(sized_save + "$t8, ($t9)");
+				} else {
+					lines.push_back(sized_save + source_storage.register_ + ", ($t9)");
+				}
+			} else {
+				lines.push_back("\tla   $t8, " + std::to_string(addition) + "($t8)");
+				lines.push_back(sized_save + "$t8, ($t9)");
+			}
+		} else if    ( destination_storage.is_global &&  destination_storage.dereference) {
+			if (!source_storage.is_global && !source_storage.dereference) {
+				if (addition != 0) {
+					lines.push_back("\tla   $t8, " + std::to_string(addition) + "(" + source_storage.register_ + ")");
+					lines.push_back(sized_save + "$t8, ($t9)");
+				} else {
+					lines.push_back(sized_save + source_storage.register_ + ", ($t9)");
+				}
+			} else {
+				lines.push_back("\tla   $t8, " + std::to_string(addition) + "($t8)");
+				lines.push_back(sized_save + "$t8, ($t9)");
+			}
+		} else if    (!destination_storage.is_global && !destination_storage.dereference) {
+			if (!source_storage.is_global && !source_storage.dereference) {
+				if (addition != 0) {
+					lines.push_back("\tla   " + destination_storage.register_ + ", " + std::to_string(addition) + "(" + source_storage.register_ + ")");
+				} else {
+					lines.push_back("\tla   " + destination_storage.register_ + ", " + std::to_string(addition) + "(" + source_storage.register_ + ")");
+				}
+			} else {
+				lines.push_back("\tla   " + destination_storage.register_ + ", " + std::to_string(addition) + "($t8)");
+			}
+		} else {  // (!destination_storage.is_global &&  destination_storage.dereference) {
+			if (!source_storage.is_global && !source_storage.dereference) {
+				if (addition != 0) {
+					lines.push_back("\tla   $t8, " + std::to_string(addition) + "(" + source_storage.register_ + ")");
+					lines.push_back(sized_save + "$t8, ($t9)");
+				} else {
+					lines.push_back(sized_save + source_storage.register_ + ", ($t9)");
+				}
+			} else {
+				lines.push_back("\tla   $t8, " + std::to_string(addition) + "($t8)");
+				lines.push_back(sized_save + "$t8, ($t9)");
+			}
+		}
 	} else {
-		sized_load = "\tlb   ";
-	}
-
-	if (is_word_save) {
-		sized_save = "\tsw   ";
-	} else {
-		sized_save = "\tsb   ";
-	}
-
-	// Part 1: get destination address.
-	if           ( destination_storage.is_global && !destination_storage.dereference) {
-		lines.push_back("\tla   $t9, " + destination_storage.global_address);
-		if (destination_storage.offset != 0) {
-			lines.push_back("\tla   $t9, " + std::to_string(destination_storage.offset) + "($t9)");
-		}
-	} else if    ( destination_storage.is_global &&  destination_storage.dereference) {
-		lines.push_back("\tla   $t9, " + destination_storage.global_address);
-		lines.push_back("\tlw   $t9, " + std::to_string(destination_storage.offset) + "($t9)");
-	} else if    (!destination_storage.is_global && !destination_storage.dereference) {
-	} else {  // (!destination_storage.is_global &&  destination_storage.dereference) {
-		lines.push_back("\tla   $t9, " + std::to_string(destination_storage.offset) + "(" + destination_storage.register_ + ")");
-	}
-
-	// Part 2: get source address.
-	if           ( source_storage.is_global && !source_storage.dereference) {
-		lines.push_back("\tla   $t8, " + source_storage.global_address);
-		if (source_storage.offset != 0) {
-			lines.push_back("\tla   $t8, " + std::to_string(source_storage.offset) + "($t8)");
-		}
-	} else if    ( source_storage.is_global &&  source_storage.dereference) {
-		lines.push_back("\tla   $t8, " + source_storage.global_address);
-		lines.push_back("\tlw   $t8, " + std::to_string(source_storage.offset) + "($t8)");
-	} else if    (!source_storage.is_global && !source_storage.dereference) {
-	} else {  // (!source_storage.is_global &&  source_storage.dereference) {
-		lines.push_back("\tla   $t8, " + std::to_string(source_storage.offset) + "(" + source_storage.register_ + ")");
-	}
-
-	// Part 3: load source.  (Don't apply addition yet.)
-	if           ( source_storage.is_global && !source_storage.dereference) {
-		lines.push_back(sized_load + "$t8, ($t8)");
-	} else if    ( source_storage.is_global &&  source_storage.dereference) {
-		lines.push_back(sized_load + "$t8, ($t8)");
-	} else if    (!source_storage.is_global && !source_storage.dereference) {
-	} else {  // (!source_storage.is_global &&  source_storage.dereference) {
-		lines.push_back(sized_load + "$t8, ($t8)");
-	}
-
-	// Part 4: write destination.
-	if           ( destination_storage.is_global && !destination_storage.dereference) {
-		if (!source_storage.is_global && !source_storage.dereference) {
-			if (addition != 0) {
-				lines.push_back("\tla   $t8, " + std::to_string(addition) + "(" + source_storage.register_ + ")");
-				lines.push_back(sized_save + "$t8, ($t9)");
-			} else {
-				lines.push_back(sized_save + source_storage.register_ + ", ($t9)");
-			}
-		} else {
-			lines.push_back("\tla   $t8, " + std::to_string(addition) + "($t8)");
-			lines.push_back(sized_save + "$t8, ($t9)");
-		}
-	} else if    ( destination_storage.is_global &&  destination_storage.dereference) {
-		if (!source_storage.is_global && !source_storage.dereference) {
-			if (addition != 0) {
-				lines.push_back("\tla   $t8, " + std::to_string(addition) + "(" + source_storage.register_ + ")");
-				lines.push_back(sized_save + "$t8, ($t9)");
-			} else {
-				lines.push_back(sized_save + source_storage.register_ + ", ($t9)");
-			}
-		} else {
-			lines.push_back("\tla   $t8, " + std::to_string(addition) + "($t8)");
-			lines.push_back(sized_save + "$t8, ($t9)");
-		}
-	} else if    (!destination_storage.is_global && !destination_storage.dereference) {
-		if (!source_storage.is_global && !source_storage.dereference) {
-			if (addition != 0) {
-				lines.push_back("\tla   " + destination_storage.register_ + ", " + std::to_string(addition) + "(" + source_storage.register_ + ")");
-			} else {
-				lines.push_back("\tla   " + destination_storage.register_ + ", " + std::to_string(addition) + "(" + source_storage.register_ + ")");
-			}
-		} else {
-			lines.push_back("\tla   " + destination_storage.register_ + ", " + std::to_string(addition) + "($t8)");
-		}
-	} else {  // (!destination_storage.is_global &&  destination_storage.dereference) {
-		if (!source_storage.is_global && !source_storage.dereference) {
-			if (addition != 0) {
-				lines.push_back("\tla   $t8, " + std::to_string(addition) + "(" + source_storage.register_ + ")");
-				lines.push_back(sized_save + "$t8, ($t9)");
-			} else {
-				lines.push_back(sized_save + source_storage.register_ + ", ($t9)");
-			}
-		} else {
-			lines.push_back("\tla   $t8, " + std::to_string(addition) + "($t8)");
-			lines.push_back(sized_save + "$t8, ($t9)");
-		}
+		// TODO
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::Instruction::LoadFrom::emit: error: TODO: implement dereferencing!"
+			;
+		throw SemanticsError(sstr.str());
 	}
 
 	// Return the output.
@@ -5961,9 +6076,11 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::Jump::emit(const st
 Semantics::Instruction::Call::Call()
 	{}
 
-Semantics::Instruction::Call::Call(const Base &base, Symbol jump_destination)
+Semantics::Instruction::Call::Call(const Base &base, const Symbol &jump_destination, bool push_saved_registers, bool pop_saved_registers)
 	: Base(base)
 	, jump_destination(jump_destination)
+	, push_saved_registers(push_saved_registers)
+	, pop_saved_registers(pop_saved_registers)
 	{}
 
 std::vector<uint32_t> Semantics::Instruction::Call::get_input_sizes() const { return {}; }
@@ -6192,6 +6309,21 @@ Semantics::Instruction::Instruction(const Ignore &ignore)
 	, data(ignore)
 	{}
 
+Semantics::Instruction::Instruction(const Custom &custom)
+	: tag(custom_tag)
+	, data(custom)
+	{}
+
+Semantics::Instruction::Instruction(const Syscall &syscall)
+	: tag(syscall_tag)
+	, data(syscall)
+	{}
+
+Semantics::Instruction::Instruction(const AddSp &add_sp)
+	: tag(add_sp_tag)
+	, data(add_sp)
+	{}
+
 Semantics::Instruction::Instruction(const LoadImmediate &load_immediate)
 	: tag(load_immediate_tag)
 	, data(load_immediate)
@@ -6276,6 +6408,12 @@ const Semantics::Instruction::Base &Semantics::Instruction::get_base() const {
 	switch(tag) {
 		case ignore_tag:
 			return get_ignore();
+		case custom_tag:
+			return get_custom();
+		case syscall_tag:
+			return get_syscall();
+		case add_sp_tag:
+			return get_add_sp();
 		case load_immediate_tag:
 			return get_load_immediate();
 		case load_from_tag:
@@ -6321,6 +6459,12 @@ Semantics::Instruction::Base &&Semantics::Instruction::get_base() {
 	switch(tag) {
 		case ignore_tag:
 			return std::move(get_ignore());
+		case custom_tag:
+			return std::move(get_custom());
+		case syscall_tag:
+			return std::move(get_syscall());
+		case add_sp_tag:
+			return std::move(get_add_sp());
 		case load_immediate_tag:
 			return std::move(get_load_immediate());
 		case load_from_tag:
@@ -6366,6 +6510,12 @@ Semantics::Instruction::Base &Semantics::Instruction::get_base_mutable() {
 	switch(tag) {
 		case ignore_tag:
 			return get_ignore_mutable();
+		case custom_tag:
+			return get_custom_mutable();
+		case syscall_tag:
+			return get_syscall_mutable();
+		case add_sp_tag:
+			return get_add_sp_mutable();
 		case load_immediate_tag:
 			return get_load_immediate_mutable();
 		case load_from_tag:
@@ -6411,6 +6561,9 @@ bool Semantics::Instruction::is_ignore() const {
 	switch(tag) {
 		case ignore_tag:
 			return true;
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -6437,9 +6590,114 @@ bool Semantics::Instruction::is_ignore() const {
 	}
 }
 
+bool Semantics::Instruction::is_custom() const {
+	switch(tag) {
+		case ignore_tag:
+			return false;
+		case custom_tag:
+			return true;
+		case syscall_tag:
+		case add_sp_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case less_than_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::is_custom: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::Instruction::is_syscall() const {
+	switch(tag) {
+		case ignore_tag:
+		case custom_tag:
+			return false;
+		case syscall_tag:
+			return true;
+		case add_sp_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case less_than_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::is_syscall: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
+bool Semantics::Instruction::is_add_sp() const {
+	switch(tag) {
+		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+			return false;
+		case add_sp_tag:
+			return true;
+		case load_immediate_tag:
+		case load_from_tag:
+		case less_than_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			return false;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::is_add_sp: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+}
+
 bool Semantics::Instruction::is_load_immediate() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 			return false;
 		case load_immediate_tag:
 			return true;
@@ -6471,6 +6729,9 @@ bool Semantics::Instruction::is_load_immediate() const {
 bool Semantics::Instruction::is_load_from() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 			return false;
 		case load_from_tag:
@@ -6502,6 +6763,9 @@ bool Semantics::Instruction::is_load_from() const {
 bool Semantics::Instruction::is_less_than_from() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 			return false;
@@ -6533,6 +6797,9 @@ bool Semantics::Instruction::is_less_than_from() const {
 bool Semantics::Instruction::is_nor_from() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -6564,6 +6831,9 @@ bool Semantics::Instruction::is_nor_from() const {
 bool Semantics::Instruction::is_and_from() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -6595,6 +6865,9 @@ bool Semantics::Instruction::is_and_from() const {
 bool Semantics::Instruction::is_or_from() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -6626,6 +6899,9 @@ bool Semantics::Instruction::is_or_from() const {
 bool Semantics::Instruction::is_add_from() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -6657,6 +6933,9 @@ bool Semantics::Instruction::is_add_from() const {
 bool Semantics::Instruction::is_sub_from() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -6688,6 +6967,9 @@ bool Semantics::Instruction::is_sub_from() const {
 bool Semantics::Instruction::is_mult_from() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -6719,6 +7001,9 @@ bool Semantics::Instruction::is_mult_from() const {
 bool Semantics::Instruction::is_div_from() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -6750,6 +7035,9 @@ bool Semantics::Instruction::is_div_from() const {
 bool Semantics::Instruction::is_jump_to() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -6781,6 +7069,9 @@ bool Semantics::Instruction::is_jump_to() const {
 bool Semantics::Instruction::is_jump() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -6812,6 +7103,9 @@ bool Semantics::Instruction::is_jump() const {
 bool Semantics::Instruction::is_call() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -6843,6 +7137,9 @@ bool Semantics::Instruction::is_call() const {
 bool Semantics::Instruction::is_return() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -6874,6 +7171,9 @@ bool Semantics::Instruction::is_return() const {
 bool Semantics::Instruction::is_branch_zero() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -6905,6 +7205,9 @@ bool Semantics::Instruction::is_branch_zero() const {
 bool Semantics::Instruction::is_branch_nonnegative() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -6937,6 +7240,9 @@ const Semantics::Instruction::Ignore &Semantics::Instruction::get_ignore() const
 	switch(tag) {
 		case ignore_tag:
 			return std::get<Ignore>(data);
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -6967,9 +7273,127 @@ const Semantics::Instruction::Ignore &Semantics::Instruction::get_ignore() const
 	throw SemanticsError(sstr.str());
 }
 
+const Semantics::Instruction::Custom &Semantics::Instruction::get_custom() const {
+	switch(tag) {
+		case ignore_tag:
+			break;
+		case custom_tag:
+			return std::get<Custom>(data);
+		case syscall_tag:
+		case add_sp_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case less_than_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_custom: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_custom: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+const Semantics::Instruction::Syscall &Semantics::Instruction::get_syscall() const {
+	switch(tag) {
+		case ignore_tag:
+		case custom_tag:
+			break;
+		case syscall_tag:
+			return std::get<Syscall>(data);
+		case add_sp_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case less_than_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_syscall: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_syscall: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+const Semantics::Instruction::AddSp &Semantics::Instruction::get_add_sp() const {
+	switch(tag) {
+		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+			break;
+		case add_sp_tag:
+			return std::get<AddSp>(data);
+		case load_immediate_tag:
+		case load_from_tag:
+		case less_than_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_add_sp: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_add_sp: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
 const Semantics::Instruction::LoadImmediate &Semantics::Instruction::get_load_immediate() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
+			break;
 		case load_immediate_tag:
 			return std::get<LoadImmediate>(data);
 		case load_from_tag:
@@ -7004,6 +7428,9 @@ const Semantics::Instruction::LoadImmediate &Semantics::Instruction::get_load_im
 const Semantics::Instruction::LoadFrom &Semantics::Instruction::get_load_from() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 			break;
 		case load_from_tag:
@@ -7039,6 +7466,9 @@ const Semantics::Instruction::LoadFrom &Semantics::Instruction::get_load_from() 
 const Semantics::Instruction::LessThanFrom &Semantics::Instruction::get_less_than_from() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 			break;
@@ -7074,6 +7504,9 @@ const Semantics::Instruction::LessThanFrom &Semantics::Instruction::get_less_tha
 const Semantics::Instruction::NorFrom &Semantics::Instruction::get_nor_from() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7109,6 +7542,9 @@ const Semantics::Instruction::NorFrom &Semantics::Instruction::get_nor_from() co
 const Semantics::Instruction::AndFrom &Semantics::Instruction::get_and_from() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7144,6 +7580,9 @@ const Semantics::Instruction::AndFrom &Semantics::Instruction::get_and_from() co
 const Semantics::Instruction::OrFrom &Semantics::Instruction::get_or_from() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7179,6 +7618,9 @@ const Semantics::Instruction::OrFrom &Semantics::Instruction::get_or_from() cons
 const Semantics::Instruction::AddFrom &Semantics::Instruction::get_add_from() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7214,6 +7656,9 @@ const Semantics::Instruction::AddFrom &Semantics::Instruction::get_add_from() co
 const Semantics::Instruction::SubFrom &Semantics::Instruction::get_sub_from() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7249,6 +7694,9 @@ const Semantics::Instruction::SubFrom &Semantics::Instruction::get_sub_from() co
 const Semantics::Instruction::MultFrom &Semantics::Instruction::get_mult_from() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7284,6 +7732,9 @@ const Semantics::Instruction::MultFrom &Semantics::Instruction::get_mult_from() 
 const Semantics::Instruction::DivFrom &Semantics::Instruction::get_div_from() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7319,6 +7770,9 @@ const Semantics::Instruction::DivFrom &Semantics::Instruction::get_div_from() co
 const Semantics::Instruction::JumpTo &Semantics::Instruction::get_jump_to() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7354,6 +7808,9 @@ const Semantics::Instruction::JumpTo &Semantics::Instruction::get_jump_to() cons
 const Semantics::Instruction::Jump &Semantics::Instruction::get_jump() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7389,6 +7846,9 @@ const Semantics::Instruction::Jump &Semantics::Instruction::get_jump() const {
 const Semantics::Instruction::Call &Semantics::Instruction::get_call() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7424,6 +7884,9 @@ const Semantics::Instruction::Call &Semantics::Instruction::get_call() const {
 const Semantics::Instruction::Return &Semantics::Instruction::get_return() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7459,6 +7922,9 @@ const Semantics::Instruction::Return &Semantics::Instruction::get_return() const
 const Semantics::Instruction::BranchZero &Semantics::Instruction::get_branch_zero() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7494,6 +7960,9 @@ const Semantics::Instruction::BranchZero &Semantics::Instruction::get_branch_zer
 const Semantics::Instruction::BranchNonnegative &Semantics::Instruction::get_branch_nonnegative() const {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7529,6 +7998,9 @@ Semantics::Instruction::Ignore &&Semantics::Instruction::get_ignore() {
 	switch(tag) {
 		case ignore_tag:
 			return std::get<Ignore>(std::move(data));
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7559,9 +8031,126 @@ Semantics::Instruction::Ignore &&Semantics::Instruction::get_ignore() {
 	throw SemanticsError(sstr.str());
 }
 
+Semantics::Instruction::Custom &&Semantics::Instruction::get_custom() {
+	switch(tag) {
+		case ignore_tag:
+			break;
+		case custom_tag:
+			return std::get<Custom>(std::move(data));
+		case syscall_tag:
+		case add_sp_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case less_than_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_custom: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_custom: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+Semantics::Instruction::Syscall &&Semantics::Instruction::get_syscall() {
+	switch(tag) {
+		case ignore_tag:
+		case custom_tag:
+			break;
+		case syscall_tag:
+			return std::get<Syscall>(std::move(data));
+		case add_sp_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case less_than_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_syscall: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_syscall: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+Semantics::Instruction::AddSp &&Semantics::Instruction::get_add_sp() {
+	switch(tag) {
+		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+			break;
+		case add_sp_tag:
+			return std::get<AddSp>(std::move(data));
+		case load_immediate_tag:
+		case load_from_tag:
+		case less_than_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_add_sp: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_add_sp: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
 Semantics::Instruction::LoadImmediate &&Semantics::Instruction::get_load_immediate() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 			break;
 		case load_immediate_tag:
 			return std::get<LoadImmediate>(std::move(data));
@@ -7597,6 +8186,9 @@ Semantics::Instruction::LoadImmediate &&Semantics::Instruction::get_load_immedia
 Semantics::Instruction::LoadFrom &&Semantics::Instruction::get_load_from() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 			break;
 		case load_from_tag:
@@ -7632,6 +8224,9 @@ Semantics::Instruction::LoadFrom &&Semantics::Instruction::get_load_from() {
 Semantics::Instruction::LessThanFrom &&Semantics::Instruction::get_less_than_from() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 			break;
@@ -7667,6 +8262,9 @@ Semantics::Instruction::LessThanFrom &&Semantics::Instruction::get_less_than_fro
 Semantics::Instruction::NorFrom &&Semantics::Instruction::get_nor_from() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7702,6 +8300,9 @@ Semantics::Instruction::NorFrom &&Semantics::Instruction::get_nor_from() {
 Semantics::Instruction::AndFrom &&Semantics::Instruction::get_and_from() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7737,6 +8338,9 @@ Semantics::Instruction::AndFrom &&Semantics::Instruction::get_and_from() {
 Semantics::Instruction::OrFrom &&Semantics::Instruction::get_or_from() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7772,6 +8376,9 @@ Semantics::Instruction::OrFrom &&Semantics::Instruction::get_or_from() {
 Semantics::Instruction::AddFrom &&Semantics::Instruction::get_add_from() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7807,6 +8414,9 @@ Semantics::Instruction::AddFrom &&Semantics::Instruction::get_add_from() {
 Semantics::Instruction::SubFrom &&Semantics::Instruction::get_sub_from() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7842,6 +8452,9 @@ Semantics::Instruction::SubFrom &&Semantics::Instruction::get_sub_from() {
 Semantics::Instruction::MultFrom &&Semantics::Instruction::get_mult_from() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7877,6 +8490,9 @@ Semantics::Instruction::MultFrom &&Semantics::Instruction::get_mult_from() {
 Semantics::Instruction::DivFrom &&Semantics::Instruction::get_div_from() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7912,6 +8528,9 @@ Semantics::Instruction::DivFrom &&Semantics::Instruction::get_div_from() {
 Semantics::Instruction::JumpTo &&Semantics::Instruction::get_jump_to() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7947,6 +8566,9 @@ Semantics::Instruction::JumpTo &&Semantics::Instruction::get_jump_to() {
 Semantics::Instruction::Jump &&Semantics::Instruction::get_jump() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -7982,6 +8604,9 @@ Semantics::Instruction::Jump &&Semantics::Instruction::get_jump() {
 Semantics::Instruction::Call &&Semantics::Instruction::get_call() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -8017,6 +8642,9 @@ Semantics::Instruction::Call &&Semantics::Instruction::get_call() {
 Semantics::Instruction::Return &&Semantics::Instruction::get_return() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -8052,6 +8680,9 @@ Semantics::Instruction::Return &&Semantics::Instruction::get_return() {
 Semantics::Instruction::BranchZero &&Semantics::Instruction::get_branch_zero() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -8087,6 +8718,9 @@ Semantics::Instruction::BranchZero &&Semantics::Instruction::get_branch_zero() {
 Semantics::Instruction::BranchNonnegative &&Semantics::Instruction::get_branch_nonnegative() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -8123,6 +8757,9 @@ Semantics::Instruction::Ignore &Semantics::Instruction::get_ignore_mutable() {
 	switch(tag) {
 		case ignore_tag:
 			return std::get<Ignore>(data);
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -8153,9 +8790,126 @@ Semantics::Instruction::Ignore &Semantics::Instruction::get_ignore_mutable() {
 	throw SemanticsError(sstr.str());
 }
 
+Semantics::Instruction::Custom &Semantics::Instruction::get_custom_mutable() {
+	switch(tag) {
+		case ignore_tag:
+			break;
+		case custom_tag:
+			return std::get<Custom>(data);
+		case syscall_tag:
+		case add_sp_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case less_than_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_custom_mutable: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_custom_mutable: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+Semantics::Instruction::Syscall &Semantics::Instruction::get_syscall_mutable() {
+	switch(tag) {
+		case ignore_tag:
+		case custom_tag:
+			break;
+		case syscall_tag:
+			return std::get<Syscall>(data);
+		case add_sp_tag:
+		case load_immediate_tag:
+		case load_from_tag:
+		case less_than_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_syscall_mutable: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_syscall_mutable: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
+Semantics::Instruction::AddSp &Semantics::Instruction::get_add_sp_mutable() {
+	switch(tag) {
+		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+			break;
+		case add_sp_tag:
+			return std::get<AddSp>(data);
+		case load_immediate_tag:
+		case load_from_tag:
+		case less_than_from_tag:
+		case nor_from_tag:
+		case and_from_tag:
+		case or_from_tag:
+		case add_from_tag:
+		case sub_from_tag:
+		case mult_from_tag:
+		case div_from_tag:
+		case jump_to_tag:
+		case jump_tag:
+		case call_tag:
+		case return_tag:
+		case branch_zero_tag:
+		case branch_nonnegative_tag:
+			break;
+
+		case null_tag:
+		default:
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::get_add_sp_mutable: invalid tag: " << tag;
+			throw SemanticsError(sstr.str());
+	}
+
+	std::ostringstream sstr;
+	sstr << "Semantics::Instruction::get_add_sp_mutable: binding has a different type tag: " << tag;
+	throw SemanticsError(sstr.str());
+}
+
 Semantics::Instruction::LoadImmediate &Semantics::Instruction::get_load_immediate_mutable() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 			break;
 		case load_immediate_tag:
 			return std::get<LoadImmediate>(data);
@@ -8191,6 +8945,9 @@ Semantics::Instruction::LoadImmediate &Semantics::Instruction::get_load_immediat
 Semantics::Instruction::LoadFrom &Semantics::Instruction::get_load_from_mutable() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 			break;
 		case load_from_tag:
@@ -8226,6 +8983,9 @@ Semantics::Instruction::LoadFrom &Semantics::Instruction::get_load_from_mutable(
 Semantics::Instruction::LessThanFrom &Semantics::Instruction::get_less_than_from_mutable() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 			break;
@@ -8261,6 +9021,9 @@ Semantics::Instruction::LessThanFrom &Semantics::Instruction::get_less_than_from
 Semantics::Instruction::NorFrom &Semantics::Instruction::get_nor_from_mutable() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -8296,6 +9059,9 @@ Semantics::Instruction::NorFrom &Semantics::Instruction::get_nor_from_mutable() 
 Semantics::Instruction::AndFrom &Semantics::Instruction::get_and_from_mutable() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -8331,6 +9097,9 @@ Semantics::Instruction::AndFrom &Semantics::Instruction::get_and_from_mutable() 
 Semantics::Instruction::OrFrom &Semantics::Instruction::get_or_from_mutable() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -8366,6 +9135,9 @@ Semantics::Instruction::OrFrom &Semantics::Instruction::get_or_from_mutable() {
 Semantics::Instruction::AddFrom &Semantics::Instruction::get_add_from_mutable() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -8401,6 +9173,9 @@ Semantics::Instruction::AddFrom &Semantics::Instruction::get_add_from_mutable() 
 Semantics::Instruction::SubFrom &Semantics::Instruction::get_sub_from_mutable() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -8436,6 +9211,9 @@ Semantics::Instruction::SubFrom &Semantics::Instruction::get_sub_from_mutable() 
 Semantics::Instruction::MultFrom &Semantics::Instruction::get_mult_from_mutable() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -8471,6 +9249,9 @@ Semantics::Instruction::MultFrom &Semantics::Instruction::get_mult_from_mutable(
 Semantics::Instruction::DivFrom &Semantics::Instruction::get_div_from_mutable() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -8506,6 +9287,9 @@ Semantics::Instruction::DivFrom &Semantics::Instruction::get_div_from_mutable() 
 Semantics::Instruction::JumpTo &Semantics::Instruction::get_jump_to_mutable() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -8541,6 +9325,9 @@ Semantics::Instruction::JumpTo &Semantics::Instruction::get_jump_to_mutable() {
 Semantics::Instruction::Jump &Semantics::Instruction::get_jump_mutable() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -8576,6 +9363,9 @@ Semantics::Instruction::Jump &Semantics::Instruction::get_jump_mutable() {
 Semantics::Instruction::Call &Semantics::Instruction::get_call_mutable() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -8611,6 +9401,9 @@ Semantics::Instruction::Call &Semantics::Instruction::get_call_mutable() {
 Semantics::Instruction::Return &Semantics::Instruction::get_return_mutable() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -8646,6 +9439,9 @@ Semantics::Instruction::Return &Semantics::Instruction::get_return_mutable() {
 Semantics::Instruction::BranchZero &Semantics::Instruction::get_branch_zero_mutable() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -8681,6 +9477,9 @@ Semantics::Instruction::BranchZero &Semantics::Instruction::get_branch_zero_muta
 Semantics::Instruction::BranchNonnegative &Semantics::Instruction::get_branch_nonnegative_mutable() {
 	switch(tag) {
 		case ignore_tag:
+		case custom_tag:
+		case syscall_tag:
+		case add_sp_tag:
 		case load_immediate_tag:
 		case load_from_tag:
 		case less_than_from_tag:
@@ -8712,11 +9511,17 @@ Semantics::Instruction::BranchNonnegative &Semantics::Instruction::get_branch_no
 	throw SemanticsError(sstr.str());
 }
 
-// | Return "ignore", "load_immediate", "less_than_from", "load_from", or "nor_from", etc.
+// | Return "ignore", "custom", "syscall", "add_sp", "load_immediate", "less_than_from", "load_from", or "nor_from", etc.
 std::string Semantics::Instruction::get_tag_repr(tag_t tag) {
 	switch(tag) {
 		case ignore_tag:
 			return "ignore";
+		case custom_tag:
+			return "custom";
+		case syscall_tag:
+			return "syscall";
+		case add_sp_tag:
+			return "add_sp";
 		case load_immediate_tag:
 			return "load_immediate";
 		case load_from_tag:
@@ -8766,6 +9571,12 @@ std::vector<uint32_t> Semantics::Instruction::get_input_sizes() const {
 	switch(tag) {
 		case ignore_tag:
 			return get_ignore().get_input_sizes();
+		case custom_tag:
+			return get_custom().get_input_sizes();
+		case syscall_tag:
+			return get_syscall().get_input_sizes();
+		case add_sp_tag:
+			return get_add_sp().get_input_sizes();
 		case load_immediate_tag:
 			return get_load_immediate().get_input_sizes();
 		case load_from_tag:
@@ -8811,6 +9622,12 @@ std::vector<uint32_t> Semantics::Instruction::get_working_sizes() const {
 	switch(tag) {
 		case ignore_tag:
 			return get_ignore().get_working_sizes();
+		case custom_tag:
+			return get_custom().get_working_sizes();
+		case syscall_tag:
+			return get_syscall().get_working_sizes();
+		case add_sp_tag:
+			return get_add_sp().get_working_sizes();
 		case load_immediate_tag:
 			return get_load_immediate().get_working_sizes();
 		case load_from_tag:
@@ -8856,6 +9673,12 @@ std::vector<uint32_t> Semantics::Instruction::get_output_sizes() const {
 	switch(tag) {
 		case ignore_tag:
 			return get_ignore().get_output_sizes();
+		case custom_tag:
+			return get_custom().get_output_sizes();
+		case syscall_tag:
+			return get_syscall().get_output_sizes();
+		case add_sp_tag:
+			return get_add_sp().get_output_sizes();
 		case load_immediate_tag:
 			return get_load_immediate().get_output_sizes();
 		case load_from_tag:
@@ -8901,6 +9724,12 @@ std::vector<uint32_t> Semantics::Instruction::get_all_sizes() const {
 	switch(tag) {
 		case ignore_tag:
 			return get_ignore().get_all_sizes();
+		case custom_tag:
+			return get_custom().get_all_sizes();
+		case syscall_tag:
+			return get_syscall().get_all_sizes();
+		case add_sp_tag:
+			return get_add_sp().get_all_sizes();
 		case load_immediate_tag:
 			return get_load_immediate().get_all_sizes();
 		case load_from_tag:
@@ -8946,6 +9775,12 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::emit(const std::vec
 	switch(tag) {
 		case ignore_tag:
 			return get_ignore().emit(storages);
+		case custom_tag:
+			return get_custom().emit(storages);
+		case syscall_tag:
+			return get_syscall().emit(storages);
+		case add_sp_tag:
+			return get_add_sp().emit(storages);
 		case load_immediate_tag:
 			return get_load_immediate().emit(storages);
 		case load_from_tag:
@@ -9049,6 +9884,26 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 		// and marking it as visited.
 		bool has_unvisited_children = false;
 
+		// Search for a sequence connection for a node that should be emitted before this one.
+		std::map<Index, Index>::const_iterator reversed_sequences_search = reversed_sequences.find(this_node);
+		if (reversed_sequences_search != reversed_sequences.cend()) {
+			Index before_node = reversed_sequences_search->second;
+
+			// Detect cycles.
+			if (visited_instructions.find(before_node) != visited_instructions.cend()) {
+				std::ostringstream sstr;
+				sstr << "Semantics::MIPSIO::prepare: error: a cycle was detected in the instruction graph at index " << before_node << " (sequenced after " << this_node << ").";
+				throw SemanticsError(sstr.str());
+			}
+
+			// Add the child.
+			if (visited_instructions.find(before_node) == visited_instructions.cend()) {
+				has_unvisited_children = true;
+				children_stack.push_back(before_node);
+			}
+		}
+
+		// Search connections.
 		for (IOIndex input_index_ = 0; input_index_ < instruction.get_input_sizes().size(); ++input_index_) {
 			const IOIndex input_index = instruction.get_input_sizes().size() - 1 - input_index_;
 			std::map<IO, IO>::const_iterator connections_search = connections.find({this_node, input_index});
@@ -9380,6 +10235,11 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 
 	std::vector<Output::Line> output_lines;
 
+	std::vector<Storage> pushed_registers;
+	std::set<Storage> in_pushed_registers;
+
+	int32_t add_sp_total = 0;
+
 	// DFS from each output vertex.  Don't revisit instructions.  Write outputs
 	// to available working storage units.  After all of a given node's output
 	// index's connected input nodes are emitted, mark the working storage unit
@@ -9414,10 +10274,28 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 		// and marking it as visited.
 		bool has_unvisited_children = false;
 
+		// Search for a sequence connection for a node that should be emitted before this one.
+		std::map<Index, Index>::const_iterator reversed_sequences_search = reversed_sequences.find(this_node);
+		if (reversed_sequences_search != reversed_sequences.cend()) {
+			Index before_node = reversed_sequences_search->second;
+
+			// Detect cycles.
+			if (visited_instructions.find(before_node) != visited_instructions.cend()) {
+				std::ostringstream sstr;
+				sstr << "Semantics::MIPSIO::emit: error: a cycle was detected in the instruction graph at index " << before_node << " (sequenced after " << this_node << ").";
+				throw SemanticsError(sstr.str());
+			}
+
+			// Add the child.
+			if (visited_instructions.find(before_node) == visited_instructions.cend()) {
+				has_unvisited_children = true;
+				children_stack.push_back(before_node);
+			}
+		}
+
+		// Search connections.
 		for (IOIndex input_index_ = 0; input_index_ < instruction.get_input_sizes().size(); ++input_index_) {
 			const IOIndex input_index = instruction.get_input_sizes().size() - 1 - input_index_;
-
-			// Search connections.
 			std::map<IO, IO>::const_iterator connections_search = connections.find({this_node, input_index});
 			if (connections_search != connections.cend()) {
 				const Index child_node = connections_search->second.first;
@@ -9433,25 +10311,6 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 				if (visited_instructions.find(child_node) == visited_instructions.cend()) {
 					has_unvisited_children = true;
 					children_stack.push_back(child_node);
-				}
-			}
-
-			// Search for a sequence connection for a node that should be emitted before this one.
-			std::map<Index, Index>::const_iterator reversed_sequences_search = reversed_sequences.find(this_node);
-			if (reversed_sequences_search != reversed_sequences.cend()) {
-				Index before_node = reversed_sequences_search->second;
-
-				// Detect cycles.
-				if (visited_instructions.find(before_node) != visited_instructions.cend()) {
-					std::ostringstream sstr;
-					sstr << "Semantics::MIPSIO::emit: error: a cycle was detected in the instruction graph at index " << before_node << " (sequenced after " << this_node << ").";
-					throw SemanticsError(sstr.str());
-				}
-
-				// Add the child.
-				if (visited_instructions.find(before_node) == visited_instructions.cend()) {
-					has_unvisited_children = true;
-					children_stack.push_back(before_node);
 				}
 			}
 		}
@@ -9669,9 +10528,109 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 		instruction_storage.insert(instruction_storage.end(), instruction_working_storage.cbegin(), instruction_working_storage.cend());
 		instruction_storage.insert(instruction_storage.end(), output_storage.cbegin(), output_storage.cend());
 
+		// Adjust dereferenced "$sp" storage units.
+		for (Storage &instruction_storage_unit : instruction_storage) {
+			if (instruction_storage_unit.is_register_dereference() && instruction_storage_unit.register_ == "$sp" && !instruction_storage_unit.no_sp_adjust) {
+				instruction_storage_unit.no_sp_adjust = true;
+				instruction_storage_unit.offset += add_sp_total;
+			}
+		}
+
+		// | Handle AddSp instructions.
+		if (instruction.is_add_sp()) {
+			const int32_t offset = instruction.get_add_sp().offset;
+			if (offset % 8 != 0) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::MIPSIO::emit: error: an AddSp instruction is not 8-byte aligned, but this should have automatically been rounded away from 0.  Was it modified at some point?" << std::endl
+					<< "\tthis_node (index) : " << this_node << std::endl
+					<< "\toffset            : " << offset
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			add_sp_total += offset;
+		}
+
 		// Emit the instruction.
 		std::vector<Output::Line> instruction_output;
-		instruction_output = instruction.emit(instruction_storage);
+		if (!instruction.is_call() || (!instruction.get_call().push_saved_registers && !instruction.get_call().pop_saved_registers)) {
+			instruction_output = instruction.emit(instruction_storage);
+		} else {
+			// Instead of a call, just push or pop saved registers.
+			const Instruction::Call &call = instruction.get_call();
+			if (call.push_saved_registers && call.pop_saved_registers) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::MIPSIO::emit: error: an Instruction::Call cannot have both push_saved_registers and pop_saved_registers set at the same time." << std::endl
+					<< "\tthis_node (index) : " << this_node
+					;
+				throw SemanticsError(sstr.str());
+			}
+
+			if (call.push_saved_registers) {
+				if (pushed_registers.size() > 0) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::MIPSIO::emit: error: found another pushed_registers Call instruction before the last one was popped!" << std::endl
+						<< "\tthis_node (index) : " << this_node
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// TODO: don't save storages that are no longer needed.
+				// Get storages we need to save.
+				for (const std::map<IO, Storage>::value_type &input_storage_pair : std::as_const(input_storages)) {
+					const Storage &input_storage_unit = input_storage_pair.second;
+					if ((input_storage_unit.is_register_direct() || input_storage_unit.is_register_dereference()) && input_storage_unit.is_caller_preserved) {
+						if (in_pushed_registers.find(input_storage_unit) == in_pushed_registers.cend()) {
+							in_pushed_registers.insert(input_storage_unit);
+							pushed_registers.push_back(input_storage_unit);
+						}
+					}
+				}
+				for (const std::map<IO, Storage>::value_type &output_storage_pair : std::as_const(capture_outputs)) {
+					const Storage &output_storage_unit = output_storage_pair.second;
+					if ((output_storage_unit.is_register_direct() || output_storage_unit.is_register_dereference()) && output_storage_unit.is_caller_preserved) {
+						if (in_pushed_registers.find(output_storage_unit) == in_pushed_registers.cend()) {
+							in_pushed_registers.insert(output_storage_unit);
+							pushed_registers.push_back(output_storage_unit);
+						}
+					}
+				}
+				for (const std::map<Storage::Index, IO>::value_type &working_storage_pair : std::as_const(claimed_working_storages)) {
+					const Storage &working_storage_unit = working_storages[working_storage_pair.first];
+					if ((working_storage_unit.is_register_direct() || working_storage_unit.is_register_dereference()) && working_storage_unit.is_caller_preserved) {
+						if (in_pushed_registers.find(working_storage_unit) == in_pushed_registers.cend()) {
+							in_pushed_registers.insert(working_storage_unit);
+							pushed_registers.push_back(working_storage_unit);
+						}
+					}
+				}
+
+				// Emit code to push these registers.
+				const int32_t addition = -4*(pushed_registers.size() % 2 == 0 ? pushed_registers.size() : pushed_registers.size() + 1);
+				add_sp_total += addition;
+				instruction_output.push_back("\taddiu $sp, $sp, " + std::to_string(addition));
+				for (const Storage &saved_storage : std::as_const(pushed_registers)) {
+					const int32_t saved_storage_index = static_cast<int32_t>(&saved_storage - &pushed_registers[0]);
+					instruction_output.push_back("\tsw   " + saved_storage.register_ + ", " + std::to_string(4*saved_storage_index) + "($sp)");
+				}
+			} else {
+				// Emit code to pop the saved registers.
+				for (const Storage &saved_storage : std::as_const(pushed_registers)) {
+					const int32_t saved_storage_index = static_cast<int32_t>(&saved_storage - &pushed_registers[0]);
+					instruction_output.push_back("\tlw   " + saved_storage.register_ + ", " + std::to_string(4*saved_storage_index) + "($sp)");
+				}
+				const int32_t addition = 4*(pushed_registers.size() % 2 == 0 ? pushed_registers.size() : pushed_registers.size() + 1);
+				add_sp_total += addition;
+				instruction_output.push_back("\taddiu $sp, $sp, " + std::to_string(addition));
+
+				// Clear the pushed register containers.
+				pushed_registers.clear();
+				in_pushed_registers.clear();
+			}
+		}
 		output_lines.insert(output_lines.end(), instruction_output.cbegin(), instruction_output.cend());
 
 		// Free working storages: for each input that's in a working storage
@@ -9931,6 +10890,8 @@ Semantics::MIPSIO::Index Semantics::MIPSIO::merge(const MIPSIO &other) {
 	return addition;
 }
 
+const bool Semantics::all_arrays_records_are_refs = CPSL_CC_SEMANTICS_ALL_ARRAY_RECORDS_ARE_REFS;
+
 Semantics::Expression::Expression() {}
 
 Semantics::Expression::Expression(const MIPSIO  &instructions, const Type  &output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(          instructions ), output_type(          output_type ), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
@@ -9938,11 +10899,11 @@ Semantics::Expression::Expression(const MIPSIO  &instructions,       Type &&outp
 Semantics::Expression::Expression(      MIPSIO &&instructions, const Type  &output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(std::move(instructions)), output_type(          output_type ), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
 Semantics::Expression::Expression(      MIPSIO &&instructions,       Type &&output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(std::move(instructions)), output_type(std::move(output_type)), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
 
-Semantics::Expression Semantics::analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
-	return analyze_expression(grammar.expression_storage.at(expression), constant_scope, type_scope, var_scope, combined_scope);
+Semantics::Expression Semantics::analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, bool no_dereference_record_array) {
+	return analyze_expression(grammar.expression_storage.at(expression), constant_scope, type_scope, routine_scope, var_scope, combined_scope, no_dereference_record_array);
 }
 
-Semantics::Expression Semantics::analyze_expression(const ::Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
+Semantics::Expression Semantics::analyze_expression(const ::Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, bool no_dereference_record_array) {
 	// Some type aliases to improve readability.
 	using M = Semantics::MIPSIO;
 	using I = Semantics::Instruction;
@@ -9953,6 +10914,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 	using Output        = Semantics::Output;
 	using Storage       = Semantics::Storage;
 	using Symbol        = Semantics::Symbol;
+	using Var = Semantics::IdentifierScope::IdentifierBinding::Var;
 
 	// TODO
 	return Expression();
@@ -9966,6 +10928,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 	// First, see if this expression is a constant value.
 	ConstantValue constant_value = is_expression_constant(expression_symbol, constant_scope);
 	if (constant_value.is_static()) {
+		expression_semantics.lexeme_begin = constant_value.lexeme_begin;
+		expression_semantics.lexeme_end   = constant_value.lexeme_end;
 		expression_semantics.output_type  = constant_value.get_static_type();
 		expression_semantics.output_index = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), constant_value.get_static_primitive_type().is_word(), constant_value)});
 	} else {
@@ -9979,8 +10943,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression       &expression1    = grammar.expression_storage.at(pipe.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 
 				// Make sure left and right are of primitive types.
 				if (!left.output_type.resolve_type().is_primitive() || !right.output_type.resolve_type().is_primitive()) {
@@ -10037,8 +11001,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression            &expression1         = grammar.expression_storage.at(ampersand.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -10097,8 +11061,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression         &expression1      = grammar.expression_storage.at(equals.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -10165,8 +11129,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression         &expression1        = grammar.expression_storage.at(lt_or_gt.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -10234,8 +11198,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression     &expression1  = grammar.expression_storage.at(le.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -10304,8 +11268,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression     &expression1  = grammar.expression_storage.at(ge.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -10374,8 +11338,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression     &expression1  = grammar.expression_storage.at(lt.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -10440,8 +11404,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression     &expression1  = grammar.expression_storage.at(gt.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -10506,8 +11470,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression       &expression1    = grammar.expression_storage.at(plus.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -10579,8 +11543,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression        &expression1     = grammar.expression_storage.at(minus.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -10652,8 +11616,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression        &expression1     = grammar.expression_storage.at(times.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -10716,7 +11680,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const Index left_index   = expression_semantics.instructions.merge(left.instructions);
 				const Index right_index  = expression_semantics.instructions.merge(right.instructions);
 				const Index mult_index   = expression_semantics.instructions.add_instruction({I::MultFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
-				const Index ignore_index = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{mult_index, 1}}, mult_index);
+				const Index ignore_index = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{mult_index, 1}}, mult_index); (void) ignore_index;
 				expression_semantics.output_index = mult_index;
 				break;
 			} case ::Expression::slash_branch: {
@@ -10726,8 +11690,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression        &expression1     = grammar.expression_storage.at(slash.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -10790,7 +11754,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const Index left_index   = expression_semantics.instructions.merge(left.instructions);
 				const Index right_index  = expression_semantics.instructions.merge(right.instructions);
 				const Index div_index    = expression_semantics.instructions.add_instruction({I::DivFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
-				const Index ignore_index = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{div_index, 1}}, div_index);
+				const Index ignore_index = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{div_index, 1}}, div_index); (void) ignore_index;
 				expression_semantics.output_index = div_index;
 				break;
 			} case ::Expression::percent_branch: {
@@ -10800,8 +11764,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression          &expression1       = grammar.expression_storage.at(percent.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -10864,7 +11828,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const Index left_index      = expression_semantics.instructions.merge(left.instructions);
 				const Index right_index     = expression_semantics.instructions.merge(right.instructions);
 				const Index div_index       = expression_semantics.instructions.add_instruction({I::DivFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
-				const Index ignore_index    = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{div_index, 0}}, div_index);
+				const Index ignore_index    = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{div_index, 0}}, div_index); (void) ignore_index;
 				const Index remainder_index = expression_semantics.instructions.add_instruction_indexed({I::LoadFrom(B(), left_type.is_word())}, {{div_index, 1}}, div_index);
 				expression_semantics.output_index = remainder_index;
 				break;
@@ -10874,7 +11838,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression        &expression0     = grammar.expression_storage.at(tilde.expression);
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 				expression_semantics.lexeme_begin = tilde.tilde_operator0;
 				expression_semantics.lexeme_end   = value.lexeme_end;
 
@@ -10917,7 +11881,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression             &expression0     = grammar.expression_storage.at(unary_minus.expression);
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 				expression_semantics.lexeme_begin = unary_minus.minus_operator0;
 				expression_semantics.lexeme_end   = value.lexeme_end;
 
@@ -10966,7 +11930,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const Index value_index   = expression_semantics.instructions.merge(value.instructions);
 				const Index load_n1_index = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), value_type.is_word(), ConstantValue(static_cast<int32_t>(-1), 1, 0))});
 				const Index mult_index    = expression_semantics.instructions.add_instruction({I::MultFrom(B(), value_type.is_word())}, {load_n1_index, value.output_index + value_index});
-				const Index ignore_index  = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{mult_index, 1}}, mult_index);
+				const Index ignore_index  = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{mult_index, 1}}, mult_index); (void) ignore_index;
 				expression_semantics.output_index = mult_index;
 				break;
 			} case ::Expression::parentheses_branch: {
@@ -10976,7 +11940,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const LexemeOperator            &rightparenthesis_operator0 = grammar.lexemes.at(parentheses.rightparenthesis_operator0).get_operator();
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 				expression_semantics.lexeme_begin = parentheses.leftparenthesis_operator0;
 				expression_semantics.lexeme_end   = parentheses.rightparenthesis_operator0 + 1;
 
@@ -10995,14 +11959,372 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const LexemeIdentifier        &call_identifier             = grammar.lexemes.at(call.identifier).get_identifier();
 				const LexemeOperator          &leftparenthesis_operator0   = grammar.lexemes.at(call.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
 				const ExpressionSequenceOpt   &expression_sequence_opt     = grammar.expression_sequence_opt_storage.at(call.expression_sequence_opt);
-				const LexemeOperator          &rightparenthesis_operator0  = grammar.lexemes.at(call.rightparenthesis_operator0).get_operator();
+				const LexemeOperator          &rightparenthesis_operator0  = grammar.lexemes.at(call.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
 
-// TODO
-#if 0
-				expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, call.identifier, call.rightparenthesis_operator0 + 1);
+				expression_semantics.lexeme_begin = call.identifier;
+				expression_semantics.lexeme_end   = call.rightparenthesis_operator0 + 1;
 
+				// Lookup the RoutineDeclaration.
+				if (!combined_scope.has(call_identifier.text)) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< call_identifier.line << " col " << call_identifier.column
+						<< "): identifier out of scope, for call of ``"
+						<< call_identifier.text
+						<< "\"."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				if (!routine_scope.has(call_identifier.text)) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< call_identifier.line << " col " << call_identifier.column
+						<< "): cannot find a function or procedure with the identifier in scope, for call of ``"
+						<< call_identifier.text
+						<< "\"."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration = routine_scope.get(call_identifier.text).get_routine_declaration();
+
+				// In an expression, the call has to refer to a function that returns an output, not a procedure that does not.
+				if (!routine_declaration.output.has_value()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< call_identifier.line << " col " << call_identifier.column
+						<< "): in an expression, a call has to refer to a function that returns an output, not to a procedure that does not, for a call of ``"
+						<< call_identifier.text
+						<< "\"."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				expression_semantics.output_type = **routine_declaration.output;
+
+				// Output types of arrays or records are currently unsupported.
+				if (!(*routine_declaration.output)->resolve_type().is_primitive()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< call_identifier.line << " col " << call_identifier.column
+						<< "): returning arrays or records is currently not supported, in call of ``"
+						<< call_identifier.text
+						<< "\"."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Collect the expressions in the list.
+				std::vector<const ::Expression *> expressions;
+				switch (expression_sequence_opt.branch) {
+					case ExpressionSequenceOpt::empty_branch: {
+						// No need to retrieve the empty value.
+						break;
+					}
+
+					case ExpressionSequenceOpt::value_branch: {
+						const ExpressionSequenceOpt::Value &expression_sequence_opt_value = grammar.expression_sequence_opt_value_storage.at(expression_sequence_opt.data);
+						const ExpressionSequence           &expression_sequence           = grammar.expression_sequence_storage.at(expression_sequence_opt_value.expression_sequence);
+
+						const ::Expression           &first_expression         = grammar.expression_storage.at(expression_sequence.expression);
+						const ExpressionPrefixedList &expression_prefixed_list = grammar.expression_prefixed_list_storage.at(expression_sequence.expression_prefixed_list);
+
+						// Collect the expressions in the list.
+						expressions.push_back(&first_expression);
+						bool reached_end = false;
+						for (const ExpressionPrefixedList *last_list = &expression_prefixed_list; !reached_end; ) {
+							// Unpack the last list encountered.
+							switch(last_list->branch) {
+								case ExpressionPrefixedList::empty_branch: {
+									// We're done.
+									// (No need to unpack the empty branch.)
+									reached_end = true;
+									break;
+								}
+
+								case ExpressionPrefixedList::cons_branch: {
+									// Unpack the list.
+									const ExpressionPrefixedList::Cons &last_expression_prefixed_list_cons = grammar.expression_prefixed_list_cons_storage.at(last_list->data);
+									const ExpressionPrefixedList       &last_expression_prefixed_list      = grammar.expression_prefixed_list_storage.at(last_expression_prefixed_list_cons.expression_prefixed_list);
+									const LexemeOperator               &last_comma_operator0               = grammar.lexemes.at(last_expression_prefixed_list_cons.comma_operator0).get_operator(); (void) last_comma_operator0;
+									const ::Expression                 &last_expression                    = grammar.expression_storage.at(last_expression_prefixed_list_cons.expression);
+
+									// Add the expression.
+									expressions.push_back(&last_expression);
+									last_list = &last_expression_prefixed_list;
+
+									// Loop.
+									break;
+								}
+
+								// Unrecognized branch.
+								default: {
+									std::ostringstream sstr;
+									sstr << "Semantics::analyze_expression: internal error: invalid expression_prefixed_list branch at index " << last_list - &grammar.expression_prefixed_list_storage[0] << ": " << last_list->branch;
+									throw SemanticsError(sstr.str());
+								}
+							}
+						}
+
+						// Correct the order of the list.
+						std::reverse(expressions.begin() + 1, expressions.end());
+
+						// We've finished collecting the expressions.
+						break;
+					}
+
+					// Unrecognized branch.
+					default: {
+						std::ostringstream sstr;
+						sstr << "Semantics::analyze_expression: internal error: invalid expression_sequence_opt branch at index " << call.expression_sequence_opt << ": " << expression_sequence_opt.branch;
+						throw SemanticsError(sstr.str());
+					}
+				}
+
+				// Make sure the number of parameters matches the number of expressions.
+				if (expressions.size() != routine_declaration.parameters.size()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< call_identifier.line << " col " << call_identifier.column
+						<< "): number of arguments provided (" << expressions.size() << ") in call to ``"
+						<< call_identifier.text
+						<< "\" does not match what was expected (" << routine_declaration.parameters.size() << ")."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Var (as opposed to Ref) arrays and records are copied.
+
+				// References must be lvalues: variables or record addresses or
+				// array addresses.  For record addresses or array references,
+				// just pass the address.  For all unique references to
+				// primitive variables that are direct registers, push the
+				// value onto the stack, use the address of the pushed value as
+				// the pointer, and when the call returns, put the value in
+				// that address back into the variable.  Use the same address
+				// if the same variable is specified multiple times.
+				//
+				// After pushing unique primitive direct register variables and
+				// registers that need to be saved, put the first 4 arguments
+				// in $a0-$a3, push the rest, and then pop them.
+				//
+				// Var arrays and records will get copied if configured.
+
+				// First, get all primitive vars that are direct registers.
+				std::vector<Storage>                                                                    register_refs;
+				std::set<Storage>                                                                       in_register_refs;
+				std::map<std::vector<const ::Expression *>::size_type, std::vector<Storage>::size_type> register_ref_arguments;
+				for (std::vector<const ::Expression *>::size_type argument = 0; argument < expressions.size(); ++argument) {
+					const ::Expression                  &argument_expression_symbol = *expressions[argument];
+					const std::pair<bool, const Type *> &parameter                  = routine_declaration.parameters[argument];
+					const bool                           is_parameter_ref           = parameter.first;
+					const Type                          &parameter_type             = *parameter.second;
+
+					// Is this parameter a reference?
+					if (is_parameter_ref) {
+						if (argument_expression_symbol.branch != ::Expression::lvalue_branch) {
+							std::ostringstream sstr;
+							sstr
+								<< "Semantics::analyze_expression: error (line "
+								<< call_identifier.line << " col " << call_identifier.column
+								<< "): parameter # " << argument + 1 << " in call to ``"
+								<< call_identifier.text
+								<< "\" expects a reference, but the expression provided is not an lvalue."
+								;
+							throw SemanticsError(sstr.str());
+						} else {
+							const ::Expression::Lvalue &expression_lvalue = grammar.expression_lvalue_storage.at(argument_expression_symbol.data);
+							const Lvalue               &lvalue            = grammar.lvalue_storage.at(expression_lvalue.lvalue);
+
+							const LexemeIdentifier           &lvalue_identifier           = grammar.lexemes.at(lvalue.identifier).get_identifier();
+							const LvalueAccessorClauseList   &lvalue_accessor_clause_list = grammar.lvalue_accessor_clause_list_storage.at(lvalue.lvalue_accessor_clause_list);
+
+							if (lvalue_accessor_clause_list.branch != LvalueAccessorClauseList::empty_branch) {
+								// There is at least one array or record
+								// accessor, so we know this argument is not a
+								// primitive variable not in an array or
+								// record.  No need to reserve stack space for
+								// it.
+							} else {
+								// Lookup the lvalue identifier.
+								if (!combined_scope.has(lvalue_identifier.text)) {
+									std::ostringstream sstr;
+									sstr
+										<< "Semantics::analyze_expression: error (line "
+										<< call_identifier.line << " col " << call_identifier.column
+										<< "): argument # " << argument + 1 << "(line "
+										<< lvalue_identifier.line << " col " << lvalue_identifier.column
+										<< ") in call to ``"
+										<< call_identifier.text
+										<< "\" for a reference uses an lvalue reference with an identifier that is not in scope: not found."
+										;
+									throw SemanticsError(sstr.str());
+								}
+								// The lvalue identifier can be in other
+								// scopes, e.g. global variables, but for here
+								// we only need to do something if it's a
+								// direct primitive register variable.
+								if (var_scope.has(lvalue_identifier.text)) {
+									const Var     &var         = var_scope.get(lvalue_identifier.text).get_var();
+									const Storage &var_storage = var.storage;
+									if (var_storage.is_register_direct()) {
+										if (in_register_refs.find(var_storage) == in_register_refs.cend()) {
+											register_ref_arguments.insert({argument, register_refs.size()});
+											in_register_refs.insert(var_storage);
+											register_refs.push_back(var_storage);
+										} else {
+											bool found = false;
+											for (const Storage &storage : std::as_const(register_refs)) {
+												const std::vector<Storage>::size_type storage_index = &storage - &register_refs[0];
+												if (storage == var_storage) {
+													found = true;
+													register_ref_arguments.insert({argument, storage_index});
+													break;
+												}
+											}
+											if (!found) {
+												std::ostringstream sstr;
+												sstr
+													<< "Semantics::analyze_expression: internal error (line "
+													<< call_identifier.line << " col " << call_identifier.column
+													<< "): argument # " << argument + 1 << "(line "
+													<< lvalue_identifier.line << " col " << lvalue_identifier.column
+													<< ") in call to ``"
+													<< call_identifier.text
+													<< "\": we calculated that a storage exists but couldn't find it."
+													;
+												throw SemanticsError(sstr.str());
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+
+				// Start our sequenced chain of instructions to perform a call.
+				Index last_call_index = expression_semantics.instructions.add_instruction({I::Ignore(B(), false, false)});
+
+				// Evaluate all arguments.
+				std::vector<Index> argument_outputs;
+				for (std::vector<const ::Expression *>::size_type argument = 0; argument < expressions.size(); ++argument) {
+					const ::Expression                  &argument_expression_symbol = *expressions[argument];
+					const std::pair<bool, const Type *> &parameter                  = routine_declaration.parameters[argument];
+					const bool                           is_parameter_ref           = parameter.first;
+					const Type                          &parameter_type             = *parameter.second;
+
+					std::map<std::vector<const ::Expression *>::size_type, std::vector<Storage>::size_type>::const_iterator register_ref_arguments_search = register_ref_arguments.find(argument);
+
+					if (register_ref_arguments_search != register_ref_arguments.cend()) {
+						const std::vector<Storage>::size_type &register_ref_argument_index = register_ref_arguments_search->second;
+						int32_t ref_offset = I::AddSp::round_to_align(-4*register_refs.size()) - 4*register_ref_argument_index;
+						if (argument < 4) {
+							last_call_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, ref_offset, true, true, Storage("$a" + std::to_string(argument)), Storage("$sp", true))}, {}, last_call_index);
+							// argument_outputs[argument] should be ignored for argument < 4.
+							argument_outputs.push_back(0);
+						} else {
+							last_call_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, ref_offset, false, true, Storage(), Storage("$sp", true))}, {}, last_call_index);
+							argument_outputs.push_back(last_call_index);
+						}
+					} else {
+						const Expression argument_expression  = analyze_expression(argument_expression_symbol, constant_scope, type_scope, routine_scope, var_scope, combined_scope, true);
+						const Index argument_expression_index = expression_semantics.instructions.merge(argument_expression.instructions) + argument_expression.output_index;
+						expression_semantics.instructions.add_sequence_connection(last_call_index, argument_expression_index);
+						last_call_index = argument_expression_index;
+
+						if (!all_arrays_records_are_refs && !is_parameter_ref && !parameter_type.resolve_type().is_primitive()) {
+							// TODO
+							throw SemanticsError("TODO: TODO: implement copying of arrays and records for non-Ref Vars.");
+						}
+
+						argument_outputs.push_back(argument_expression_index);
+
+						if (argument_expression.output_type.resolve_type() != parameter_type.resolve_type()) {
+							std::ostringstream sstr;
+							sstr
+								<< "Semantics::analyze_expression: error (line "
+								<< call_identifier.line << " col " << call_identifier.column
+								<< "): argument #" << argument + 1 << ": the type of the argument provided does not match the required parameter type in call to ``"
+								<< call_identifier.text
+								<< "\" for a reference uses an lvalue reference with an identifier that is not in scope: not found."
+								;
+							throw SemanticsError(sstr.str());
+						}
+
+						if (argument < 4) {
+							// argument_outputs[argument] should be ignored for argument < 4, but it's there anyway.
+							const bool input_word = !parameter_type.is_primitive() || parameter_type.get_primitive().is_word();
+							last_call_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, input_word, 0, true, false, Storage("$a" + std::to_string(argument)), Storage())}, {argument_expression_index}, last_call_index);
+						}
+					}
+				}
+
+				// Our stack will look like this:
+				// - Our local stack data.
+				// - return address ($sp currently points here)
+				// - pushed refs
+				// - pushed saved registers
+				// - pushed arguments
+
+				// Push these refs storages onto the stack.  (AddSp automatically rounds to 8-byte aligns.)
+				last_call_index = expression_semantics.instructions.add_instruction({I::AddSp(B(), -4*register_refs.size())}, {}, last_call_index);
+				for (const Storage &register_ref : std::as_const(register_refs)) {
+					const std::vector<Storage>::size_type register_ref_index  = &register_ref - &register_refs[0];
+					const uint32_t                        register_ref_offset = 4 * register_ref_index;
+					last_call_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, Storage("$sp", 4, register_ref_offset, true), register_ref)}, {}, last_call_index);
+				}
+
+				// Push registers that need to be saved onto the stack.
+				last_call_index = expression_semantics.instructions.add_instruction({I::Call(B(), Symbol(), true, false)}, {}, last_call_index);
+
+				// Push arguments.
+				if (expressions.size() > 4) {
+					last_call_index = expression_semantics.instructions.add_instruction({I::AddSp(B(), -4*(expressions.size() - 4))}, {}, last_call_index);
+					for (std::vector<const ::Expression *>::size_type argument = 4; argument < expressions.size(); ++argument) {
+						const ::Expression                  &argument_expression_symbol = *expressions[argument]; (void) argument_expression_symbol;
+						const std::pair<bool, const Type *> &parameter                  = routine_declaration.parameters[argument];
+						const bool                           is_parameter_ref           = parameter.first; (void) is_parameter_ref;
+						const Type                          &parameter_type             = *parameter.second;
+
+						const bool     input_word          = (register_ref_arguments.find(argument) != register_ref_arguments.cend()) || !parameter_type.is_primitive() || parameter_type.get_primitive().is_word();
+						const uint32_t register_ref_offset = 4 * (argument - 4);
+						last_call_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, input_word, 0, true, false, Storage("$sp", 4, register_ref_offset, true), Storage())}, {argument_outputs[argument]}, last_call_index);
+					}
+				}
+
+				// Call the function.
+				last_call_index = expression_semantics.instructions.add_instruction({I::Call(B(), routine_declaration.location)}, {}, last_call_index);
+
+				// Pop arguments and discard.
+				if (expressions.size() > 4) {
+					last_call_index = expression_semantics.instructions.add_instruction({I::AddSp(B(), 4*(expressions.size() - 4))}, {}, last_call_index);
+				}
+
+				// Pop registers that need to be saved onto the stack.
+				last_call_index = expression_semantics.instructions.add_instruction({I::Call(B(), Symbol(), false, true)}, {}, last_call_index);
+
+				// Pop the refs storages back from the stack.
+				std::vector<Storage> register_refs_reversed(std::as_const(register_refs));
+				std::reverse(register_refs_reversed.begin(), register_refs_reversed.end());
+				for (const Storage &register_ref : std::as_const(register_refs_reversed)) {
+					const std::vector<Storage>::size_type register_ref_index  = &register_ref - &register_refs[0];
+					const uint32_t                        register_ref_offset = 4 * register_ref_index;
+					last_call_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, register_ref, Storage("$sp", 4, register_ref_offset, true))}, {}, last_call_index);
+				}
+				last_call_index = expression_semantics.instructions.add_instruction({I::AddSp(B(), -4*register_refs.size())}, {}, last_call_index);
+
+				// Retrieve the output from $v0.
+				const bool output_word = !(*routine_declaration.output)->is_primitive() || (*routine_declaration.output)->get_primitive().is_word();
+				last_call_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), output_word, true, 0, false, true, {}, Storage("$v0"))}, {}, last_call_index);
+				expression_semantics.output_index = last_call_index;
+
+				// We're done.
 				break;
-#endif
 			} case ::Expression::chr_branch: {
 				const ::Expression::Chr &chr                        = grammar.expression_chr_storage.at(expression_symbol.data);
 				const LexemeKeyword     &chr_keyword0               = grammar.lexemes.at(chr.chr_keyword0).get_keyword();
@@ -11013,7 +12335,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Convert an integer to a char.
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 				expression_semantics.lexeme_begin = chr.chr_keyword0;
 				expression_semantics.lexeme_end   = chr.rightparenthesis_operator0 + 1;
 
@@ -11074,7 +12396,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Convert a char to an integer.
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 				expression_semantics.lexeme_begin = ord.ord_keyword0;
 				expression_semantics.lexeme_end   = ord.rightparenthesis_operator0 + 1;
 
@@ -11137,7 +12459,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Find the predecessor of a value.
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 				expression_semantics.lexeme_begin = pred.pred_keyword0;
 				expression_semantics.lexeme_end   = pred.rightparenthesis_operator0 + 1;
 
@@ -11192,7 +12514,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Find the successor of a value.
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, var_scope, combined_scope);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 				expression_semantics.lexeme_begin = succ.succ_keyword0;
 				expression_semantics.lexeme_end   = succ.rightparenthesis_operator0 + 1;
 
@@ -11245,98 +12567,289 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 			case ::Expression::lvalue_branch: {
 				const ::Expression::Lvalue       &lvalue                      = grammar.expression_lvalue_storage.at(expression_symbol.data);
 				const Lvalue                     &lvalue_symbol               = grammar.lvalue_storage.at(lvalue.lvalue);
+
 				const LexemeIdentifier           &lexeme_identifier           = grammar.lexemes.at(lvalue_symbol.identifier).get_identifier();
 				const LvalueAccessorClauseList   &lvalue_accessor_clause_list = grammar.lvalue_accessor_clause_list_storage.at(lvalue_symbol.lvalue_accessor_clause_list);
 
-// TODO
-#if 0
-				// According to the documentation, only lvalues without
-				// accessors can be constant (static) expressions.  So check the
-				// lvalue type, to see if it's just an identifier.
-				if (lvalue_accessor_clause_list.branch != LvalueAccessorClauseList::empty_branch) {
-					// It's not just an identifier.  This lvalue expression is not
-					// a constant expression.
+				expression_semantics.lexeme_begin = lvalue_symbol.identifier;
+				expression_semantics.lexeme_end   = lvalue_symbol.identifier + 1;
 
-					// Unpack the lvalue_accessor_clause_list just enough to get the last lexeme.
-					uint64_t lexeme_end;
-					switch (lvalue_accessor_clause_list.branch) {
-						// We already checked that the list is not empty.
-						//case LvalueAccessorClauseList::empty_branch: {
-						//	// ...
-						//	break;
-						//}
+				// An lvalue in an expression corresponds a read / a LoadFrom.
+
+				// Collect the lvalue accessor clauses in the list.
+				std::vector<const LvalueAccessorClause *> lvalue_accessor_clauses;
+				bool reached_end = false;
+				for (const LvalueAccessorClauseList *last_list = &lvalue_accessor_clause_list; !reached_end; ) {
+					// Unpack the last list encountered.
+					switch(last_list->branch) {
+						case LvalueAccessorClauseList::empty_branch: {
+							// We're done.
+							// (No need to unpack the empty branch.)
+							reached_end = true;
+							break;
+						}
 
 						case LvalueAccessorClauseList::cons_branch: {
 							// Unpack the list.
-							const LvalueAccessorClauseList::Cons &last_lvalue_accessor_clause_list_cons = grammar.lvalue_accessor_clause_list_cons_storage.at(lvalue_accessor_clause_list.data);
+							const LvalueAccessorClauseList::Cons &last_lvalue_accessor_clause_list_cons = grammar.lvalue_accessor_clause_list_cons_storage.at(last_list->data);
 							const LvalueAccessorClauseList       &last_lvalue_accessor_clause_list      = grammar.lvalue_accessor_clause_list_storage.at(last_lvalue_accessor_clause_list_cons.lvalue_accessor_clause_list);
-							const LvalueAccessorClause           &last_lvalue_accessor_clause           = grammar.lvalue_accessor_clause_storage.at(last_lvalue_accessor_clause_list_cons.lvalue_accessor_clause); (void) last_lvalue_accessor_clause;
+							const LvalueAccessorClause           &last_lvalue_accessor_clause           = grammar.lvalue_accessor_clause_storage.at(last_lvalue_accessor_clause_list_cons.lvalue_accessor_clause);
 
-							// Unpack just the last LvalueAccessorClause.
-							switch (last_lvalue_accessor_clause.branch) {
-								case LvalueAccessorClause::index_branch: {
-									const LvalueAccessorClause::Index &index            = grammar.lvalue_accessor_clause_index_storage.at(last_lvalue_accessor_clause.data);
-									const LexemeOperator              &dot_operator0    = grammar.lexemes.at(index.dot_operator0).get_operator(); (void) dot_operator0;
-									const LexemeIdentifier            &index_identifier = grammar.lexemes.at(index.identifier).get_identifier(); (void) index_identifier;
+							// Add the constant assignment.
+							lvalue_accessor_clauses.push_back(&last_lvalue_accessor_clause);
+							last_list = &last_lvalue_accessor_clause_list;
 
-									lexeme_end = index.identifier + 1;
-
-									break;
-								}
-
-								case LvalueAccessorClause::array_branch: {
-									const LvalueAccessorClause::Array &array                  = grammar.lvalue_accessor_clause_array_storage.at(last_lvalue_accessor_clause.data);
-									const LexemeOperator              &leftbracket_operator0  = grammar.lexemes.at(array.leftbracket_operator0).get_operator(); (void) leftbracket_operator0;
-									const ::Expression                &expression0            = grammar.expression_storage.at(array.expression); (void) expression0;
-									const LexemeOperator              &rightbracket_operator0 = grammar.lexemes.at(array.rightbracket_operator0).get_operator(); (void) rightbracket_operator0;
-
-									lexeme_end = array.rightbracket_operator0 + 1;
-
-									break;
-								}
-
-								// Unrecognized branch.
-								default: {
-									std::ostringstream sstr;
-									sstr << "Semantics::is_expression_constant: internal error: invalid lvalue_accessor_clause branch at index " << last_lvalue_accessor_clause_list_cons.lvalue_accessor_clause << ": " << last_lvalue_accessor_clause.branch;
-									throw SemanticsError(sstr.str());
-								}
-							}
-
+							// Loop.
 							break;
 						}
 
 						// Unrecognized branch.
 						default: {
 							std::ostringstream sstr;
-							sstr << "Semantics::is_expression_constant: internal error: invalid lvalue_accessor_clause_list branch at index " << lvalue_symbol.lvalue_accessor_clause_list << ": " << lvalue_accessor_clause_list.branch;
+							sstr << "Semantics::analyze_expression: internal error: invalid lvalue_accessor_clause_list branch at index " << last_list - &grammar.lvalue_accessor_clause_list_storage[0] << ": " << last_list->branch;
 							throw SemanticsError(sstr.str());
 						}
-					};
-
-					expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, lvalue_symbol.identifier, lexeme_end);
-					break;
+					}
 				}
 
-				// Lookup the identifier binding.
-				std::optional<IdentifierScope::IdentifierBinding> identifier_binding_search = expression_constant_scope.lookup_copy(lexeme_identifier.text);
-				if (!identifier_binding_search) {
+				// Correct the order of the list.
+				std::reverse(lvalue_accessor_clauses.begin(), lvalue_accessor_clauses.end());
+
+				// Lookup the lvalue.
+				if (!combined_scope.has(lexeme_identifier.text)) {
 					std::ostringstream sstr;
-					sstr << "Semantics::is_expression_constant: error (line " << lexeme_identifier.line << " col " << lexeme_identifier.column << "): identifier out of scope when checking for constant lvalue: " << lexeme_identifier.text;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< lexeme_identifier.line << " col " << lexeme_identifier.column
+						<< "): identifier not found; it is out of scope: "
+						<< lexeme_identifier.text
+						<< "."
+						;
 					throw SemanticsError(sstr.str());
 				}
 
-				if (!identifier_binding_search->is_static()) {
-					// The identifier does not refer to a constant expression.
-					expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, lvalue_symbol.identifier, lvalue_symbol.identifier + 1);
-					break;
-				} else {  // identifier_binding_search->is_static()
-					const IdentifierScope::IdentifierBinding::Static &static_ = identifier_binding_search->get_static();
-					// Copy the constant value.
-					expression_constant_value = ConstantValue(static_.constant_value, lvalue_symbol.identifier, lvalue_symbol.identifier + 1);
-					break;
+				// Is it a variable?
+				if        (var_scope.has(lexeme_identifier.text)) {
+					const Var  &var  = var_scope.get(lexeme_identifier.text).get_var();
+					const Type &type = *var.type;
+
+					// What Type is it?
+					const Type &resolved_type = type.resolve_type();
+					if        (resolved_type.is_primitive()) {
+						const Type::Primitive &resolved_primitive_type = resolved_type.get_primitive();
+
+						if (lvalue_accessor_clause_list.branch != LvalueAccessorClauseList::empty_branch) {
+							std::ostringstream sstr;
+							sstr
+								<< "Semantics::analyze_expression: error (line "
+								<< lexeme_identifier.line << " col " << lexeme_identifier.column
+								<< "): identifier refers to a primitive type, ``"
+								<< resolved_type.get_tag_repr()
+								<< "\", but record (``.\") or array (``[]\") accessors are invalid on this type."
+								;
+							throw SemanticsError(sstr.str());
+						}
+
+						// Load the variable.
+						expression_semantics.output_type = type;
+						const Index load_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), resolved_primitive_type.is_word(), resolved_primitive_type.is_word(), 0, false, true, Storage(), var.storage)});
+						expression_semantics.output_index = load_index;
+					} else if (resolved_type.is_record() || resolved_type.is_array()) {
+						// Load the base address of the array or record.  Apply any provided accessors.
+						const Type *last_output_type = &type;
+						Index last_output_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), var.storage)});
+
+						for (const LvalueAccessorClause &lvalue_accessor_clause : std::as_const(lvalue_accessor_clauses)) {
+							switch (lvalue_accessor_clause.branch) {
+								case LvalueAccessorClause::index_branch: {
+									const LvalueAccessorClause::Index &lvalue_accessor_clause_index = grammar.lvalue_accessor_clause_index_storage.at(lvalue_accessor_clause.data);
+									const LexemeKeyword               &dot_operator0                = grammar.lexemes.at(lvalue_accessor_clause_index.dot_operator0).get_keyword();
+									const LexemeIdentifier            &identifier                   = grammar.lexemes.at(lvalue_accessor_clause_index.identifier).get_identifier();
+
+									expression_semantics.lexeme_end = lvalue_accessor_clause_index.identifier + 1;
+
+									if (!last_output_type->resolve_type().is_record()) {
+										std::ostringstream sstr;
+										sstr
+											<< "Semantics::analyze_expression: error (line "
+											<< dot_operator0.line << " col " << dot_operator0.column
+											<< "): ``.\" is used to access a record, but the value being accessed is not a record: "
+											<< resolved_type.get_tag_repr()
+											;
+										throw SemanticsError(sstr.str());
+									}
+
+									// Find the field.
+									bool     found  = false;
+									uint32_t offset = 0;
+									for (const std::pair<std::string, const Type *> &field : std::as_const(last_output_type->resolve_type().get_record().fields)) {
+										const std::string &field_name = field.first;
+										const Type        &field_type = *field.second;
+
+										if (identifier.text == field_name) {
+											found = true;
+											last_output_type = &field_type;
+											break;
+										}
+
+										offset += field_type.get_size();
+									}
+									if (!found) {
+										std::ostringstream sstr;
+										sstr
+											<< "Semantics::analyze_expression: error (line "
+											<< dot_operator0.line << " col " << dot_operator0.column
+											<< "): ``.\" is used to access a record, but the record has no field with the name: "
+											<< identifier.text
+											;
+										throw SemanticsError(sstr.str());
+									}
+
+									// Get the address of the field.
+									const Index record_offset_index          = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(offset), 0, 0))});
+									const Index record_element_address_index = expression_semantics.instructions.add_instruction({I::AddFrom(B(), true)}, {last_output_index, record_offset_index});
+									// Dereference if the field type is primitive.  If the field type is another record or array, leave the address as is.
+									const Type &last_output_resolved_type = last_output_type->resolve_type();
+									if (no_dereference_record_array || !last_output_resolved_type.is_primitive()) {
+										last_output_index = record_element_address_index;
+									} else {
+										// Dereference.
+										const Type::Primitive &last_output_resolved_primitive_type = last_output_resolved_type.get_primitive();
+										const Index record_dereference_index = expression_semantics.instructions.add_instruction(
+											{I::LoadFrom(
+												B(),                                            // base
+												last_output_resolved_primitive_type.is_word(),  // is_word_save
+												last_output_resolved_primitive_type.is_word(),  // is_word_load
+												0,                                              // addition
+												false,                                          // is_save_fixed
+												false,                                          // is_load_fixed
+												{},                                             // fixed_save_storage
+												{},                                             // fixed_load_storage
+												false,                                          // dereference_save
+												true                                            // dereference_load
+											)},
+											{record_element_address_index}
+										);
+										last_output_index = record_dereference_index;
+									}
+
+									break;
+								}
+
+								case LvalueAccessorClause::array_branch: {
+									const LvalueAccessorClause::Array &lvalue_accessor_clause_array = grammar.lvalue_accessor_clause_array_storage.at(lvalue_accessor_clause.data);
+									const LexemeOperator              &leftbracket_operator0        = grammar.lexemes.at(lvalue_accessor_clause_array.leftbracket_operator0).get_operator();
+									const ::Expression                &expression0                  = grammar.expression_storage.at(lvalue_accessor_clause_array.expression);
+									const LexemeOperator              &rightbracket_operator0       = grammar.lexemes.at(lvalue_accessor_clause_array.rightbracket_operator0).get_operator(); (void) rightbracket_operator0;
+
+									expression_semantics.lexeme_end = lvalue_accessor_clause_array.rightbracket_operator0 + 1;
+
+									if (!last_output_type->resolve_type().is_array()) {
+										std::ostringstream sstr;
+										sstr
+											<< "Semantics::analyze_expression: error (line "
+											<< leftbracket_operator0.line << " col " << leftbracket_operator0.column
+											<< "): ``[]\" is used to access an array, but the value being accessed is not an array: "
+											<< resolved_type.get_tag_repr()
+											;
+										throw SemanticsError(sstr.str());
+									}
+
+									// Get the index expression, which should be an integer.
+									const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+									const Type &value_resolved_type = value.output_type.resolve_type();
+									if (!value_resolved_type.is_primitive() || !value_resolved_type.get_primitive().is_integer()) {
+										std::ostringstream sstr;
+										sstr
+											<< "Semantics::analyze_expression: error (line "
+											<< leftbracket_operator0.line << " col " << leftbracket_operator0.column
+											<< "): accessing an array with ``[]\" requires an integer index type, but the index is of a different type: "
+											<< value.output_type.get_tag_repr()
+											;
+										throw SemanticsError(sstr.str());
+									}
+
+									// | The last output type is now the base type.
+									last_output_type = last_output_type->get_array().base_type;
+									// | Get the integer's index.
+									const Index value_index                 = expression_semantics.instructions.merge(value.instructions) + value.output_index;
+									// | Now dereference the array.
+									const Index load_element_size_index     = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(last_output_type->get_size()), 0, 0))});
+									const Index array_element_offset_index  = expression_semantics.instructions.add_instruction({I::MultFrom(B(), true)}, {load_element_size_index, value_index});
+									const Index ignore_index                = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{array_element_offset_index, 1}}, array_element_offset_index); (void) ignore_index;
+									const Index array_element_address_index = expression_semantics.instructions.add_instruction({I::AddFrom(B(), true)}, {last_output_index, array_element_offset_index});
+									// Actually dereference if the base type is primitive.  Just leave it at the address if the base type is a record or array.
+									const Type &last_output_resolved_type = last_output_type->resolve_type();
+									if (no_dereference_record_array || !last_output_resolved_type.is_primitive()) {
+										last_output_index = array_element_address_index;
+									} else {
+										// Dereference.
+										const Type::Primitive &last_output_resolved_primitive_type = last_output_resolved_type.get_primitive();
+										const Index array_dereference_index = expression_semantics.instructions.add_instruction(
+											{I::LoadFrom(
+												B(),                                            // base
+												last_output_resolved_primitive_type.is_word(),  // is_word_save
+												last_output_resolved_primitive_type.is_word(),  // is_word_load
+												0,                                              // addition
+												false,                                          // is_save_fixed
+												false,                                          // is_load_fixed
+												{},                                             // fixed_save_storage
+												{},                                             // fixed_load_storage
+												false,                                          // dereference_save
+												true                                            // dereference_load
+											)},
+											{array_element_address_index}
+										);
+										last_output_index = array_dereference_index;
+									}
+
+									break;
+								}
+
+								default: {
+									std::ostringstream sstr;
+									sstr << "Semantics::analyze_expression: internal error: invalid lvalue_accessor_clause branch at index " << &lvalue_accessor_clause - &grammar.lvalue_accessor_clause_storage[0] << ": " << lvalue_accessor_clause.branch;
+									throw SemanticsError(sstr.str());
+								}
+							}
+						}
+
+						expression_semantics.output_type = *last_output_type;
+						expression_semantics.output_index = last_output_index;
+					} else {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze_expression: internal error (line "
+							<< lexeme_identifier.line << " col " << lexeme_identifier.column
+							<< "): identifier refers to a variable with a resolved type with an unhandled type tag: "
+							<< resolved_type.tag
+							<< "."
+							;
+						throw SemanticsError(sstr.str());
+					}
+				} else if (constant_scope.has(lexeme_identifier.text)) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: internal error (line "
+						<< lexeme_identifier.line << " col " << lexeme_identifier.column
+						<< "): identifier refers to a constant and should have been detected as such but wasn't: "
+						<< lexeme_identifier.text
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
+				} else {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< lexeme_identifier.line << " col " << lexeme_identifier.column
+						<< "): identifier does not refer to a variable or constant that is in scope: "
+						<< lexeme_identifier.text
+						<< "."
+						;
+					throw SemanticsError(sstr.str());
 				}
-#endif
+
+				break;
 			}
 
 			// These 3 branches are static.
@@ -11359,6 +12872,173 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 
 	// Return the semantics expression.
 	return expression_semantics;
+}
+
+Semantics::Block::Block()
+	{}
+
+Semantics::Block::Block(const MIPSIO &instructions, MIPSIO::Index front, MIPSIO::Index back, uint64_t lexeme_begin, uint64_t lexeme_end)
+	: instructions(instructions)
+	, front(front)
+	, back(back)
+	, lexeme_begin(lexeme_begin)
+	, lexeme_end(lexeme_end)
+	{}
+
+Semantics::Block::Block(MIPSIO &&instructions, MIPSIO::Index front, MIPSIO::Index back, uint64_t lexeme_begin, uint64_t lexeme_end)
+	: instructions(std::move(instructions))
+	, front(front)
+	, back(back)
+	, lexeme_begin(lexeme_begin)
+	, lexeme_end(lexeme_end)
+	{}
+
+// | Analyze a sequence of statements.
+//
+// Note: this does not need to necessarily correspond to a ::Block in the
+// grammar tree but can be a sequence of statements without a BEGIN and END
+// keyword.
+Semantics::Block Semantics::analyze_statements(const std::vector<uint64_t> &statements, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
+	// Some type aliases to improve readability.
+	using M = Semantics::MIPSIO;
+	using I = Semantics::Instruction;
+	using B = Semantics::Instruction::Base;
+	using Index = M::Index;
+	using IO    = M::IO;
+	using ConstantValue = Semantics::ConstantValue;
+	using Output        = Semantics::Output;
+	using Storage       = Semantics::Storage;
+	using Symbol        = Semantics::Symbol;
+
+	// Prepare the block.
+	Block block;
+
+	// Handle each statement.
+	for (const uint64_t &statement_index : std::as_const(statements)) {
+		const Statement &statement = grammar.statement_storage.at(statement_index);
+
+		switch (statement.branch) {
+			case Statement::assignment_branch: {
+				const Statement::Assignment &statement_assignment  = grammar.statement_assignment_storage.at(statement.data);
+				const Assignment            &assignment            = grammar.assignment_storage.at(statement_assignment.assignment);
+
+				const Lvalue         &lvalue                = grammar.lvalue_storage.at(assignment.lvalue);
+				const LexemeOperator &colonequals_operator0 = grammar.lexemes.at(assignment.colonequals_operator0).get_operator(); (void) colonequals_operator0;
+				const ::Expression   &expression0           = grammar.expression_storage.at(assignment.expression);
+
+				break;
+			} case Statement::if_branch: {
+				const Statement::If &statement_if = grammar.statement_if_storage.at(statement.data);
+				const IfStatement   &if_statement = grammar.if_statement_storage.at(statement_if.if_statement);
+
+				const LexemeKeyword     &if_keyword0        = grammar.lexemes.at(if_statement.if_keyword0).get_keyword(); (void) if_keyword0;
+				const ::Expression      &expression0        = grammar.expression_storage.at(if_statement.expression);
+				const LexemeKeyword     &then_keyword0      = grammar.lexemes.at(if_statement.then_keyword0).get_keyword(); (void) then_keyword0;
+				const StatementSequence &statement_sequence = grammar.statement_sequence_storage.at(if_statement.statement_sequence);
+				const ElseifClauseList  &elseif_clause_list = grammar.elseif_clause_list_storage.at(if_statement.elseif_clause_list);
+				const ElseClauseOpt     &else_clause_opt    = grammar.else_clause_opt_storage.at(if_statement.else_clause_opt);
+				const LexemeKeyword     &end_keyword0       = grammar.lexemes.at(if_statement.end_keyword0).get_keyword(); (void) end_keyword0;
+
+				break;
+			} case Statement::while_branch: {
+				const Statement::While &statement_while = grammar.statement_while_storage.at(statement.data);
+				const WhileStatement   &while_statement = grammar.while_statement_storage.at(statement_while.while_statement);
+
+				const LexemeKeyword     &while_keyword0     = grammar.lexemes.at(while_statement.while_keyword0).get_keyword(); (void) while_keyword0;
+				const ::Expression      &expression0        = grammar.expression_storage.at(while_statement.expression);
+				const LexemeKeyword     &do_keyword0        = grammar.lexemes.at(while_statement.do_keyword0).get_keyword(); (void) do_keyword0;
+				const StatementSequence &statement_sequence = grammar.statement_sequence_storage.at(while_statement.statement_sequence);
+				const LexemeKeyword     &end_keyword0       = grammar.lexemes.at(while_statement.end_keyword0).get_keyword(); (void) end_keyword0;
+
+				break;
+			} case Statement::repeat_branch: {
+				const Statement::Repeat &statement_repeat = grammar.statement_repeat_storage.at(statement.data);
+				const RepeatStatement   &repeat_statement = grammar.repeat_statement_storage.at(statement_repeat.repeat_statement);
+
+				const LexemeKeyword     &repeat_keyword0    = grammar.lexemes.at(repeat_statement.repeat_keyword0).get_keyword(); (void) repeat_keyword0;
+				const StatementSequence &statement_sequence = grammar.statement_sequence_storage.at(repeat_statement.statement_sequence);
+				const LexemeKeyword     &until_keyword0     = grammar.lexemes.at(repeat_statement.until_keyword0).get_keyword(); (void) until_keyword0;
+				const ::Expression      &expression0        = grammar.expression_storage.at(repeat_statement.expression);
+
+				break;
+			} case Statement::for_branch: {
+				const Statement::For &statement_for = grammar.statement_for_storage.at(statement.data);
+				const ForStatement   &for_statement = grammar.for_statement_storage.at(statement_for.for_statement);
+
+				const LexemeKeyword     &for_keyword0          = grammar.lexemes.at(for_statement.for_keyword0).get_keyword(); (void) for_keyword0;
+				const LexemeIdentifier  &identifier            = grammar.lexemes.at(for_statement.identifier).get_identifier();
+				const LexemeOperator    &colonequals_operator0 = grammar.lexemes.at(for_statement.colonequals_operator0).get_operator(); (void) colonequals_operator0;
+				const ::Expression      &expression0           = grammar.expression_storage.at(for_statement.expression0);
+				const ToOrDownto        &to_or_downto          = grammar.to_or_downto_storage.at(for_statement.to_or_downto);
+				const ::Expression      &expression1           = grammar.expression_storage.at(for_statement.expression1);
+				const LexemeKeyword     &do_keyword0           = grammar.lexemes.at(for_statement.do_keyword0).get_keyword(); (void) do_keyword0;
+				const StatementSequence &statement_sequence    = grammar.statement_sequence_storage.at(for_statement.statement_sequence);
+				const LexemeKeyword     &end_keyword0          = grammar.lexemes.at(for_statement.end_keyword0).get_keyword(); (void) end_keyword0;
+
+				break;
+			} case Statement::stop_branch: {
+				const Statement::Stop &statement_stop = grammar.statement_stop_storage.at(statement.data);
+				const StopStatement   &stop_statement = grammar.stop_statement_storage.at(statement_stop.stop_statement);
+
+				const LexemeKeyword &stop_keyword0 = grammar.lexemes.at(stop_statement.stop_keyword0).get_keyword(); (void) stop_keyword;
+
+				break;
+			} case Statement::return_branch: {
+				const Statement::Return &statement_return = grammar.statement_return_storage.at(statement.data);
+				const ReturnStatement   &return_statement = grammar.return_statement_storage.at(statement_return.return_statement);
+
+				const LexemeKeyword &return_keyword0 = grammar.lexemes.at(return_statement.return_keyword0).get_keyword(); (void) return_keyword;
+				const ExpressionOpt &expression_opt  = grammar.expression_opt_storage.at(return_statement.expression_opt);
+
+				break;
+			} case Statement::read_branch: {
+				const Statement::Read &statement_read = grammar.statement_read_storage.at(statement.data);
+				const ReadStatement   &read_statement = grammar.read_statement_storage.at(statement_read.read_statement);
+
+				const LexemeKeyword  &read_keyword0              = grammar.lexemes.at(read_statement.read_keyword0).get_keyword(); (void) read_keyword0;
+				const LexemeOperator &leftparenthesis_operator0  = grammar.lexemes.at(read_statement.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
+				const LvalueSequence &lvalue_sequence            = grammar.lvalue_sequence_storage.at(read_statement.lvalue_sequence);
+				const LexemeOperator &rightparenthesis_operator0 = grammar.lexemes.at(read_statement.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+
+				break;
+			} case Statement::write_branch: {
+				const Statement::Write &statement_write = grammar.statement_write_storage.at(statement.data);
+				const WriteStatement   &write_statement = grammar.write_statement_storage.at(statement_write.write_statement);
+
+				const LexemeKeyword      &write_keyword0             = grammar.lexemes.at(write_statement.write_keyword0).get_keyword(); (void) write_keyword0;
+				const LexemeOperator     &leftparenthesis_operator0  = grammar.lexemes.at(write_statement.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
+				const ExpressionSequence &expression_sequence        = grammar.expression_sequence_storage.at(write_statement.expression_sequence);
+				const LexemeOperator     &rightparenthesis_operator0 = grammar.lexemes.at(write_statement.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+
+				break;
+			} case Statement::call_branch: {
+				const Statement::Call &statement_call = grammar.statement_call_storage.at(statement.data);
+				const ProcedureCall   &procedure_call = grammar.procedure_call_storage.at(statement_call.procedure_call);
+
+				const LexemeIdentifier      &identifier                 = grammar.lexemes.at(procedure_call.identifier).get_identifier();
+				const LexemeOperator        &leftparenthesis_operator0  = grammar.lexemes.at(procedure_call.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
+				const ExpressionSequenceOpt &expression_sequence_opt    = grammar.expression_sequence_opt_storage.at(procedure_call.expression_sequence_opt);
+				const LexemeOperator        &rightparenthesis_operator0 = grammar.lexemes.at(procedure_call.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
+
+				break;
+			} case Statement::null__branch: {
+				const Statement::Null_ &statement_null_ = grammar.statement_null__storage.at(statement.data);
+				const NullStatement    &null_statement  = grammar.null_statement_storage.at(statement_null_.null_statement);
+
+				break;
+			}
+
+			// Unrecognized branch.
+			default: {
+				std::ostringstream sstr;
+				sstr << "Semantics::analyze_statements: internal error: invalid statement branch at index " << &statement - &grammar.statement_storage[0] << ": " << statement.branch;
+				throw SemanticsError(sstr.str());
+			}
+		}
+	}
+
+	// Return the block;
+	return block;
 }
 
 // | Get the symbol to a string literal, tracking it if this is the first time encountering it.
@@ -11521,8 +13201,9 @@ void Semantics::reset_output() {
 
 	output                   = Output();
 	top_level_scope          = IdentifierScope();
-	top_level_type_scope     = IdentifierScope();
 	top_level_var_scope      = IdentifierScope();
+	top_level_routine_scope  = IdentifierScope();
+	top_level_type_scope     = IdentifierScope();
 	top_level_constant_scope = IdentifierScope();
 	anonymous_storage        = IdentifierScope();
 	top_level_vars.clear();
@@ -11926,7 +13607,7 @@ void Semantics::analyze() {
 							// Unpack the list.
 							const IdentifierPrefixedList::Cons &last_identifier_prefixed_list_cons = grammar.identifier_prefixed_list_cons_storage.at(last_list->data);
 							const IdentifierPrefixedList       &last_identifier_prefixed_list      = grammar.identifier_prefixed_list_storage.at(last_identifier_prefixed_list_cons.identifier_prefixed_list);
-							const LexemeOperator               &last_colon_operator0               = grammar.lexemes.at(last_identifier_prefixed_list_cons.comma_operator0).get_operator(); (void) last_colon_operator0;
+							const LexemeOperator               &last_comma_operator0               = grammar.lexemes.at(last_identifier_prefixed_list_cons.comma_operator0).get_operator(); (void) last_comma_operator0;
 							const LexemeIdentifier             &last_identifier                    = grammar.lexemes.at(last_identifier_prefixed_list_cons.identifier).get_identifier();
 
 							// Add the identifier.
@@ -11988,12 +13669,13 @@ void Semantics::analyze() {
 					// Use the Var index as its symbol unique identifier.
 					const std::string next_identifier_text = std::as_const(next_identifier->text);
 					const Symbol var_symbol("global_var_", next_identifier_text, top_level_vars.size());
-					const IdentifierScope::IdentifierBinding::Var var(false, *next_semantics_type, true, var_symbol, false, 0, 0);
+					const Storage var_storage(var_symbol, true, next_semantics_type->get_size(), 0);
+					const IdentifierScope::IdentifierBinding::Var var(*next_semantics_type, var_storage);
 					top_level_vars.push_back(var);
 					top_level_var_scope.scope.insert({next_identifier_text, IdentifierScope::IdentifierBinding(var)});
 
 					// Global variable-width variables are currently unsupported.
-					if (!var.type.get_fixed_width()) {
+					if (!var.type->get_fixed_width()) {
 						std::ostringstream sstr;
 						sstr
 							<< "Semantics::analyze: error (line "
@@ -12004,19 +13686,19 @@ void Semantics::analyze() {
 					}
 
 					// Compile the variable references.
-					output.add_line(Output::global_vars_section, ":", var.symbol);
-					if        (var.type.get_size() == 4) {
+					output.add_line(Output::global_vars_section, ":", var_storage.global_address);
+					if        (var.type->get_size() == 4) {
 						std::ostringstream sline;
 						sline << "\t.word  " << std::right << std::setw(11) << "0";
 						output.add_line(Output::global_vars_section, sline.str());
-					} else if (var.type.get_size() == 1) {
+					} else if (var.type->get_size() == 1) {
 						std::ostringstream sline;
 						sline << "\t.byte  " << std::right << std::setw(11) << "0";
 						output.add_line(Output::global_vars_section, sline.str());
 					} else {
 						output.add_line(Output::global_vars_section, "\t.align 4");
 						std::ostringstream sline;
-						sline << "\t.space " << std::right << std::setw(11) << var.type.get_size();
+						sline << "\t.space " << std::right << std::setw(11) << var.type->get_size();
 						output.add_line(Output::global_vars_section, sline.str());
 					}
 				}

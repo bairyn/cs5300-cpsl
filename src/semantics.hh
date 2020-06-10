@@ -37,6 +37,7 @@ public:
 #define CPSL_CC_SEMANTICS_COMBINE_IDENTIFIER_NAMESPACES true
 #define CPSL_CC_SEMANTICS_MAX_UNIQUE_TRY_ITERATIONS     A_BILLION  // fun
 #define CPSL_CC_SEMANTICS_MAX_STRING_REQUESTED_LABEL_SUFFIX_LENGTH 32
+#define CPSL_CC_SEMANTICS_ALL_ARRAY_RECORDS_ARE_REFS    false
 
 class Semantics {
 public:
@@ -269,7 +270,7 @@ public:
 		class Array : public Base {
 		public:
 			Array();
-			Array(const std::string &identifier, const Type *base_type, int32_t min_index, int32_t max_index, IdentifierScope &anonymous_storage);
+			Array(const std::string &identifier, const Type &base_type, int32_t min_index, int32_t max_index, IdentifierScope &anonymous_storage);
 
 			const Type *base_type;  // ^ This is an array of values of what type?
 			int32_t min_index;
@@ -396,8 +397,8 @@ public:
 		ConstantValue(ConstantValue &&constant_value, uint64_t lexeme_begin, uint64_t lexeme_end);
 		tag_t  tag;
 		data_t data;
-		uint64_t lexeme_begin;
-		uint64_t lexeme_end;
+		uint64_t lexeme_begin = 0;
+		uint64_t lexeme_end   = 0;
 
 		static const ConstantValue true_constant;
 		static const ConstantValue false_constant;
@@ -452,181 +453,6 @@ public:
 		static std::string quote_string(const std::string &string);
 	};
 
-	// | Objects represent a collection of identifiers in scope and what they refer to.
-	class IdentifierScope {
-	public:
-		class IdentifierBinding {
-		public:
-			enum tag_e {
-				null_tag    = 0,
-				static_tag  = 1,  // ^ A constant expression.
-				dynamic_tag = 2,  // ^ A dynamic expression.
-				type_tag    = 3,  // ^ The identifier refers to a type.
-				var_tag     = 4,  // ^ The identifier refers to a variable.
-				ref_tag     = 5,  // ^ The identifier refers to a reference (pointer) to a variable.
-				num_tags    = 5,
-			};
-			typedef enum tag_e tag_t;
-
-			// | Constant expression / static value.
-			class Static {
-			public:
-				Static();
-				Static(const ConstantValue &constant_value);
-				Static(ConstantValue &&constant_value);
-
-				// Keep a copy of the constant value.
-				ConstantValue constant_value;
-			};
-			// TODO: I don't think you need Dynamic here.
-			class Dynamic {
-			public:
-				// TODO
-			};
-			using Type = ::Semantics::Type;
-			// | Variable.
-			class Var {
-			public:
-				Var();
-				Var(bool ref, const Type &type, bool global, Symbol symbol, bool register_, uint8_t arg_register_id, uint32_t offset);
-				// | Is this a pointer / reference (Ref)?
-				bool ref;
-				// | What is the base type of this variable, ignoring the pointer?
-				Type type;
-				// | Is the variable a global variable or a local variable?
-				bool global;
-				// | If this variable is global, what is the label that refers to its address?  Ignored if it isn't global.
-				Symbol symbol;
-				// | If this variable is local, is this variable stored in a register?
-				bool register_;
-				// | If this variable is stored in a register, which of $a0 - $a3 is it?
-				uint8_t arg_register_id;
-				// | If this variable is local and not stored in a register, what is its offset relative to the stack pointer?
-				uint32_t offset;
-			};
-			// TODO: Ref is now merged into Var.  Remove.
-			// | Pointer variable.
-			class Ref {
-			public:
-				Ref();
-				Ref(const Type &type, bool register_, uint8_t arg_register_id, uint32_t offset);
-				Type type;
-				// | Is this variable stored in a register?
-				bool register_;
-				// | If this variable is stored in a register, which of $a0 - $a3 is it?
-				uint8_t arg_register_id;
-				// | If this variable is not stored in a register, what is its offset relative to the stack pointer?
-				uint32_t offset;
-			};
-
-			using data_t = std::variant<
-				std::monostate,
-				Static,
-				Dynamic,
-				Type,
-				Var,
-				Ref
-			>;
-
-			IdentifierBinding();
-			IdentifierBinding(tag_t tag, const data_t &data);
-			IdentifierBinding(tag_t tag, data_t &&data);
-			tag_t  tag;
-			data_t data;
-
-			explicit IdentifierBinding(const Static &static_);
-			explicit IdentifierBinding(const Dynamic &dynamic);
-			explicit IdentifierBinding(const Type &type);
-			explicit IdentifierBinding(const Var &var);
-			explicit IdentifierBinding(const Ref &ref);
-
-			explicit IdentifierBinding(Static &&static_);
-			explicit IdentifierBinding(Dynamic &&dynamic);
-			explicit IdentifierBinding(Type &&type);
-			explicit IdentifierBinding(Var &&var);
-			explicit IdentifierBinding(Ref &&ref);
-
-			bool is_static() const;
-			bool is_dynamic() const;
-			bool is_type() const;
-			bool is_var() const;
-			bool is_ref() const;
-
-			// | The tags must be correct, or else an exception will be thrown, including for set_*.
-			const Static  &get_static()  const;
-			const Dynamic &get_dynamic() const;
-			const Type    &get_type()    const;
-			const Var     &get_var()     const;
-			const Ref     &get_ref()     const;
-
-			Static  &get_static();
-			Dynamic &get_dynamic();
-			Type    &get_type();
-			Var     &get_var();
-			Ref     &get_ref();
-
-			// | Return "static", "dynamic", "type", "var", or "ref".
-			static std::string get_tag_repr(tag_t tag);
-			std::string get_tag_repr() const;
-		};
-
-		IdentifierScope();
-		IdentifierScope(const std::map<std::string, IdentifierBinding> &scope);
-		IdentifierScope(std::map<std::string, IdentifierBinding> &&scope);
-
-		// | Identifier bindings mapped by identifier strings.
-		std::map<std::string, IdentifierBinding> scope;
-		// | Anonymous identifier bindings mapped by index.
-		std::vector<IdentifierBinding> anonymous_bindings;
-
-		bool has(std::string identifier) const;
-
-		const IdentifierBinding  &get(std::string identifier) const;
-		IdentifierBinding       &&get(std::string identifier);
-
-		const IdentifierBinding  &operator[](std::string identifier) const;
-		IdentifierBinding       &&operator[](std::string identifier);
-
-		std::optional<IdentifierBinding> lookup_copy(std::string identifier) const;
-	};
-
-	Semantics();
-	Semantics(bool auto_analyze);
-	Semantics(const Grammar &grammar, bool auto_analyze = true);
-	Semantics(Grammar &&grammar, bool auto_analyze = true);
-
-	// | Get a copy of the normalized output lines.
-	std::vector<std::string> get_normalized_output_lines_copy() const;
-
-	const Grammar get_grammar() const;
-	void set_grammar(const Grammar &grammar);
-	void set_grammar(Grammar &&grammar);
-
-	// | Determine whether the expression in the grammar tree is a constant expression.
-	//
-	// TODO: this will work if the grammar parse tree is valid, but check for cycles in case there's a mistake somewhere.
-	ConstantValue is_expression_constant(
-		// | Reference to the expression in the grammar tree.
-		uint64_t expression,
-		// | A collection of identifiers of constants available to the scope of the expression.
-		// Note: We don't record the identifier scope here.  There is only one
-		// identifier scope for each expression.
-		const IdentifierScope &expression_constant_scope
-	) const;
-	ConstantValue is_expression_constant(const ::Expression &expression, const IdentifierScope &expression_constant_scope) const;
-
-	// | From the parse tree Type, construct a Semantics::Type that represents the type.
-	//
-	// If the type contains anonymous subtypes, they will be stored in
-	// "storage".  In this case, the lifetime of the type should not exceed the
-	// lifetime of the storage, since the type will contain raw pointers to it.
-	//
-	// The lifetimes of types should not exceed the lifetime of their
-	// referents, which are normally stored inside of the type_type_scope
-	// IdentifierScope passed to this method.
-	Type analyze_type(const std::string &identifier, const ::Type &type, const IdentifierScope &type_constant_scope, const IdentifierScope &type_type_scope, IdentifierScope &anonymous_storage);
-
-	// maybe for std::string register_ or Symbol.  Default max_size 4, offset 0, etc.
 	// | A representation of a storage unit: a register, offset on the stack, global address, etc.
 	//
 	// $t8 and $t9 are reserved in case any working storage units require 2
@@ -644,7 +470,7 @@ public:
 	class Storage {
 	public:
 		Storage();
-		Storage(uint32_t max_size, bool is_global, Symbol global_address, const std::string &register_, bool dereference, int32_t offset);
+		Storage(uint32_t max_size, bool is_global, Symbol global_address, const std::string &register_, bool dereference, int32_t offset, bool no_sp_adjust = false, bool is_caller_preserved = false);
 		// Specialized storage constructors.
 		// | Storage type #1: (&global) + x, and
 		// | Storage type #2: ((uint8_t *) &global)[x];  -- if global is already a byte pointer/array, global[x].
@@ -652,22 +478,28 @@ public:
 		// | Storage type #3: 4-byte direct register.  (No dereference.)  To
 		// use a 4-byte direct register as a 1-byte storage, you'll need to use
 		// the normal constructor.
-		Storage(const std::string &register_);
+		Storage(const std::string &register_, bool no_sp_adjust = false);
 		// | Storage type #4: dereferenced register.
-		Storage(const std::string &register_, uint32_t max_size, int32_t offset = 0);
+		Storage(const std::string &register_, uint32_t max_size, int32_t offset = 0, bool no_sp_adjust = false);
 
 		// | What is the maximum size that this storage can handle?
-		uint32_t    max_size;
+		uint32_t    max_size = 0;
 		// | Is this a global address or a register?
-		bool        is_global;
+		bool        is_global = false;
 		// | If global, which symbol refers to the address?
 		Symbol      global_address;
 		// | If this is a register, which string identifies it?
 		std::string register_;
 		// | Dereference this global address or register, or use it directly?
-		bool        dereference;
+		bool        dereference = false;
 		// | If global and/or dereferencing, add this value to the loaded result.  If dereferencing, add before dereferencing.  (Does nothing when neither global or dereferencing.)
-		int32_t     offset;
+		int32_t     offset = 0;
+
+		// | If this is a dereferenced SP, adjust offset according to AddSp instructions?
+		bool no_sp_adjust = false;
+
+		// | If this is a register, does the caller preserve it?
+		bool is_caller_preserved = false;
 
 		// | Is this size ideal with for this storage?  (Does it equal max_size?)
 		bool ideal_size(uint32_t size) const;
@@ -697,6 +529,156 @@ public:
 		using Index = std::vector<Storage>::size_type;
 	};
 
+	// | Objects represent a collection of identifiers in scope and what they refer to.
+	class IdentifierScope {
+	public:
+		class IdentifierBinding {
+		public:
+			enum tag_e {
+				null_tag                = 0,
+				static_tag              = 1,  // ^ A constant expression.
+				type_tag                = 2,  // ^ The identifier refers to a type.
+				var_tag                 = 3,  // ^ The identifier refers to a variable.
+				routine_declaration_tag = 4,  // ^ The identifier refers to a function or procedure.
+				num_tags                = 4,
+			};
+			typedef enum tag_e tag_t;
+
+			// | Constant expression / static value.
+			class Static {
+			public:
+				Static();
+				Static(const ConstantValue &constant_value);
+				Static(ConstantValue &&constant_value);
+
+				// Keep a copy of the constant value.
+				ConstantValue constant_value;
+			};
+			using Type = ::Semantics::Type;
+			// | Typed fixed storage.
+			class Var {
+			public:
+				Var();
+				Var(const Type &type, const Storage &storage);
+				const Type *type;
+				Storage storage;
+			};
+
+			// | Inputs and output.
+			class RoutineDeclaration {
+			public:
+				RoutineDeclaration();
+				RoutineDeclaration(const Symbol &location, const std::vector<std::pair<bool, const Type *>> &parameters, std::optional<const Type *> output);
+				Symbol location;
+				// | <is_ref, type>
+				std::vector<std::pair<bool, const Type *>> parameters;
+				std::optional<const Type *>                output;
+			};
+
+			using data_t = std::variant<
+				std::monostate,
+				Static,
+				Type,
+				Var,
+				RoutineDeclaration
+			>;
+
+			IdentifierBinding();
+			IdentifierBinding(tag_t tag, const data_t &data);
+			IdentifierBinding(tag_t tag, data_t &&data);
+			tag_t  tag;
+			data_t data;
+
+			explicit IdentifierBinding(const Static &static_);
+			explicit IdentifierBinding(const Type &type);
+			explicit IdentifierBinding(const Var &var);
+			explicit IdentifierBinding(const RoutineDeclaration &ref);
+
+			explicit IdentifierBinding(Static &&static_);
+			explicit IdentifierBinding(Type &&type);
+			explicit IdentifierBinding(Var &&var);
+			explicit IdentifierBinding(RoutineDeclaration &&ref);
+
+			bool is_static() const;
+			bool is_type() const;
+			bool is_var() const;
+			bool is_routine_declaration() const;
+
+			// | The tags must be correct, or else an exception will be thrown, including for set_*.
+			const Static             &get_static()              const;
+			const Type               &get_type()                const;
+			const Var                &get_var()                 const;
+			const RoutineDeclaration &get_routine_declaration() const;
+
+			Static             &get_static();
+			Type               &get_type();
+			Var                &get_var();
+			RoutineDeclaration &get_routine_declaration();
+
+			// | Return "static", "type", "var", or "routine_declaration".
+			static std::string get_tag_repr(tag_t tag);
+			std::string get_tag_repr() const;
+		};
+
+		IdentifierScope();
+		IdentifierScope(const std::map<std::string, IdentifierBinding> &scope);
+		IdentifierScope(std::map<std::string, IdentifierBinding> &&scope);
+
+		// | Identifier bindings mapped by identifier strings.
+		std::map<std::string, IdentifierBinding> scope;
+		// | Anonymous identifier bindings mapped by index.
+		std::vector<IdentifierBinding> anonymous_bindings;
+
+		// | The bindings should be Routine Types.
+		std::map<std::string, IdentifierBinding> routine_declarations;
+		// | The bindings should be Blocks.
+		std::map<std::string, IdentifierBinding> routine_definitions;
+
+		bool has(std::string identifier) const;
+
+		const IdentifierBinding  &get(std::string identifier) const;
+		IdentifierBinding       &&get(std::string identifier);
+
+		const IdentifierBinding  &operator[](std::string identifier) const;
+		IdentifierBinding       &&operator[](std::string identifier);
+
+		std::optional<IdentifierBinding> lookup_copy(std::string identifier) const;
+	};
+
+	Semantics();
+	Semantics(bool auto_analyze);
+	Semantics(const Grammar &grammar, bool auto_analyze = true);
+	Semantics(Grammar &&grammar, bool auto_analyze = true);
+
+	// | Get a copy of the normalized output lines.
+	std::vector<std::string> get_normalized_output_lines_copy() const;
+
+	const Grammar get_grammar() const;
+	void set_grammar(const Grammar &grammar);
+	void set_grammar(Grammar &&grammar);
+
+	// | Determine whether the expression in the grammar tree is a constant expression.
+	ConstantValue is_expression_constant(
+		// | Reference to the expression in the grammar tree.
+		uint64_t expression,
+		// | A collection of identifiers of constants available to the scope of the expression.
+		// Note: We don't record the identifier scope here.  There is only one
+		// identifier scope for each expression.
+		const IdentifierScope &expression_constant_scope
+	) const;
+	ConstantValue is_expression_constant(const ::Expression &expression, const IdentifierScope &expression_constant_scope) const;
+
+	// | From the parse tree Type, construct a Semantics::Type that represents the type.
+	//
+	// If the type contains anonymous subtypes, they will be stored in
+	// "storage".  In this case, the lifetime of the type should not exceed the
+	// lifetime of the storage, since the type will contain raw pointers to it.
+	//
+	// The lifetimes of types should not exceed the lifetime of their
+	// referents, which are normally stored inside of the type_type_scope
+	// IdentifierScope passed to this method.
+	Type analyze_type(const std::string &identifier, const ::Type &type, const IdentifierScope &type_constant_scope, const IdentifierScope &type_type_scope, IdentifierScope &anonymous_storage);
+
 	// | An intermediate unit representation of MIPS instructions.
 	//
 	// "Registers" may be registers or other types of storage, e.g. offsets on the stack.  Which type they are can be analyzed afterward.
@@ -709,23 +691,26 @@ public:
 		enum tag_e {
 			null_tag               = 0,
 			ignore_tag             = 1,
-			load_immediate_tag     = 2,
-			load_from_tag          = 3,
-			less_than_from_tag     = 4,
-			nor_from_tag           = 5,
-			and_from_tag           = 6,
-			or_from_tag            = 7,
-			add_from_tag           = 8,
-			sub_from_tag           = 9,
-			mult_from_tag          = 10,
-			div_from_tag           = 11,
-			jump_to_tag            = 12,
-			jump_tag               = 13,
-			call_tag               = 14,
-			return_tag             = 15,
-			branch_zero_tag        = 16,
-			branch_nonnegative_tag = 17,
-			num_tags               = 17,
+			custom_tag             = 2,
+			syscall_tag            = 3,
+			add_sp_tag             = 4,
+			load_immediate_tag     = 5,
+			load_from_tag          = 6,
+			less_than_from_tag     = 7,
+			nor_from_tag           = 8,
+			and_from_tag           = 9,
+			or_from_tag            = 10,
+			add_from_tag           = 11,
+			sub_from_tag           = 12,
+			mult_from_tag          = 13,
+			div_from_tag           = 14,
+			jump_to_tag            = 15,
+			jump_tag               = 16,
+			call_tag               = 17,
+			return_tag             = 18,
+			branch_zero_tag        = 19,
+			branch_nonnegative_tag = 20,
+			num_tags               = 20,
 		};
 		typedef enum tag_e tag_t;
 
@@ -768,6 +753,54 @@ public:
 			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
 		};
 
+		// | Custom instruction that has no dynamic inputs or outputs.
+		class Custom : public Base {
+		public:
+			Custom();
+			Custom(const Base &base, const std::vector<Output::Line> &lines);
+			std::vector<Output::Line> lines;
+
+			std::vector<uint32_t> get_input_sizes() const;
+			std::vector<uint32_t> get_working_sizes() const;
+			std::vector<uint32_t> get_output_sizes() const;
+			std::vector<uint32_t> get_all_sizes() const;
+
+			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
+		};
+
+		// | Syscall.
+		class Syscall : public Base {
+		public:
+			Syscall();
+			Syscall(const Base &base);
+
+			std::vector<uint32_t> get_input_sizes() const;
+			std::vector<uint32_t> get_working_sizes() const;
+			std::vector<uint32_t> get_output_sizes() const;
+			std::vector<uint32_t> get_all_sizes() const;
+
+			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
+		};
+
+		// | AddSp.
+		// Add or subtract the $sp stack pointer, and tell emit() to modify $sp-based Storages sent to instructions.
+		// If "offset" is not 8-byte aligned, it will be rounded away from 0 to the nearest 8-byte boundary.
+		class AddSp : public Base {
+		public:
+			AddSp();
+			AddSp(const Base &base, int32_t offset);
+			int32_t offset;
+
+			std::vector<uint32_t> get_input_sizes() const;
+			std::vector<uint32_t> get_working_sizes() const;
+			std::vector<uint32_t> get_output_sizes() const;
+			std::vector<uint32_t> get_all_sizes() const;
+
+			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
+
+			static int32_t round_to_align(int32_t offset, uint32_t alignment = 8);
+		};
+
 		// | Load an immediate value into a storage unit, e.g. 3 or the address of "string literal".
 		class LoadImmediate : public Base {
 		public:
@@ -794,6 +827,8 @@ public:
 		class LoadFrom : public Base {
 		public:
 			LoadFrom();
+			LoadFrom(const Base &base, bool is_word_save, bool is_word_load, int32_t addition, bool is_save_fixed, bool is_load_fixed, const Storage &fixed_save_storage, const Storage &fixed_load_storage, bool dereference_save = false, bool dereference_load = false);
+			// Specialized constructors: load from and save to dynamic storage units.
 			LoadFrom(const Base &base, bool is_word_save, bool is_word_load, int32_t addition = 0);
 			LoadFrom(const Base &base, bool is_word, int32_t addition = 0);
 			// | Are we saving a byte or a word?
@@ -802,7 +837,15 @@ public:
 			bool is_word_load;
 			// | destination <- source + addition
 			// (Addition applies to values, not addresses.)
-			int32_t addition;
+			int32_t addition = 0;
+			bool is_save_fixed = false;
+			bool is_load_fixed = false;
+			Storage fixed_save_storage = Storage();
+			Storage fixed_load_storage = Storage();
+			// | Instead of saving to the storage unit, save to what the storage unit points to?
+			bool dereference_save = false;
+			// | Instead of loading from the storage unit, load from what the storage unit points to?
+			bool dereference_load = false;
 
 			std::vector<uint32_t> get_input_sizes() const;
 			std::vector<uint32_t> get_working_sizes() const;
@@ -976,8 +1019,12 @@ public:
 		class Call : public Base {
 		public:
 			Call();
-			Call(const Base &base, Symbol jump_destination);
+			Call(const Base &base, const Symbol &jump_destination, bool push_saved_registers = false, bool pop_saved_registers = false);
 			Symbol jump_destination;
+			// | Instead of performing a call, tell MIPSIO::emit() to push saved registers onto the stack.
+			bool push_saved_registers = false;
+			// | Instead of performing a call, tell MIPSIO::emit() to pop saved registers from the stack.
+			bool pop_saved_registers = false;
 
 			std::vector<uint32_t> get_input_sizes() const;
 			std::vector<uint32_t> get_working_sizes() const;
@@ -1038,6 +1085,9 @@ public:
 		using data_t = std::variant<
 			std::monostate,
 			Ignore,
+			Custom,
+			Syscall,
+			AddSp,
 			LoadImmediate,
 			LoadFrom,
 			LessThanFrom,
@@ -1067,6 +1117,9 @@ public:
 		Base &get_base_mutable();
 
 		Instruction(const Ignore            &ignore);
+		Instruction(const Custom            &load_custom);
+		Instruction(const Syscall           &load_syscall);
+		Instruction(const AddSp             &load_add_sp);
 		Instruction(const LoadImmediate     &load_immediate);
 		Instruction(const LoadFrom          &load_from);
 		Instruction(const LessThanFrom      &less_than_from);
@@ -1085,6 +1138,9 @@ public:
 		Instruction(const BranchNonnegative &branch_nonnegative);
 
 		bool is_ignore()             const;
+		bool is_custom()             const;
+		bool is_syscall()            const;
+		bool is_add_sp()             const;
 		bool is_load_immediate()     const;
 		bool is_load_from()          const;
 		bool is_less_than_from()     const;
@@ -1104,6 +1160,9 @@ public:
 
 		// | The tags must be correct, or else an exception will be thrown, including for set_*.
 		const Ignore            &get_ignore()             const;
+		const Custom            &get_custom()             const;
+		const Syscall           &get_syscall()            const;
+		const AddSp             &get_add_sp()             const;
 		const LoadImmediate     &get_load_immediate()     const;
 		const LoadFrom          &get_load_from()          const;
 		const LessThanFrom      &get_less_than_from()     const;
@@ -1122,6 +1181,9 @@ public:
 		const BranchNonnegative &get_branch_nonnegative() const;
 
 		Ignore            &&get_ignore();
+		Custom            &&get_custom();
+		Syscall           &&get_syscall();
+		AddSp             &&get_add_sp();
 		LoadImmediate     &&get_load_immediate();
 		LoadFrom          &&get_load_from();
 		LessThanFrom      &&get_less_than_from();
@@ -1140,6 +1202,9 @@ public:
 		BranchNonnegative &&get_branch_nonnegative();
 
 		Ignore            &get_ignore_mutable();
+		Custom            &get_custom_mutable();
+		Syscall           &get_syscall_mutable();
+		AddSp             &get_add_sp_mutable();
 		LoadImmediate     &get_load_immediate_mutable();
 		LoadFrom          &get_load_from_mutable();
 		LessThanFrom      &get_less_than_from_mutable();
@@ -1157,7 +1222,7 @@ public:
 		BranchZero        &get_branch_zero_mutable();
 		BranchNonnegative &get_branch_nonnegative_mutable();
 
-		// | Return "ignore", "load_immediate", "less_than_from", "load_from", or "nor_from", etc.
+		// | Return "ignore", "custom", "syscall", "add_sp", "load_immediate", "less_than_from", "load_from", or "nor_from", etc.
 		static std::string get_tag_repr(tag_t tag);
 		std::string get_tag_repr() const;
 
@@ -1270,36 +1335,114 @@ public:
 		Index merge(const MIPSIO &other);
 	};
 
+// TODO: inline support.
+#if 0
+	// | Refers to a Jump instruction, the IOs referring to the argument inputs, and the IOs referring to the argument outputs.
+	//
+	// Storing calls enables inlining function calls before emitting them.
+	// TODO: implement Call and merges with calls.
+	class Call {
+	public:
+		Symbol routine_symbol;
+		Index jump_index;
+		std::vector<MIPSIO::IO> arguments;
+		std::vector<MIPSIO::IO> outputs;
+
+		static merge_mipsio_with_calls(MIPSIO &mips_io, std::vector<Call> &calls, const MIPSIO &other_mips_io, const std::vector<Call> &other_calls);
+	};
+#endif /* #if 0 */
+
+	static const bool all_arrays_records_are_refs;
+
 	class Expression {
 	public:
-		MIPSIO        instructions;
-		Type          output_type;
-		MIPSIO::Index output_index;
-		uint64_t      lexeme_begin;
-		uint64_t      lexeme_end;
+		MIPSIO            instructions;
+// TODO: inline support.
+#if 0
+		std::vector<Call> calls;
+#endif /* #if 0 */
+		Type              output_type;
+		MIPSIO::Index     output_index;
+		uint64_t          lexeme_begin = 0;
+		uint64_t          lexeme_end   = 0;
+
 		Expression();  // (No instructions; null type.)
 		Expression(const MIPSIO  &instructions, const Type  &output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
 		Expression(const MIPSIO  &instructions,       Type &&output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
 		Expression(      MIPSIO &&instructions, const Type  &output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
 		Expression(      MIPSIO &&instructions,       Type &&output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+
+// TODO: inline support.
+#if 0
+		Expression();  // (No instructions; null type.)
+		Expression(const MIPSIO  &instructions, const std::vector<Call> &calls, const Type  &output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+		Expression(const MIPSIO  &instructions, const std::vector<Call> &calls,       Type &&output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+		Expression(      MIPSIO &&instructions, const std::vector<Call> &calls, const Type  &output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+		Expression(      MIPSIO &&instructions, const std::vector<Call> &calls,       Type &&output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+
+		// | Merge / compose constructor.
+		Expression(const MIPSIO &a, const MIPSIO &b);
+
+		// | Merge both instructions and calls, and update lexeme_begin and
+		// lexeme_end to the minimum and maximum, respectively.
+		MIPSIO::Index merge(const Expression &other);
+#endif /* #if 0 */
 	};
 
 	// The non-const part is the ability to store strings.
-	Expression analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
-	Expression analyze_expression(const ::Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
-	// TODO
-	//MIPSIO analyze_statement();
+	Expression analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, bool no_dereference_record_array = false);
+	Expression analyze_expression(const ::Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, bool no_dereference_record_array = false);
+
+	// | A computation graph from needed input storage units to needed output storage units.
+	// MIPSIO with input types and locations and output types and locations.
+	//
+	// Since global variables are accessible to all blocks, their types are are
+	// included in all block type signatures.
+	//
+	// A routine that adds a var adds an input.  A routine that adds a ref adds
+	// an input and output.  A CPSL function as opposed to procedure adds an
+	// output.
+	class Block {
+	public:
+		MIPSIO instructions;
+		// | "front" and "back" are used for sequence connections.
+		//
+		// | back: When this node is sequenced (through a sequence
+		// connection), the dependencies propagate to the nodes in the entire
+		// block.
+		//
+		// "back" may already have a sequence connection for an instruction
+		// that occurs *before* it, but it shouldn't have a sequence connection
+		// for an instruction that occurs *after* it before it is merged.  One
+		// way to append block "other" into "this" is to set "this"'s "back" to
+		// "other" after merging.  (Another way to append block "other" into
+		// "this" is to merge "other" into this, to then add a nop
+		// pseudoinstruction, i.e. Ignore, that occurs after "other.back", and
+		// then sequence that Ignore after "other.back".) Either way, be sure
+		// to also link "other.front" after the original "this.back".
+		//
+		// "front" should have no sequence connections *before* it (but might
+		// have one after it).  Since when merging a block "other", other is
+		// independent of "this", it should be safe to sequence "other.front"
+		// after the original "this.back" (and then setting the final
+		// "this.back" to "other.final") without causing sequence connection
+		// conflicts / duplicates.
+		MIPSIO::Index    front = 0;  // Ignored if instructions is empty.
+		MIPSIO::Index    back  = 0;  // Ignored if instructions is empty.
+		uint64_t         lexeme_begin = 0;
+		uint64_t         lexeme_end   = 0;
+
+		Block();
+		Block(const MIPSIO  &instructions, MIPSIO::Index front, MIPSIO::Index back, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+		Block(      MIPSIO &&instructions, MIPSIO::Index front, MIPSIO::Index back, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+	};
 
 	// | Analyze a sequence of statements.
 	//
 	// Note: this does not need to necessarily correspond to a ::Block in the
 	// grammar tree but can be a sequence of statements without a BEGIN and END
 	// keyword.
-	// TODO
-	//Block analyze_block();
-
-	// TODO
-	//Routine analyze_routine();
+	Block analyze_statements(const std::vector<uint64_t> &statements, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
 
 	// | Get the symbol to a string literal, tracking it if this is the first time encountering it.
 	Symbol string_literal(const std::string &string);
@@ -1347,6 +1490,7 @@ protected:
 	IdentifierScope top_level_constant_scope;
 	IdentifierScope top_level_type_scope;
 	IdentifierScope top_level_var_scope;
+	IdentifierScope top_level_routine_scope;
 	// | Union of top_level_*_scope.  If !combine_identifier_namespaces, the last identifier overrides.
 	IdentifierScope top_level_scope;
 	// | The lifetime of anonymous_storage should not exceed that of *_scope, since they may contain raw pointers into this storage.
