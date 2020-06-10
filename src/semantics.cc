@@ -14041,7 +14041,7 @@ void Semantics::analyze() {
 	// 	j main
 	// 
 	output.add_line(Output::text_section, "start:");
-	output.add_line(Output::text_section, "\tj main");
+	output.add_line(Output::text_section, "\tj    main");
 	output.add_line(Output::text_section, "");
 
 	// Collect the procedure_decl_or_function_decls in the list.
