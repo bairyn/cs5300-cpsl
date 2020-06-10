@@ -36,10 +36,11 @@ public:
  * Grammar types.
  */
 
-#define CPSL_CC_SEMANTICS_COMBINE_IDENTIFIER_NAMESPACES false
-#define CPSL_CC_SEMANTICS_MAX_UNIQUE_TRY_ITERATIONS     A_BILLION  // fun
+#define CPSL_CC_SEMANTICS_COMBINE_IDENTIFIER_NAMESPACES            false
+#define CPSL_CC_SEMANTICS_MAX_UNIQUE_TRY_ITERATIONS                A_BILLION  // fun
 #define CPSL_CC_SEMANTICS_MAX_STRING_REQUESTED_LABEL_SUFFIX_LENGTH 32
-#define CPSL_CC_SEMANTICS_ALL_ARRAY_RECORDS_ARE_REFS    false
+#define CPSL_CC_SEMANTICS_ALL_ARRAY_RECORDS_ARE_REFS               false
+#define CPSL_CC_SEMANTICS_PERMIT_SEQUENCE_CONNECTION_DELAYS        false
 
 class Semantics {
 public:
@@ -1307,7 +1308,8 @@ public:
 		// | All vertices that have inputs.
 		std::map<IO, IO>           connections;           // connections[input]   == output that provides the input.
 		std::map<IO, std::set<IO>> reversed_connections;  // connections[output]  == {all inputs that this output supplies}.
-		std::map<Index, Index>     sequences;             // sequences[this_node] == the node that should be emitted (after its unemitted children (inputs) are emitted) right after this_node is emitted.
+		std::map<Index, Index>     sequences;             // sequences[this_node] == the node that should be emitted (after its unemitted children (inputs) are emitted) right after this_node is emitted, i.e.
+		                                                  // sequences[before]    == after
 		std::map<Index, Index>     reversed_sequences;    // sequences reversed.  We have a bimap now.
 
 		// | In order to emit these MIPSIO instructions that write these outputs, how many working storages are needed?
@@ -1381,6 +1383,8 @@ public:
 		// "add_instruction" into "other" (but not "this") must be added by the
 		// returned value to remain correct.
 		Index merge(const MIPSIO &other);
+
+		static const bool permit_sequence_connection_delays;
 	};
 
 // TODO: inline support.

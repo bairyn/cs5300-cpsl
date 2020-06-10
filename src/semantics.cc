@@ -10083,6 +10083,7 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 	std::set<Index>    visited_instructions;
 	std::vector<Index> root_stack;
 	std::vector<Index> children_stack;
+	std::set<Index>    in_children_stack;
 	std::set<Index>    ancestors;  // Detect cycles: DFS can detect already visited notes (e.g. diamond) but not ancestors.
 	if (back.has_value()) {
 		root_stack.push_back(*back);
@@ -10092,6 +10093,7 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 	}
 	while (children_stack.size() > 0 || root_stack.size() > 0) {
 		if (children_stack.size() <= 0 && root_stack.size() > 0) {
+			in_children_stack.insert(root_stack.back());
 			children_stack.push_back(root_stack.back());
 			root_stack.pop_back();
 		}
@@ -10102,6 +10104,7 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 		// If we've already processed (emitted) this node, skip.
 		if (visited_instructions.find(this_node) != visited_instructions.cend()) {
 			children_stack.pop_back();
+			in_children_stack.erase(this_node);
 		}
 
 		// If this node has unvisited children, push them onto the stack, and
@@ -10115,7 +10118,7 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 			Index before_node = reversed_sequences_search->second;
 
 			// Detect cycles.
-			if (visited_instructions.find(before_node) != visited_instructions.cend()) {
+			if (ancestors.find(before_node) != ancestors.cend()) {
 				std::ostringstream sstr;
 				sstr << "Semantics::MIPSIO::prepare: error: a cycle was detected in the instruction graph at index " << before_node << " (sequenced after " << this_node << ").";
 				throw SemanticsError(sstr.str());
@@ -10124,6 +10127,7 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 			// Add the child.
 			if (visited_instructions.find(before_node) == visited_instructions.cend()) {
 				has_unvisited_children = true;
+				in_children_stack.insert(before_node);
 				children_stack.push_back(before_node);
 			}
 		}
@@ -10145,6 +10149,7 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 				// Add the child.
 				if (visited_instructions.find(child_node) == visited_instructions.cend()) {
 					has_unvisited_children = true;
+					in_children_stack.insert(child_node);
 					children_stack.push_back(child_node);
 				}
 			}
@@ -10159,6 +10164,7 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 		visited_instructions.insert(this_node);
 		ancestors.erase(this_node);
 		children_stack.pop_back();  // Save an extra iteration.
+		in_children_stack.erase(this_node);
 
 		// Emit this node.
 
@@ -10428,8 +10434,19 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 				throw SemanticsError(sstr.str());
 			}
 
-			// Replace this node with the one after it.
-			children_stack.push_back(after_node);
+			// Replace this node with the one after it, unless we're already going to process it.
+			if (children_stack.size() <= 0 || children_stack.back() != after_node) {
+				// Will we eventually get to it?
+				if (in_children_stack.find(after_node) == in_children_stack.cend()) {
+					// Not unless we add it.  Add it.
+					in_children_stack.insert(after_node);
+					children_stack.push_back(after_node);
+				} else if (!permit_sequence_connection_delays) {
+					std::ostringstream sstr;
+					sstr << "Semantics::MIPSIO::prepare: error: after this node, " << this_node << ", the node " << after_node << " is configured to be emitted through a sequence connection, but there are nodes that will be emitted in between.  Set permit_sequence_connection_delays to \"true\" to disable this restriction.";
+					throw SemanticsError(sstr.str());
+				}
+			}
 		}
 	}
 
@@ -10476,6 +10493,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 	std::set<Index>    visited_instructions;
 	std::vector<Index> root_stack;
 	std::vector<Index> children_stack;
+	std::set<Index>    in_children_stack;
 	std::set<Index>    ancestors;  // Detect cycles: DFS can detect already visited notes (e.g. diamond) but not ancestors.
 	if (back.has_value()) {
 		root_stack.push_back(*back);
@@ -10485,6 +10503,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 	}
 	while (children_stack.size() > 0 || root_stack.size() > 0) {
 		if (children_stack.size() <= 0 && root_stack.size() > 0) {
+			in_children_stack.insert(root_stack.back());
 			children_stack.push_back(root_stack.back());
 			root_stack.pop_back();
 		}
@@ -10495,6 +10514,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 		// If we've already processed (emitted) this node, skip.
 		if (visited_instructions.find(this_node) != visited_instructions.cend()) {
 			children_stack.pop_back();
+			in_children_stack.erase(this_node);
 		}
 
 		// If this node has unvisited children, push them onto the stack, and
@@ -10508,7 +10528,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 			Index before_node = reversed_sequences_search->second;
 
 			// Detect cycles.
-			if (visited_instructions.find(before_node) != visited_instructions.cend()) {
+			if (ancestors.find(before_node) != ancestors.cend()) {
 				std::ostringstream sstr;
 				sstr << "Semantics::MIPSIO::emit: error: a cycle was detected in the instruction graph at index " << before_node << " (sequenced after " << this_node << ").";
 				throw SemanticsError(sstr.str());
@@ -10517,6 +10537,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 			// Add the child.
 			if (visited_instructions.find(before_node) == visited_instructions.cend()) {
 				has_unvisited_children = true;
+				in_children_stack.insert(before_node);
 				children_stack.push_back(before_node);
 			}
 		}
@@ -10538,6 +10559,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 				// Add the child.
 				if (visited_instructions.find(child_node) == visited_instructions.cend()) {
 					has_unvisited_children = true;
+					in_children_stack.insert(child_node);
 					children_stack.push_back(child_node);
 				}
 			}
@@ -10552,6 +10574,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 		visited_instructions.insert(this_node);
 		ancestors.erase(this_node);
 		children_stack.pop_back();  // Save an extra iteration.
+		in_children_stack.erase(this_node);
 
 		// Emit this node.
 
@@ -10921,8 +10944,19 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 				throw SemanticsError(sstr.str());
 			}
 
-			// Replace this node with the one after it.
-			children_stack.push_back(after_node);
+			// Replace this node with the one after it, unless we're already going to process it.
+			if (children_stack.size() <= 0 || children_stack.back() != after_node) {
+				// Will we eventually get to it?
+				if (in_children_stack.find(after_node) == in_children_stack.cend()) {
+					// Not unless we add it.  Add it.
+					in_children_stack.insert(after_node);
+					children_stack.push_back(after_node);
+				} else if (!permit_sequence_connection_delays) {
+					std::ostringstream sstr;
+					sstr << "Semantics::MIPSIO::emit: error: after this node, " << this_node << ", the node " << after_node << " is configured to be emitted through a sequence connection, but there are nodes that will be emitted in between.  Set permit_sequence_connection_delays to \"true\" to disable this restriction.";
+					throw SemanticsError(sstr.str());
+				}
+			}
 		}
 	}
 
@@ -11117,6 +11151,8 @@ Semantics::MIPSIO::Index Semantics::MIPSIO::merge(const MIPSIO &other) {
 
 	return addition;
 }
+
+const bool Semantics::MIPSIO::permit_sequence_connection_delays = CPSL_CC_SEMANTICS_PERMIT_SEQUENCE_CONNECTION_DELAYS;
 
 const bool Semantics::all_arrays_records_are_refs = CPSL_CC_SEMANTICS_ALL_ARRAY_RECORDS_ARE_REFS;
 
