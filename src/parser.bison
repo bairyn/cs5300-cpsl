@@ -412,7 +412,7 @@ repeat_statement:
 ;
 
 for_statement:
-	FOR_KEYWORD IDENTIFIER COLONEQUALS_OPERATOR expression to_or_downto expression DO_KEYWORD statement_sequence END_KEYWORD {$$ = pg.new_for_statement($1, $2, $4, $4, $5, $6, $7, $8, $9);}
+	FOR_KEYWORD IDENTIFIER COLONEQUALS_OPERATOR expression to_or_downto expression DO_KEYWORD statement_sequence END_KEYWORD {$$ = pg.new_for_statement($1, $2, $3, $4, $5, $6, $7, $8, $9);}
 ;
 
 to_or_downto:
