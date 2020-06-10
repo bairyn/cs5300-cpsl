@@ -13328,6 +13328,18 @@ Semantics::Block Semantics::analyze_statements(const StatementSequence &statemen
 
 // | Analyze a BEGIN [statement]... END block.
 std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const std::map<std::string, const Type *> &local_variables) {
+	const LexemeKeyword      &begin_keyword0     = grammar.lexemes.at(block.begin_keyword0).get_keyword(); (void) begin_keyword0;
+	const StatementSequence  &statement_sequence = grammar.statement_sequence_storage.at(block.statement_sequence);
+	const LexemeKeyword      &end_keyword0       = grammar.lexemes.at(block.end_keyword0).get_keyword(); (void) end_keyword0;
+
+	IdentifierScope local_var_scope(var_scope);
+	IdentifierScope local_combined_scope(combined_scope);
+
+	// TODO: local vars from local_variables!
+
+	// Analyze the statements in the block.
+	Block block_semantics = analyze_statements(statement_sequence, constant_scope, type_scope, routine_scope, local_var_scope, local_combined_scope);
+
 	// TODO
 	return std::vector<Output::Line>();
 
@@ -13340,14 +13352,457 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 std::vector<Semantics::Output::Line> Semantics::analyze_routine(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const Body &body, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
 	IdentifierScope local_constant_scope(constant_scope);
 	IdentifierScope local_type_scope(type_scope);
-	IdentifierScope local_var_scope(var_scope);
+	//IdentifierScope local_var_scope(var_scope);
 	IdentifierScope local_combined_scope(combined_scope);
 
-	//return analyze_block();
-	// TODO
-	return std::vector<Output::Line>();
+	const ConstantDeclOpt &constant_decl_opt = grammar.constant_decl_opt_storage.at(body.constant_decl_opt);
+	const TypeDeclOpt     &type_decl_opt     = grammar.type_decl_opt_storage.at(body.type_decl_opt);
+	const VarDeclOpt      &var_decl_opt      = grammar.var_decl_opt_storage.at(body.var_decl_opt);
+	const ::Block         &block             = grammar.block_storage.at(body.block);
 
-	std::vector<Output::Line> output_lines;
+	// Analyze local constants.
+	switch (constant_decl_opt.branch) {
+		case ConstantDeclOpt::empty_branch: {
+			// No constant declarations.  Nothing to do here.
+			break;
+		}
+
+		case ConstantDeclOpt::value_branch: {
+			// Unpack the constant_decl.
+			const ConstantDeclOpt::Value &constant_decl_opt_value  = grammar.constant_decl_opt_value_storage.at(constant_decl_opt.data);
+			const ConstantDecl           &constant_decl            = grammar.constant_decl_storage.at(constant_decl_opt_value.constant_decl);
+			const LexemeKeyword          &const_keyword0           = grammar.lexemes.at(constant_decl.const_keyword0).get_keyword(); (void) const_keyword0;
+			const ConstantAssignment     &constant_assignment      = grammar.constant_assignment_storage.at(constant_decl.constant_assignment);
+			const ConstantAssignmentList &constant_assignment_list = grammar.constant_assignment_list_storage.at(constant_decl.constant_assignment_list);
+
+			// Collect the constant assignments in the list.
+			std::vector<const ConstantAssignment *> constant_assignments;
+			constant_assignments.push_back(&constant_assignment);
+			bool reached_end = false;
+			for (const ConstantAssignmentList *last_list = &constant_assignment_list; !reached_end; ) {
+				// Unpack the last list encountered.
+				switch(last_list->branch) {
+					case ConstantAssignmentList::empty_branch: {
+						// We're done.
+						// (No need to unpack the empty branch.)
+						reached_end = true;
+						break;
+					}
+
+					case ConstantAssignmentList::cons_branch: {
+						// Unpack the list.
+						const ConstantAssignmentList::Cons &last_constant_assignment_list_cons = grammar.constant_assignment_list_cons_storage.at(last_list->data);
+						const ConstantAssignmentList       &last_constant_assignment_list      = grammar.constant_assignment_list_storage.at(last_constant_assignment_list_cons.constant_assignment_list);
+						const ConstantAssignment           &last_constant_assignment           = grammar.constant_assignment_storage.at(last_constant_assignment_list_cons.constant_assignment);
+
+						// Add the constant assignment.
+						constant_assignments.push_back(&last_constant_assignment);
+						last_list = &last_constant_assignment_list;
+
+						// Loop.
+						break;
+					}
+
+					// Unrecognized branch.
+					default: {
+						std::ostringstream sstr;
+						sstr << "Semantics::analyze_routine: internal error: invalid constant_assignment_list branch at index " << last_list - &grammar.constant_assignment_list_storage[0] << ": " << last_list->branch;
+						throw SemanticsError(sstr.str());
+					}
+				}
+			}
+
+			// Correct the order of the list.
+			std::reverse(constant_assignments.begin() + 1, constant_assignments.end());
+
+			// Handle the constant assignments.
+			for (const ConstantAssignment *next_constant_assignment : std::as_const(constant_assignments)) {
+				const LexemeIdentifier   &identifier          = grammar.lexemes.at(next_constant_assignment->identifier).get_identifier();
+				const LexemeOperator     &equals_operator0    = grammar.lexemes.at(next_constant_assignment->equals_operator0).get_operator(); (void) equals_operator0;
+				const ::Expression       &expression          = grammar.expression_storage.at(next_constant_assignment->expression);
+				const LexemeOperator     &semicolon_operator0 = grammar.lexemes.at(next_constant_assignment->semicolon_operator0).get_operator(); (void) semicolon_operator0;
+
+				// Calculate the constant value.
+				ConstantValue constant_value = is_expression_constant(expression, local_constant_scope);
+
+				// Fail if this is not a static value.
+				if (!constant_value.is_static()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_routine: error (line "
+						<< identifier.line << " col " << identifier.column
+						<< "): a non-constant expression was found where a constant expression was expected."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Add this constant to the local scope.
+				if (top_level_constant_scope.has(identifier.text)) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_routine: error (line "
+						<< identifier.line << " col " << identifier.column
+						<< "): definition of constant with identifier ``" << identifier.text << "\" would shadow another constant definition."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				if (local_constant_scope.has(identifier.text)) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_routine: error (line "
+						<< identifier.line << " col " << identifier.column
+						<< "): redefinition of constant with identifier ``" << identifier.text << "\"."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				if (combine_identifier_namespaces && local_combined_scope.has(identifier.text)) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_routine: error (line "
+						<< identifier.line << " col " << identifier.column
+						<< "): constant identifier ``" << identifier.text << "\" has already been assigned."
+						<< "  Set combine_identifier_namespaces to false to isolate identifier namespaces"
+						<< " from each other."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				local_constant_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Static(constant_value))});
+				local_combined_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Static(constant_value))});
+			}
+
+			// Done handling constant part.
+			break;
+		}
+
+		// Unrecognized branch.
+		default: {
+			std::ostringstream sstr;
+			sstr << "Semantics::analyze_routine: internal error: invalid constant_decl_opt branch at index " << body.constant_decl_opt << ": " << constant_decl_opt.branch;
+			throw SemanticsError(sstr.str());
+		}
+	}
+
+	// Next, analyze local type definitions.
+	switch (type_decl_opt.branch) {
+		case TypeDeclOpt::empty_branch: {
+			// No constant declarations.  Nothing to do here.
+			break;
+		}
+
+		case TypeDeclOpt::value_branch: {
+			// Unpack the type_decl.
+			const TypeDeclOpt::Value &type_decl_opt_value  = grammar.type_decl_opt_value_storage.at(type_decl_opt.data);
+			const TypeDecl           &type_decl            = grammar.type_decl_storage.at(type_decl_opt_value.type_decl);
+			const LexemeKeyword      &type_keyword0        = grammar.lexemes.at(type_decl.type_keyword0).get_keyword(); (void) type_keyword0;
+			const TypeAssignment     &type_assignment      = grammar.type_assignment_storage.at(type_decl.type_assignment);
+			const TypeAssignmentList &type_assignment_list = grammar.type_assignment_list_storage.at(type_decl.type_assignment_list);
+
+			// Collect the type assignments in the list.
+			std::vector<const TypeAssignment *> type_assignments;
+			type_assignments.push_back(&type_assignment);
+			bool reached_end = false;
+			for (const TypeAssignmentList *last_list = &type_assignment_list; !reached_end; ) {
+				// Unpack the last list encountered.
+				switch(last_list->branch) {
+					case TypeAssignmentList::empty_branch: {
+						// We're done.
+						// (No need to unpack the empty branch.)
+						reached_end = true;
+						break;
+					}
+
+					case TypeAssignmentList::cons_branch: {
+						// Unpack the list.
+						const TypeAssignmentList::Cons &last_type_assignment_list_cons = grammar.type_assignment_list_cons_storage.at(last_list->data);
+						const TypeAssignmentList       &last_type_assignment_list      = grammar.type_assignment_list_storage.at(last_type_assignment_list_cons.type_assignment_list);
+						const TypeAssignment           &last_type_assignment           = grammar.type_assignment_storage.at(last_type_assignment_list_cons.type_assignment);
+
+						// Add the type assignment.
+						type_assignments.push_back(&last_type_assignment);
+						last_list = &last_type_assignment_list;
+
+						// Loop.
+						break;
+					}
+
+					// Unrecognized branch.
+					default: {
+						std::ostringstream sstr;
+						sstr << "Semantics::analyze_routine: internal error: invalid type_assignment_list branch at index " << last_list - &grammar.type_assignment_list_storage[0] << ": " << last_list->branch;
+						throw SemanticsError(sstr.str());
+					}
+				}
+			}
+
+			// Correct the order of the list.
+			std::reverse(type_assignments.begin() + 1, type_assignments.end());
+
+			// Handle the type assignments.
+			for (const TypeAssignment *next_type_assignment : std::as_const(type_assignments)) {
+				const LexemeIdentifier &identifier          = grammar.lexemes.at(next_type_assignment->identifier).get_identifier();
+				const LexemeOperator   &equals_operator0    = grammar.lexemes.at(next_type_assignment->equals_operator0).get_operator(); (void) equals_operator0;
+				const ::Type           &type                = grammar.type_storage.at(next_type_assignment->type);
+				const LexemeOperator   &semicolon_operator0 = grammar.lexemes.at(next_type_assignment->semicolon_operator0).get_operator(); (void) semicolon_operator0;
+
+				// Check for redefinition.
+				if (local_type_scope.has(identifier.text)) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_routine: error (line "
+						<< identifier.line << " col " << identifier.column
+						<< "): definition of type with identifier ``" << identifier.text << "\" would shadow another type definition."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				if (local_type_scope.has(identifier.text)) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_routine: error (line "
+						<< identifier.line << " col " << identifier.column
+						<< "): redefinition of type with identifier ``" << identifier.text << "\"."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				if (combine_identifier_namespaces && local_combined_scope.has(identifier.text)) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_routine: error (line "
+						<< identifier.line << " col " << identifier.column
+						<< "): type identifier ``" << identifier.text << "\" has already been assigned."
+						<< "  Set combine_identifier_namespaces to false to isolate identifier namespaces"
+						<< " from each other."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Calculate the type.
+				Type semantics_type = analyze_type(identifier.text, type, local_constant_scope, local_type_scope, anonymous_storage);
+
+				// Add this type to the local scope.
+				local_type_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Type(semantics_type))});
+				local_combined_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Type(semantics_type))});
+			}
+
+			// Done handling type part.
+			break;
+		}
+
+		// Unrecognized branch.
+		default: {
+			std::ostringstream sstr;
+			sstr << "Semantics::analyze_routine: internal error: invalid type_decl_opt branch at index " << body.type_decl_opt << ": " << type_decl_opt.branch;
+			throw SemanticsError(sstr.str());
+		}
+	}
+
+	// Next, analyze local var definitions.
+	std::map<std::string, const Type *> local_variables;
+	switch (var_decl_opt.branch) {
+		case VarDeclOpt::empty_branch: {
+			// No local variable declarations.  Nothing to do here.
+			break;
+		}
+
+		case VarDeclOpt::value_branch: {
+			// Unpack the var_decl.
+			const VarDeclOpt::Value           &var_decl_opt_value             = grammar.var_decl_opt_value_storage.at(var_decl_opt.data);
+			const VarDecl                     &var_decl                       = grammar.var_decl_storage.at(var_decl_opt_value.var_decl);
+			const LexemeKeyword               &var_keyword0                   = grammar.lexemes.at(var_decl.var_keyword0).get_keyword(); (void) var_keyword0;
+			const TypedIdentifierSequence     &typed_identifier_sequence      = grammar.typed_identifier_sequence_storage.at(var_decl.typed_identifier_sequence);
+			const TypedIdentifierSequenceList &typed_identifier_sequence_list = grammar.typed_identifier_sequence_list_storage.at(var_decl.typed_identifier_sequence_list);
+
+			// Collect the typed identifier sequences in the list.
+			std::vector<const TypedIdentifierSequence *> typed_identifier_sequences;
+			typed_identifier_sequences.push_back(&typed_identifier_sequence);
+			bool reached_end = false;
+			for (const TypedIdentifierSequenceList *last_list = &typed_identifier_sequence_list; !reached_end; ) {
+				// Unpack the last list encountered.
+				switch(last_list->branch) {
+					case TypedIdentifierSequenceList::empty_branch: {
+						// We're done.
+						// (No need to unpack the empty branch.)
+						reached_end = true;
+						break;
+					}
+
+					case TypedIdentifierSequenceList::cons_branch: {
+						// Unpack the list.
+						const TypedIdentifierSequenceList::Cons &last_typed_identifier_sequence_list_cons = grammar.typed_identifier_sequence_list_cons_storage.at(last_list->data);
+						const TypedIdentifierSequenceList       &last_typed_identifier_sequence_list      = grammar.typed_identifier_sequence_list_storage.at(last_typed_identifier_sequence_list_cons.typed_identifier_sequence_list);
+						const TypedIdentifierSequence           &last_typed_identifier_sequence           = grammar.typed_identifier_sequence_storage.at(last_typed_identifier_sequence_list_cons.typed_identifier_sequence);
+
+						// Add the constant assignment.
+						typed_identifier_sequences.push_back(&last_typed_identifier_sequence);
+						last_list = &last_typed_identifier_sequence_list;
+
+						// Loop.
+						break;
+					}
+
+					// Unrecognized branch.
+					default: {
+						std::ostringstream sstr;
+						sstr << "Semantics::analyze_routine: internal error: invalid typed_identifier_sequence_list branch at index " << last_list - &grammar.typed_identifier_sequence_list_storage[0] << ": " << last_list->branch;
+						throw SemanticsError(sstr.str());
+					}
+				}
+			}
+
+			// Correct the order of the list.
+			std::reverse(typed_identifier_sequences.begin() + 1, typed_identifier_sequences.end());
+
+			// Handle the typed identifier sequences.
+			for (const TypedIdentifierSequence *next_typed_identifier_sequence : std::as_const(typed_identifier_sequences)) {
+				const IdentList      &ident_list          = grammar.ident_list_storage.at(next_typed_identifier_sequence->ident_list);
+				const LexemeOperator &colon_operator0     = grammar.lexemes.at(next_typed_identifier_sequence->colon_operator0).get_operator(); (void) colon_operator0;
+				const ::Type         &next_type           = grammar.type_storage.at(next_typed_identifier_sequence->type);
+				const LexemeOperator &semicolon_operator0 = grammar.lexemes.at(next_typed_identifier_sequence->semicolon_operator0).get_operator(); (void) semicolon_operator0;
+
+				// Get a copy of the subtype or construct a new anonymous subtype using "anonymous_storage".
+				const Type *next_semantics_type;
+				// Branch on next_type.  If it's in the "simple" type alias
+				// format, it should refer to an existing type, although it's
+				// not a type alias.  Otherwise, create an anonymous type.
+				if (next_type.branch == ::Type::simple_branch) {
+					const ::Type::Simple   &simple            = grammar.type_simple_storage.at(next_type.data);
+					const SimpleType       &simple_type       = grammar.simple_type_storage.at(simple.simple_type);
+					const LexemeIdentifier &simple_identifier = grammar.lexemes.at(simple_type.identifier).get_identifier();
+
+					// Make sure the reference typed is in scope.
+					if (!local_type_scope.has(simple_identifier.text)) {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze_routine: error (line "
+							<< simple_identifier.line << " col " << simple_identifier.column
+							<< "): undefined type ``" << simple_identifier.text << "\": not in scope."
+							;
+						throw SemanticsError(sstr.str());
+					}
+
+					// Set next_semantics_type.
+					next_semantics_type = &local_type_scope.get(simple_identifier.text).get_type();
+				} else {
+					// Create an anonymous type.
+					Type anonymous_type = analyze_type("", next_type, local_constant_scope, local_type_scope, anonymous_storage);
+					anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(anonymous_type));
+					next_semantics_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
+				}
+
+				// Unpack the ident_list.
+				const LexemeIdentifier       &first_identifier         = grammar.lexemes.at(ident_list.identifier).get_identifier();
+				const IdentifierPrefixedList &identifier_prefixed_list = grammar.identifier_prefixed_list_storage.at(ident_list.identifier_prefixed_list);
+
+				// Collect the identifiers in the list.
+				std::vector<const LexemeIdentifier *> identifiers;
+				identifiers.push_back(&first_identifier);
+				bool reached_end = false;
+				for (const IdentifierPrefixedList *last_list = &identifier_prefixed_list; !reached_end; ) {
+					// Unpack the last list encountered.
+					switch(last_list->branch) {
+						case IdentifierPrefixedList::empty_branch: {
+							// We're done.
+							// (No need to unpack the empty branch.)
+							reached_end = true;
+							break;
+						}
+
+						case IdentifierPrefixedList::cons_branch: {
+							// Unpack the list.
+							const IdentifierPrefixedList::Cons &last_identifier_prefixed_list_cons = grammar.identifier_prefixed_list_cons_storage.at(last_list->data);
+							const IdentifierPrefixedList       &last_identifier_prefixed_list      = grammar.identifier_prefixed_list_storage.at(last_identifier_prefixed_list_cons.identifier_prefixed_list);
+							const LexemeOperator               &last_comma_operator0               = grammar.lexemes.at(last_identifier_prefixed_list_cons.comma_operator0).get_operator(); (void) last_comma_operator0;
+							const LexemeIdentifier             &last_identifier                    = grammar.lexemes.at(last_identifier_prefixed_list_cons.identifier).get_identifier();
+
+							// Add the identifier.
+							identifiers.push_back(&last_identifier);
+							last_list = &last_identifier_prefixed_list;
+
+							// Loop.
+							break;
+						}
+
+						// Unrecognized branch.
+						default: {
+							std::ostringstream sstr;
+							sstr << "Semantics::analyze_type: internal error: invalid identifier_prefixed_list branch at index " << last_list - &grammar.identifier_prefixed_list_storage[0] << ": " << last_list->branch;
+							throw SemanticsError(sstr.str());
+						}
+					}
+				}
+
+				// Correct the order of the list.
+				std::reverse(identifiers.begin() + 1, identifiers.end());
+
+				// Handle the identifiers.
+				for (const LexemeIdentifier *next_identifier : std::as_const(identifiers)) {
+					// Duplicate variable definition?
+					if (local_variables.find(next_identifier->text) != local_variables.cend()) {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze_routine: error (line "
+							<< next_identifier->line << " col " << next_identifier->column
+							<< "): redefinition of variable ``" << next_identifier->text << "\"."
+							;
+						throw SemanticsError(sstr.str());
+					}
+
+					// Shadowing variable definition?
+					if (var_scope.has(next_identifier->text)) {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze_routine: error (line "
+							<< next_identifier->line << " col " << next_identifier->column
+							<< "): definition of variable ``" << next_identifier->text << "\" would shadow another variable."
+							;
+						throw SemanticsError(sstr.str());
+					}
+
+					// Duplicate identifier binding in another namespace?
+					if (combine_identifier_namespaces && combined_scope.has(next_identifier->text)) {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze_routine: error (line "
+							<< next_identifier->line << " col " << next_identifier->column
+							<< "): variable identifier ``" << next_identifier->text << "\" has already been assigned."
+							<< "  Set combine_identifier_namespaces to false to isolate identifier namespaces"
+							<< " from each other."
+							;
+						throw SemanticsError(sstr.str());
+					}
+
+					// Add the variable binding.
+
+					// Use the Var index as its symbol unique identifier.
+					local_variables.insert({next_identifier->text, next_semantics_type});
+
+					// Local variable-width variables are currently unsupported.
+					if (!next_semantics_type->get_fixed_width()) {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze_routine: error (line "
+							<< next_identifier->line << " col " << next_identifier->column
+							<< "): variable-width local variables are currently unsupported; not compiling ``" << next_identifier->text << "\"."
+							;
+						throw SemanticsError(sstr.str());
+					}
+				}
+			}
+
+			// We're done handling the local variable declarations.
+			break;
+		}
+
+		// Unrecognized branch.
+		default: {
+			std::ostringstream sstr;
+			sstr << "Semantics::analyze_routine: internal error: invalid var_decl_opt branch at index " << body.var_decl_opt << ": " << var_decl_opt.branch;
+			throw SemanticsError(sstr.str());
+		}
+	}
+
+	// We've finished handling extra constants, types, and variables.
+	// Proceed to analyze_block.
+	return analyze_block(routine_declaration, block, local_constant_scope, local_type_scope, routine_scope, var_scope, local_combined_scope, local_variables);
 }
 
 // | Get the symbol to a string literal, tracking it if this is the first time encountering it.
