@@ -11586,8 +11586,9 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.output_type = left.output_type;
 				const Index left_index   = expression_semantics.instructions.merge(left.instructions);
 				const Index right_index  = expression_semantics.instructions.merge(right.instructions);
-				const Index mult_index   = expression_semantics.instructions.add_instruction({I::MultFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
-				const Index ignore_index = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{mult_index, 1}}, mult_index); (void) ignore_index;
+				//const Index mult_index   = expression_semantics.instructions.add_instruction({I::MultFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+				//const Index ignore_index = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{mult_index, 1}}, mult_index); (void) ignore_index;
+				const Index mult_index   = expression_semantics.instructions.add_instruction({I::MultFrom(B(), left_type.is_word(), true)}, {left.output_index + left_index, right.output_index + right_index});
 				expression_semantics.output_index = mult_index;
 				break;
 			} case ::Expression::slash_branch: {
@@ -11660,8 +11661,9 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.output_type = left.output_type;
 				const Index left_index   = expression_semantics.instructions.merge(left.instructions);
 				const Index right_index  = expression_semantics.instructions.merge(right.instructions);
-				const Index div_index    = expression_semantics.instructions.add_instruction({I::DivFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
-				const Index ignore_index = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{div_index, 1}}, div_index); (void) ignore_index;
+				//const Index div_index    = expression_semantics.instructions.add_instruction({I::DivFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+				//const Index ignore_index = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{div_index, 1}}, div_index); (void) ignore_index;
+				const Index div_index    = expression_semantics.instructions.add_instruction({I::DivFrom(B(), left_type.is_word(), true, false)}, {left.output_index + left_index, right.output_index + right_index});
 				expression_semantics.output_index = div_index;
 				break;
 			} case ::Expression::percent_branch: {
@@ -11734,10 +11736,12 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.output_type = left.output_type;
 				const Index left_index      = expression_semantics.instructions.merge(left.instructions);
 				const Index right_index     = expression_semantics.instructions.merge(right.instructions);
-				const Index div_index       = expression_semantics.instructions.add_instruction({I::DivFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
-				const Index ignore_index    = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{div_index, 0}}, div_index); (void) ignore_index;
-				const Index remainder_index = expression_semantics.instructions.add_instruction_indexed({I::LoadFrom(B(), left_type.is_word())}, {{div_index, 1}}, div_index);
-				expression_semantics.output_index = remainder_index;
+				//const Index div_index       = expression_semantics.instructions.add_instruction({I::DivFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+				//const Index ignore_index    = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{div_index, 0}}, div_index); (void) ignore_index;
+				//const Index remainder_index = expression_semantics.instructions.add_instruction_indexed({I::LoadFrom(B(), left_type.is_word())}, {{div_index, 1}}, div_index);
+				//expression_semantics.output_index = remainder_index;
+				const Index div_index       = expression_semantics.instructions.add_instruction({I::DivFrom(B(), left_type.is_word(), false, true)}, {left.output_index + left_index, right.output_index + right_index});
+				expression_semantics.output_index = div_index;
 				break;
 			} case ::Expression::tilde_branch: {
 				const ::Expression::Tilde &tilde           = grammar.expression_tilde_storage.at(expression_symbol.data);
