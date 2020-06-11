@@ -13790,7 +13790,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 
 // | Analyze a BEGIN [statement]... END block.
 // TODO: don't forget to load the arguments > 4!
-std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const std::map<std::string, const Type *> &local_variables, bool is_main) {
+std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const std::map<std::string, const Type *> &local_variables, bool is_main) {
 	// Some type aliases to improve readability.
 	using M = Semantics::MIPSIO;
 	using I = Semantics::Instruction;
@@ -14107,7 +14107,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 // | Analyze a routine definition.
 //
 // "analyze_block" but look for additional types, constants, and variables.
-std::vector<Semantics::Output::Line> Semantics::analyze_routine(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const Body &body, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
+std::vector<Semantics::Output::Line> Semantics::analyze_routine(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const Body &body, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
 	IdentifierScope local_constant_scope(constant_scope);
 	IdentifierScope local_type_scope(type_scope);
 	//IdentifierScope local_var_scope(var_scope);
@@ -14560,7 +14560,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 
 	// We've finished handling extra constants, types, and variables.
 	// Proceed to analyze_block.
-	return analyze_block(routine_declaration, block, local_constant_scope, local_type_scope, routine_scope, var_scope, local_combined_scope, local_variables, false);
+	return analyze_block(routine_declaration, parameter_identifiers, block, local_constant_scope, local_type_scope, routine_scope, var_scope, local_combined_scope, local_variables, false);
 }
 
 // | Get the symbol to a string literal, tracking it if this is the first time encountering it.
@@ -15776,7 +15776,7 @@ void Semantics::analyze() {
 
 						// Emit function definition.
 						std::vector<Output::Line> routine_definition_lines;
-						routine_definition_lines = analyze_routine(routine_declaration, body, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope);
+						routine_definition_lines = analyze_routine(routine_declaration, parameter_names, body, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope);
 						output.add_line(Output::text_section, ":", routine_symbol);
 						output.add_lines(Output::text_section, routine_definition_lines);
 						output.add_line(Output::text_section, "");
@@ -16288,7 +16288,7 @@ void Semantics::analyze() {
 
 						// Emit function definition.
 						std::vector<Output::Line> routine_definition_lines;
-						routine_definition_lines = analyze_routine(routine_declaration, body, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope);
+						routine_definition_lines = analyze_routine(routine_declaration, parameter_names, body, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope);
 						output.add_line(Output::text_section, ":", routine_symbol);
 						output.add_lines(Output::text_section, routine_definition_lines);
 						output.add_line(Output::text_section, "");
@@ -16349,7 +16349,7 @@ void Semantics::analyze() {
 	std::vector<std::pair<bool, const Type *>> main_parameters;
 	IdentifierScope::IdentifierBinding::RoutineDeclaration main_routine_declaration(main_routine_symbol, main_parameters, std::optional<const Type *>());
 	std::vector<Output::Line> main_routine_definition_lines;
-	main_routine_definition_lines = analyze_block(main_routine_declaration, block, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope, {}, true);
+	main_routine_definition_lines = analyze_block(main_routine_declaration, {}, block, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope, {}, true);
 	output.add_line(Output::text_section, ":", main_routine_symbol);
 	output.add_lines(Output::text_section, main_routine_definition_lines);
 
