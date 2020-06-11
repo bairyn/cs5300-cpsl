@@ -2824,8 +2824,6 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 	const IdentifierScope &expression_constant_scope,
 	const IdentifierScope &expression_var_scope
 ) const {
-	// TODO: assert() or assert(this->verify()) and configure macros to enable
-	// assertions only when debugging is enabled (DEBUG=1 is defined).
 	if (expression > grammar.expression_storage.size()) {
 		std::ostringstream sstr;
 		sstr << "Semantics::is_expression_constant: out of bounds expression reference: " << expression << " >= " << grammar.expression_storage.size() << ".";
