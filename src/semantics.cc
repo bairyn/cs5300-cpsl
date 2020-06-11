@@ -4091,7 +4091,7 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 			Type::Simple semantics_simple(identifier, referent);
 
 			// Return the constructed simple type.
-			return Type(semantics_simple);
+			return Type(std::move(semantics_simple));
 		}
 
 		case ::Type::record_branch: {
@@ -4190,7 +4190,7 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 				} else {
 					// Create an anonymous type.
 					Type anonymous_type = analyze_type("", next_type, type_constant_scope, type_type_scope, anonymous_storage);
-					anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(anonymous_type));
+					anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(std::move(anonymous_type)));
 					next_semantics_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
 				}
 
@@ -4376,7 +4376,7 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 			} else {
 				// Create an anonymous type.
 				Type anonymous_type = analyze_type("", base_type, type_constant_scope, type_type_scope, anonymous_storage);
-				anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(anonymous_type));
+				anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(std::move(anonymous_type)));
 				base_semantics_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
 			}
 
@@ -13578,8 +13578,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 				Type semantics_type = analyze_type(identifier.text, type, local_constant_scope, local_type_scope, anonymous_storage);
 
 				// Add this type to the local scope.
-				local_type_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Type(semantics_type))});
-				local_combined_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Type(semantics_type))});
+				local_type_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(std::move(IdentifierScope::IdentifierBinding::Type(semantics_type)))});
+				local_combined_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(std::move(IdentifierScope::IdentifierBinding::Type(semantics_type)))});
 			}
 
 			// Done handling type part.
@@ -13683,7 +13683,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 				} else {
 					// Create an anonymous type.
 					Type anonymous_type = analyze_type("", next_type, local_constant_scope, local_type_scope, anonymous_storage);
-					anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(anonymous_type));
+					anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(std::move(anonymous_type)));
 					next_semantics_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
 				}
 
@@ -14345,7 +14345,7 @@ void Semantics::analyze() {
 				} else {
 					// Create an anonymous type.
 					Type anonymous_type = analyze_type("", next_type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
-					anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(anonymous_type));
+					anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(std::move(anonymous_type)));
 					next_semantics_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
 				}
 
@@ -14694,7 +14694,7 @@ void Semantics::analyze() {
 							// Get the parameter type.
 							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
 							// Store a copy of this type in our anonymous type storage.
-							anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(temporary_type));
+							anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(std::move(temporary_type)));
 							const Type *parameter_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
 
 							// Unpack the ident_list.
@@ -14921,7 +14921,7 @@ void Semantics::analyze() {
 							// Get the parameter type.
 							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
 							// Store a copy of this type in our anonymous type storage.
-							anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(temporary_type));
+							anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(std::move(temporary_type)));
 							const Type *parameter_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
 
 							// Unpack the ident_list.
@@ -15093,7 +15093,7 @@ void Semantics::analyze() {
 						// Get the output type.
 						Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
 						// Store a copy of this type in our anonymous type storage.
-						anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(temporary_type));
+						anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(std::move(temporary_type)));
 						const Type *output_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
 
 						// Collect the formal parameters in the list.
@@ -15198,7 +15198,7 @@ void Semantics::analyze() {
 							// Get the parameter type.
 							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
 							// Store a copy of this type in our anonymous type storage.
-							anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(temporary_type));
+							anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(std::move(temporary_type)));
 							const Type *parameter_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
 
 							// Unpack the ident_list.
@@ -15328,7 +15328,7 @@ void Semantics::analyze() {
 						// Get the output type.
 						Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
 						// Store a copy of this type in our anonymous type storage.
-						anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(temporary_type));
+						anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(std::move(temporary_type)));
 						const Type *output_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
 
 						// Collect the formal parameters in the list.
@@ -15433,7 +15433,7 @@ void Semantics::analyze() {
 							// Get the parameter type.
 							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
 							// Store a copy of this type in our anonymous type storage.
-							anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(temporary_type));
+							anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(std::move(temporary_type)));
 							const Type *parameter_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
 
 							// Unpack the ident_list.
