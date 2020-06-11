@@ -823,6 +823,9 @@ inline bool Semantics::Type::Primitive::operator==(const Primitive &other) const
 }
 inline bool Semantics::Type::Primitive::operator!=(const Primitive &other) const { return !(*this == other); }
 
+bool Semantics::Type::Primitive::matches(const Primitive &other, const IdentifierScope &storage_scope) const { return matches(other); }
+bool Semantics::Type::Primitive::matches(const Primitive &other) const { return *this == other; }
+
 Semantics::Type::Simple::Simple()
 	{}
 
@@ -838,37 +841,30 @@ Semantics::Type::Simple::Simple(Base &&base, const Type &referent)
 	{}
 #endif /* #if 0 */
 
-Semantics::Type::Simple::Simple(const std::string &identifier, const Type &referent)
-	: Base(identifier, referent.get_fixed_width(), referent.get_size())
-	, referent(&referent)
-	{}
-
-Semantics::Type::Simple::Simple(const std::string &identifier, const Type &referent, const IdentifierScope &identifier_type_scope)
-	: Base(identifier, identifier_type_scope.get(referent.get_identifier_copy()).get_type().get_fixed_width(), identifier_type_scope.get(referent.get_identifier_copy()).get_type().get_size())
-	, referent(&referent)
+Semantics::Type::Simple::Simple(const std::string &identifier, TypeIndex referent, const IdentifierScope &storage_scope)
+	: Base(identifier, storage_scope.type(referent).get_fixed_width(), storage_scope.type(referent).get_size())
+	, referent(referent)
 	{}
 
 // | Resolve a chain of aliases.
-const Semantics::Type &Semantics::Type::Simple::resolve_type(bool check_cycles) const {
+const Semantics::Type &Semantics::Type::Simple::resolve_type(const IdentifierScope &storage_scope, bool check_cycles) const {
 	if (!check_cycles) {
-		const Type *type = referent;
-		assert(!!type);
+		const Type *type = &storage_scope.type(referent);
 		while (type->is_simple()) {
-			assert(!!type);
-			type = type->get_simple().referent;
+			type = &storage_scope.type(type->get_simple().referent);
 		}
 		return *type;
 	} else {
-		const Type *type = referent;
+		const Type *type = &storage_scope.type(referent);
 		std::set<const Type *> visited;
-		while (type && type->is_simple()) {
+		while (type->is_simple()) {
 			if (visited.find(type) != visited.cend()) {
 				std::ostringstream sstr;
 				sstr << "Semantics::Type::Simple::resolve_type: error: found cycle in simple type alias declarations.";
 				throw SemanticsError(sstr.str());
 			}
 			visited.insert(type);
-			type = type->get_simple().referent;
+			type = &storage_scope.type(type->get_simple().referent);
 		}
 		if (!type) {
 			std::ostringstream sstr;
@@ -879,41 +875,27 @@ const Semantics::Type &Semantics::Type::Simple::resolve_type(bool check_cycles) 
 	}
 }
 
-inline bool Semantics::Type::Simple::operator< (const Simple &other) const {
-	if      (identifier  != other.identifier ) { return identifier  < other.identifier;  }
-	else if (fixed_width != other.fixed_width) { return fixed_width < other.fixed_width; }
-	else if (size        != other.size       ) { return size        < other.size;        }
-	else if (!!referent  != !!other.referent ) { return !!referent  < !!other.referent;  }
-	else if (!referent)                        { return false;  /* == */                 }
-	else                                       { return *referent   < *other.referent;   }
+bool Semantics::Type::Simple::matches(const Simple &other, const IdentifierScope &storage_scope) const {
+	return identifier == other.identifier && fixed_width == other.fixed_width && size == other.size && storage_scope.type(referent).matches(storage_scope.type(other.referent), storage_scope);
 }
-
-inline bool Semantics::Type::Simple::operator> (const Simple &other) const { return   other < *this;  }
-inline bool Semantics::Type::Simple::operator<=(const Simple &other) const { return !(*this > other); }
-inline bool Semantics::Type::Simple::operator>=(const Simple &other) const { return !(*this < other); }
-
-inline bool Semantics::Type::Simple::operator==(const Simple &other) const {
-	return identifier == other.identifier && fixed_width == other.fixed_width && size == other.size && (!!referent) == (!!other.referent) && (!referent || (*referent == *other.referent));
-}
-inline bool Semantics::Type::Simple::operator!=(const Simple &other) const { return !(*this == other); }
 
 Semantics::Type::Record::Record()
 	{}
 
-Semantics::Type::Record::Record(const std::string &identifier, const std::vector<std::pair<std::string, const Type *>> &fields)
-	: Record(identifier, std::move(std::vector<std::pair<std::string, const Type *>>(fields)))
+Semantics::Type::Record::Record(const std::string &identifier, const std::vector<std::pair<std::string, TypeIndex>> &fields, const IdentifierScope &storage_scope)
+	: Record(identifier, std::move(std::vector<std::pair<std::string, TypeIndex>>(fields)), storage_scope)
 	{}
 
-Semantics::Type::Record::Record(const std::string &identifier, std::vector<std::pair<std::string, const Type *>> &&fields)
+Semantics::Type::Record::Record(const std::string &identifier, std::vector<std::pair<std::string, TypeIndex>> &&fields, const IdentifierScope &storage_scope)
 	: fields(fields)
 {
 	this->identifier = identifier;
 	fixed_width = true;
 	size = 0;
-	for (const std::pair<std::string, const Type *> &field : this->fields) {
+	for (const std::pair<std::string, TypeIndex> &field : this->fields) {
 		// TODO: check for overflow.
 		const std::string &field_identifier = field.first;
-		const Type        &field_type       = *field.second;
+		const Type        &field_type       = storage_scope.type(field.second);
 
 		if (!field_type.get_fixed_width()) {
 			fixed_width = false;
@@ -924,11 +906,11 @@ Semantics::Type::Record::Record(const std::string &identifier, std::vector<std::
 }
 
 // | Used for comparison and equality checking.
-std::vector<std::pair<std::string, Semantics::Type>> Semantics::Type::Record::get_dereferenced_fields() const {
+std::vector<std::pair<std::string, Semantics::Type>> Semantics::Type::Record::get_dereferenced_fields(const IdentifierScope &storage_scope) const {
 	std::vector<std::pair<std::string, Semantics::Type>> dereferenced_fields;
 
-	for (const std::pair<std::string, const Type *> &field : std::as_const(fields)) {
-		const std::vector<std::pair<std::string, const Type *>>::size_type &field_index = &field - &fields[0];
+	for (const std::pair<std::string, TypeIndex> &field : std::as_const(fields)) {
+		const std::vector<std::pair<std::string, TypeIndex>>::size_type &field_index = &field - &fields[0];
 
 		if (!field.second) {
 			std::ostringstream sstr;
@@ -949,7 +931,7 @@ std::vector<std::pair<std::string, Semantics::Type>> Semantics::Type::Record::ge
 		}
 
 		const std::string &field_identifier = field.first;
-		const Type        &field_type       = *field.second;
+		const Type        &field_type       = storage_scope.type(field.second);
 
 		dereferenced_fields.push_back({field_identifier, field_type});
 	}
@@ -957,32 +939,33 @@ std::vector<std::pair<std::string, Semantics::Type>> Semantics::Type::Record::ge
 	return dereferenced_fields;
 }
 
-inline bool Semantics::Type::Record::operator< (const Record &other) const {
-	if      (identifier  != other.identifier ) { return identifier                < other.identifier;                }
-	else if (fixed_width != other.fixed_width) { return fixed_width               < other.fixed_width;               }
-	else if (size        != other.size       ) { return size                      < other.size;                      }
-	else                                       { return get_dereferenced_fields() < other.get_dereferenced_fields(); }
-}
+bool Semantics::Type::Record::matches(const Record &other, const IdentifierScope &storage_scope) const {
+	if (!(identifier == other.identifier && fixed_width == other.fixed_width && size == other.size)) {
+		return false;
+	}
+	if (fields.size() != other.fields.size()) {
+		return false;
+	}
+	for (const std::pair<std::string, TypeIndex> &field : std::as_const(fields)) {
+		const std::vector<std::pair<std::string, TypeIndex>>::size_type &field_index = &field - &fields[0]; (void) field_index;
 
-inline bool Semantics::Type::Record::operator> (const Record &other) const { return   other < *this;  }
-inline bool Semantics::Type::Record::operator<=(const Record &other) const { return !(*this > other); }
-inline bool Semantics::Type::Record::operator>=(const Record &other) const { return !(*this < other); }
-
-inline bool Semantics::Type::Record::operator==(const Record &other) const {
-	return identifier == other.identifier && fixed_width == other.fixed_width && size == other.size && get_dereferenced_fields() == other.get_dereferenced_fields();
+		if (!storage_scope.type(field.second).matches(storage_scope.type(other.fields[field_index].second), storage_scope)) {
+			return false;
+		}
+	}
+	return true;
 }
-inline bool Semantics::Type::Record::operator!=(const Record &other) const { return !(*this == other); }
 
 Semantics::Type::Array::Array()
 	{}
 
-Semantics::Type::Array::Array(const std::string &identifier, const Type &base_type, int32_t min_index, int32_t max_index)
-	: base_type(&base_type)
+Semantics::Type::Array::Array(const std::string &identifier, TypeIndex base_type, int32_t min_index, int32_t max_index, const IdentifierScope &storage_scope)
+	: base_type(base_type)
 	, min_index(min_index)
 	, max_index(max_index)
 {
 	this->identifier = identifier;
-	fixed_width = base_type.get_fixed_width();
+	fixed_width = storage_scope.type(base_type).get_fixed_width();
 	if (min_index > max_index) {
 		std::ostringstream sstr;
 		if (identifier.size() <= 0) {
@@ -992,17 +975,17 @@ Semantics::Type::Array::Array(const std::string &identifier, const Type &base_ty
 		}
 		throw SemanticsError(sstr.str());
 	}
-	if (would_addition_overflow(get_index_range(), 1) || would_multiplication_overflow(get_index_range() + 1, base_type.get_size())) {
+	if (would_addition_overflow(get_index_range(), 1) || would_multiplication_overflow(get_index_range() + 1, storage_scope.type(base_type).get_size())) {
 		std::ostringstream sstr;
 		if (identifier.size() <= 0) {
 			sstr << "Semantics::Type::Array::Array: attempt to construct an anonymous array type with a size that is too large: some indices would be too big to fit into a 32-bit signed integer.";
 		} else {
 			sstr << "Semantics::Type::Array::Array: attempt to construct an array type (``" << identifier << "\") with a size that is too large: some indices would be too big to fit into a 32-bit signed integer.";
 		}
-		sstr << "  Index range: " << get_index_range() << "; base type size: " << base_type.get_size();
+		sstr << "  Index range: " << get_index_range() << "; base type size: " << storage_scope.type(base_type).get_size();
 		throw SemanticsError(sstr.str());
 	}
-	size = get_index_range() * base_type.get_size();
+	size = get_index_range() * storage_scope.type(base_type).get_size();
 }
 
 int32_t Semantics::Type::Array::get_min_index() const {
@@ -1057,21 +1040,9 @@ int32_t Semantics::Type::Array::get_index_of_offset(uint32_t offset) const {
 	return get_begin_index() + offset;
 }
 
-inline bool Semantics::Type::Array::operator< (const Array &other) const {
-	if      (identifier  != other.identifier ) { return identifier  < other.identifier;  }
-	else if (fixed_width != other.fixed_width) { return fixed_width < other.fixed_width; }
-	else if (min_index   != other.min_index  ) { return min_index   < other.min_index;   }
-	else                                       { return max_index   < other.max_index;   }
+bool Semantics::Type::Array::matches(const Array &other, const IdentifierScope &storage_scope) const {
+	return identifier == other.identifier && fixed_width == other.fixed_width && size == other.size && min_index == other.min_index && max_index == other.max_index && storage_scope.type(base_type).matches(storage_scope.type(other.base_type), storage_scope);
 }
-
-inline bool Semantics::Type::Array::operator> (const Array &other) const { return   other < *this;  }
-inline bool Semantics::Type::Array::operator<=(const Array &other) const { return !(*this > other); }
-inline bool Semantics::Type::Array::operator>=(const Array &other) const { return !(*this < other); }
-
-inline bool Semantics::Type::Array::operator==(const Array &other) const {
-	return identifier == other.identifier && fixed_width == other.fixed_width && size == other.size && min_index == other.min_index && max_index == other.max_index;
-}
-inline bool Semantics::Type::Array::operator!=(const Array &other) const { return !(*this == other); }
 
 Semantics::Type::Type()
 	{}
@@ -1461,7 +1432,7 @@ std::string Semantics::Type::get_tag_repr() const {
 	return get_tag_repr(tag);
 }
 
-std::string Semantics::Type::get_repr() const {
+std::string Semantics::Type::get_repr(const IdentifierScope &storage_scope) const {
 	std::ostringstream sstr;
 	const Type::Base &base = get_base();
 	if (base.identifier.size() > 0) {
@@ -1488,14 +1459,14 @@ std::string Semantics::Type::get_repr() const {
 		}
 	} else if (is_simple()) {
 		sstr << "alias ultimately resolving to ";
-		const Type &resolved_type = resolve_type();
-		sstr << resolved_type.get_repr();
+		const Type &resolved_type = resolve_type(storage_scope);
+		sstr << resolved_type.get_repr(storage_scope);
 	} else if (is_record()) {
 		sstr << "record";
 	} else if (is_array()) {
 		sstr << "array of [";
-		const Type &base_type = *get_array().base_type;
-		sstr << base_type.get_repr();
+		const Type &base_type = storage_scope.type(get_array().base_type);
+		sstr << base_type.get_repr(storage_scope);
 		sstr << "]";
 	} else {
 	}
@@ -1505,63 +1476,36 @@ std::string Semantics::Type::get_repr() const {
 
 // | If this is a type alias, resolve the type to get the base type;
 // otherwise, just return this type.
-const Semantics::Type &Semantics::Type::resolve_type(bool check_cycles) const {
+const Semantics::Type &Semantics::Type::resolve_type(const IdentifierScope &storage_scope, bool check_cycles) const {
 	if (is_simple()) {
-		return get_simple().resolve_type(check_cycles);
+		return get_simple().resolve_type(storage_scope, check_cycles);
 	} else {
 		return *this;
 	}
 }
 
-inline bool Semantics::Type::operator< (const Type &other) const {
-	if (tag != other.tag) {
-		return tag < other.tag;
-	}
-
-	switch(tag) {
-		case primitive_tag:
-			return get_primitive() < other.get_primitive();
-		case simple_tag:
-			return get_simple()    < other.get_simple();
-		case record_tag:
-			return get_record()    < other.get_record();
-		case array_tag:
-			return get_array()     < other.get_array();
-
-		case null_tag:
-		default:
-			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::operator<: invalid tag: " << tag;
-			throw SemanticsError(sstr.str());
-	}
-}
-inline bool Semantics::Type::operator> (const Type &other) const { return   other < *this;  }
-inline bool Semantics::Type::operator<=(const Type &other) const { return !(*this > other); }
-inline bool Semantics::Type::operator>=(const Type &other) const { return !(*this < other); }
-
-inline bool Semantics::Type::operator==(const Type &other) const {
+bool Semantics::Type::matches(const Type &other, const IdentifierScope &storage_scope) const {
 	if (tag != other.tag) {
 		return false;
 	}
 
 	switch(tag) {
 		case primitive_tag:
-			return get_primitive() == other.get_primitive();
+			return get_primitive().matches(other.get_primitive(), storage_scope);
 		case simple_tag:
-			return get_simple()    == other.get_simple();
+			return get_simple().matches(other.get_simple(), storage_scope);
 		case record_tag:
-			return get_record()    == other.get_record();
+			return get_record().matches(other.get_record(), storage_scope);
 		case array_tag:
-			return get_array()     == other.get_array();
+			return get_array().matches(other.get_array(), storage_scope);
 
 		case null_tag:
 		default:
 			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::operator==: invalid tag: " << tag;
+			sstr << "Semantics::Type::matches: invalid tag: " << tag;
 			throw SemanticsError(sstr.str());
 	}
 }
-inline bool Semantics::Type::operator!=(const Type &other) const { return !(*this == other); }
 
 const Semantics::ConstantValue::Dynamic Semantics::ConstantValue::Dynamic::dynamic {};
 
@@ -2298,34 +2242,28 @@ Semantics::IdentifierScope::IdentifierBinding::Static::Static(ConstantValue &&co
 Semantics::IdentifierScope::IdentifierBinding::Var::Var()
 	{}
 
-Semantics::IdentifierScope::IdentifierBinding::Var::Var(const Type &type, const Storage &storage)
-	: type(&type)
+Semantics::IdentifierScope::IdentifierBinding::Var::Var(TypeIndex type, const Storage &storage)
+	: type(type)
 	, storage(storage)
 	{}
 
 Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::RoutineDeclaration()
 	{}
 
-Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::RoutineDeclaration(const Symbol &location, const std::vector<std::pair<bool, const Type *>> &parameters, std::optional<const Type *> output)
+Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::RoutineDeclaration(const Symbol &location, const std::vector<std::pair<bool, TypeIndex>> &parameters, std::optional<TypeIndex> output)
 	: location(location)
 	, parameters(parameters)
 	, output(output)
 	{}
 
-std::vector<std::pair<bool, Semantics::Type>> Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::get_dereferenced_parameters() const {
+std::vector<std::pair<bool, Semantics::Type>> Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::get_dereferenced_parameters(const IdentifierScope &storage_scope) const {
 	std::vector<std::pair<bool, Type>> dereferenced_parameters;
 
-	for (const std::pair<bool, const Type *> &parameter : std::as_const(parameters)) {
-		const std::vector<std::pair<bool, const Type *>>::size_type &parameter_index = &parameter - &parameters[0];
-
-		if (!parameter.second) {
-			std::ostringstream sstr;
-			sstr << "Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::get_dereferenced_parameters: error: null field type pointer in record for parameter #" << parameter_index << ".";
-			throw SemanticsError(sstr.str());
-		}
+	for (const std::pair<bool, TypeIndex> &parameter : std::as_const(parameters)) {
+		const std::vector<std::pair<bool, TypeIndex>>::size_type &parameter_index = &parameter - &parameters[0];
 
 		const bool &parameter_is_ref = parameter.first;
-		const Type &parameter_type   = *parameter.second;
+		const Type &parameter_type   = storage_scope.type(parameter.second);
 
 		dereferenced_parameters.push_back({parameter_is_ref, parameter_type});
 	}
@@ -2333,34 +2271,42 @@ std::vector<std::pair<bool, Semantics::Type>> Semantics::IdentifierScope::Identi
 	return dereferenced_parameters;
 }
 
-std::optional<Semantics::Type> Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::get_dereferenced_output()     const {
+std::optional<Semantics::Type> Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::get_dereferenced_output(const IdentifierScope &storage_scope) const {
 	if (!output.has_value()) {
 		return std::optional<Type>();
 	} else {
-		const Type *output_type = *output;
-		if (!output_type) {
-			std::ostringstream sstr;
-			sstr << "Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::get_dereferenced_output: error: null output type pointer.";
-			throw SemanticsError(sstr.str());
-		}
-		return std::optional<Type>(*output_type);
+		const Type &output_type = storage_scope.type(*output);
+		return std::optional<Type>(output_type);
 	}
 }
 
-inline bool Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::RoutineDeclaration::operator< (const RoutineDeclaration &other) const {
-	if      (location                      != other.location                     ) { return location                      < other.location;                      }
-	else if (get_dereferenced_parameters() != other.get_dereferenced_parameters()) { return get_dereferenced_parameters() < other.get_dereferenced_parameters(); }
-	else                                                                           { return get_dereferenced_output()     < other.get_dereferenced_output();     }
-}
+bool Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::matches(const RoutineDeclaration &other, const IdentifierScope &storage_scope) const {
+	if (output.has_value() != other.output.has_value()) {
+		return false;
+	}
+	if (output.has_value()) {
+		if (!storage_scope.type(*output).matches(storage_scope.type(*other.output), storage_scope)) {
+			return false;
+		}
+	}
+	if (parameters.size() != other.parameters.size()) {
+		return false;
+	}
+	for (const std::pair<bool, TypeIndex> &parameter : std::as_const(parameters)) {
+		const std::vector<std::pair<bool, TypeIndex>>::size_type &parameter_index = &parameter - &parameters[0];
 
-inline bool Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::RoutineDeclaration::operator> (const RoutineDeclaration &other) const { return   other < *this;  }
-inline bool Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::RoutineDeclaration::operator<=(const RoutineDeclaration &other) const { return !(*this > other); }
-inline bool Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::RoutineDeclaration::operator>=(const RoutineDeclaration &other) const { return !(*this < other); }
+		const bool &parameter_is_ref = parameter.first;
+		const Type &parameter_type   = storage_scope.type(parameter.second);
 
-inline bool Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::RoutineDeclaration::operator==(const RoutineDeclaration &other) const {
-	return location == other.location && get_dereferenced_parameters() == other.get_dereferenced_parameters() && get_dereferenced_output() == other.get_dereferenced_output();
+		if (parameter_is_ref != other.parameters[parameter_index].first) {
+			return false;
+		}
+		if (!parameter_type.matches(storage_scope.type(other.parameters[parameter_index].second), storage_scope)) {
+			return false;
+		}
+	}
+	return true;
 }
-inline bool Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::RoutineDeclaration::operator!=(const RoutineDeclaration &other) const { return !(*this == other); }
 
 Semantics::IdentifierScope::IdentifierBinding::IdentifierBinding()
 	{}
@@ -2718,7 +2664,17 @@ const Semantics::IdentifierScope::IdentifierBinding &Semantics::IdentifierScope:
 
 const Semantics::IdentifierScope::IdentifierBinding &Semantics::IdentifierScope::insert(const std::string &identifier, const IdentifierBinding &identifier_binding) { return insert({identifier, identifier_binding}); }
 
-bool Semantics::IdentifierScope::has(std::string identifier) const {
+uint64_t Semantics::IdentifierScope::add(const std::pair<std::string, IdentifierBinding> &pair) {
+	const std::string       &identifier         = pair.first;
+	const IdentifierBinding &identifier_binding = pair.second;
+	scope.insert({identifier, binding_storage->size()});
+	binding_storage->push_back(identifier_binding);
+	return binding_storage->size() - 1;
+}
+
+uint64_t Semantics::IdentifierScope::add(const std::string &identifier, const IdentifierBinding &identifier_binding) { return add({identifier, identifier_binding}); }
+
+bool Semantics::IdentifierScope::has(const std::string &identifier) const {
 	std::map<std::string, std::vector<IdentifierBinding>::size_type>::const_iterator identifier_binding_search = scope.find(identifier);
 	if (identifier_binding_search == scope.cend()) {
 		return false;
@@ -2727,7 +2683,7 @@ bool Semantics::IdentifierScope::has(std::string identifier) const {
 	}
 }
 
-const Semantics::IdentifierScope::IdentifierBinding &Semantics::IdentifierScope::get(std::string identifier) const {
+const Semantics::IdentifierScope::IdentifierBinding &Semantics::IdentifierScope::get(const std::string &identifier) const {
 	std::map<std::string, std::vector<IdentifierBinding>::size_type>::const_iterator identifier_binding_search = scope.find(identifier);
 	if (identifier_binding_search == scope.cend()) {
 		std::ostringstream sstr;
@@ -2739,7 +2695,7 @@ const Semantics::IdentifierScope::IdentifierBinding &Semantics::IdentifierScope:
 }
 
 /*
-Semantics::IdentifierScope::IdentifierBinding &&Semantics::IdentifierScope::get(std::string identifier) {
+Semantics::IdentifierScope::IdentifierBinding &&Semantics::IdentifierScope::get(const std::string &identifier) {
 	std::map<std::string, std::vector<IdentifierBinding>::size_type>::iterator identifier_binding_search = scope.find(identifier);
 	if (identifier_binding_search == scope.end()) {
 		std::ostringstream sstr;
@@ -2751,23 +2707,51 @@ Semantics::IdentifierScope::IdentifierBinding &&Semantics::IdentifierScope::get(
 }
 */
 
-const Semantics::IdentifierScope::IdentifierBinding &Semantics::IdentifierScope::operator[](std::string identifier) const {
+uint64_t Semantics::IdentifierScope::index(const std::string &identifier) const {
+	std::map<std::string, std::vector<IdentifierBinding>::size_type>::const_iterator identifier_binding_search = scope.find(identifier);
+	if (identifier_binding_search == scope.cend()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::IdentifierScope::index: the identifier is missing from scope: " << identifier;
+		throw SemanticsError(sstr.str());
+	} else {
+		return identifier_binding_search->second;
+	}
+}
+
+const Semantics::IdentifierScope::IdentifierBinding &Semantics::IdentifierScope::operator[](const std::string &identifier) const {
 	return get(identifier);
 }
 
 /*
-Semantics::IdentifierScope::IdentifierBinding &&Semantics::IdentifierScope::operator[](std::string identifier) {
+Semantics::IdentifierScope::IdentifierBinding &&Semantics::IdentifierScope::operator[](const std::string &identifier) {
 	return std::move(get(identifier));
 }
 */
 
-std::optional<Semantics::IdentifierScope::IdentifierBinding> Semantics::IdentifierScope::lookup_copy(std::string identifier) const {
+std::optional<Semantics::IdentifierScope::IdentifierBinding> Semantics::IdentifierScope::lookup_copy(const std::string &identifier) const {
 	std::map<std::string, std::vector<IdentifierBinding>::size_type>::const_iterator identifier_binding_search = scope.find(identifier);
 	if (identifier_binding_search == scope.cend()) {
 		return std::optional<IdentifierBinding>();
 	} else {
 		return std::optional<IdentifierBinding>(std::move(IdentifierBinding(std::as_const(binding_storage->at(identifier_binding_search->second)))));
 	}
+}
+
+// | Since types are accessed often in the code, conveniently provide these accessors.
+const Semantics::Type &Semantics::IdentifierScope::type(TypeIndex type_index) const {
+	return binding_storage->at(type_index).get_type();
+}
+
+const Semantics::Type &Semantics::IdentifierScope::type(const std::string &identifier) const {
+	return get(identifier).get_type();
+}
+
+const Semantics::Type &Semantics::IdentifierScope::resolve_type(TypeIndex type_index) const {
+	return type(type_index).resolve_type(*this);
+}
+
+const Semantics::Type &Semantics::IdentifierScope::resolve_type(const std::string &identifier) const {
+	return type(identifier).resolve_type(*this);
 }
 
 Semantics::Semantics()
@@ -4101,12 +4085,11 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 				throw SemanticsError(sstr.str());
 			}
 			// type_type_scope should only have Type identifier bindings.
-			const IdentifierScope::IdentifierBinding::Type &referent_binding = std::as_const(type_type_scope.get(simple_identifier.text)).get_type();
-			// The pointer's lifetime should not exceed the lifetime of the referent, normally inside the identifier scope.
-			const Type &referent = referent_binding;
+			// Accessing of the index should not occur after the lifetime of the referent, normally inside the identifier scope.
+			const TypeIndex referent = type_type_scope.index(simple_identifier.text);
 
 			// Construct the Simple type.
-			Type::Simple semantics_simple(identifier, referent);
+			Type::Simple semantics_simple(identifier, referent, storage_scope);
 
 			// Return the constructed simple type.
 			return Type(std::move(semantics_simple));
@@ -4133,8 +4116,8 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 			}
 
 			// Prepare the fields vector.
-			std::set<std::string>                             field_identifiers;
-			std::vector<std::pair<std::string, const Type *>> fields;
+			std::set<std::string>                          field_identifiers;
+			std::vector<std::pair<std::string, TypeIndex>> fields;
 
 			// Collect the typed identifier sequences in the list.
 			std::vector<const TypedIdentifierSequence *> typed_identifier_sequences;
@@ -4183,7 +4166,7 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 				const LexemeOperator &semicolon_operator0 = grammar.lexemes.at(next_typed_identifier_sequence->semicolon_operator0).get_operator(); (void) semicolon_operator0;
 
 				// Get a copy of the subtype or construct a new anonymous subtype using "storage_scope".
-				const Type *next_semantics_type;
+				TypeIndex next_semantics_type;
 				// Branch on next_type.  If it's in the "simple" type alias
 				// format, it should refer to an existing type, although it's
 				// not a type alias.  Otherwise, create an anonymous type.
@@ -4204,11 +4187,11 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 					}
 
 					// Set next_semantics_type.
-					next_semantics_type = &type_type_scope.get(simple_identifier.text).get_type();
+					next_semantics_type = type_type_scope.index(simple_identifier.text);
 				} else {
 					// Create an anonymous type.
 					Type anonymous_type = analyze_type("", next_type, type_constant_scope, type_type_scope, storage_scope);
-					next_semantics_type = &storage_scope.insert("", anonymous_type).get_type();
+					next_semantics_type = storage_scope.add("", anonymous_type);
 				}
 
 				// Unpack the ident_list.
@@ -4276,7 +4259,7 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 			}
 
 			// Construct the Record type.
-			Type::Record semantics_record(identifier, fields);
+			Type::Record semantics_record(identifier, fields, storage_scope);
 
 			// Return the constructed record type.
 			return Type(semantics_record);
@@ -4368,7 +4351,7 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 			}
 
 			// Get a copy of the subtype or construct a new anonymous subtype using "storage_scope".
-			const Type *base_semantics_type;
+			TypeIndex base_semantics_type;
 			// Branch on base_type.  If it's in the "simple" type alias
 			// format, it should refer to an existing type, although it's
 			// not a type alias.  Otherwise, create an anonymous type.
@@ -4389,15 +4372,15 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 				}
 
 				// Set base_semantics_type.
-				base_semantics_type = &type_type_scope.get(simple_identifier.text).get_type();
+				base_semantics_type = type_type_scope.index(simple_identifier.text);
 			} else {
 				// Create an anonymous type.
 				Type anonymous_type = analyze_type("", base_type, type_constant_scope, type_type_scope, storage_scope);
-				base_semantics_type = &storage_scope.insert("", anonymous_type).get_type();
+				base_semantics_type = storage_scope.add("", anonymous_type);
 			}
 
 			// Construct the Array type.
-			Type::Array semantics_array(identifier, *base_semantics_type, min_index, max_index);
+			Type::Array semantics_array(identifier, base_semantics_type, min_index, max_index, storage_scope);
 
 			// Return the constructed array type.
 			return Type(semantics_array);
@@ -10491,10 +10474,10 @@ const bool Semantics::all_arrays_records_are_refs = CPSL_CC_SEMANTICS_ALL_ARRAY_
 Semantics::LvalueSourceAnalysis::LvalueSourceAnalysis()
 	{}
 
-Semantics::LvalueSourceAnalysis::LvalueSourceAnalysis(const MIPSIO &instructions, const LexemeIdentifier &lvalue_identifier, const Type &lvalue_type, MIPSIO::Index lvalue_index, const Storage &lvalue_fixed_storage, bool is_lvalue_fixed_storage, uint64_t lexeme_begin, uint64_t lexeme_end)
+Semantics::LvalueSourceAnalysis::LvalueSourceAnalysis(const MIPSIO &instructions, const LexemeIdentifier &lvalue_identifier, TypeIndex lvalue_type, MIPSIO::Index lvalue_index, const Storage &lvalue_fixed_storage, bool is_lvalue_fixed_storage, uint64_t lexeme_begin, uint64_t lexeme_end)
 	: instructions(instructions)
 	, lvalue_identifier(&lvalue_identifier)
-	, lvalue_type(&lvalue_type)
+	, lvalue_type(lvalue_type)
 	, lvalue_index(lvalue_index)
 	, lvalue_fixed_storage(lvalue_fixed_storage)
 	, is_lvalue_fixed_storage(is_lvalue_fixed_storage)
@@ -10502,10 +10485,10 @@ Semantics::LvalueSourceAnalysis::LvalueSourceAnalysis(const MIPSIO &instructions
 	, lexeme_end(lexeme_end)
 	{}
 
-Semantics::LvalueSourceAnalysis::LvalueSourceAnalysis(MIPSIO &&instructions, const LexemeIdentifier &lvalue_identifier, const Type &lvalue_type, MIPSIO::Index lvalue_index, const Storage &lvalue_fixed_storage, bool is_lvalue_fixed_storage, uint64_t lexeme_begin, uint64_t lexeme_end)
+Semantics::LvalueSourceAnalysis::LvalueSourceAnalysis(MIPSIO &&instructions, const LexemeIdentifier &lvalue_identifier, TypeIndex lvalue_type, MIPSIO::Index lvalue_index, const Storage &lvalue_fixed_storage, bool is_lvalue_fixed_storage, uint64_t lexeme_begin, uint64_t lexeme_end)
 	: instructions(std::move(instructions))
 	, lvalue_identifier(&lvalue_identifier)
-	, lvalue_type(&lvalue_type)
+	, lvalue_type(lvalue_type)
 	, lvalue_index(lvalue_index)
 	, lvalue_fixed_storage(lvalue_fixed_storage)
 	, is_lvalue_fixed_storage(is_lvalue_fixed_storage)
@@ -10513,7 +10496,7 @@ Semantics::LvalueSourceAnalysis::LvalueSourceAnalysis(MIPSIO &&instructions, con
 	, lexeme_end(lexeme_end)
 	{}
 
-Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &lvalue, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
+Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &lvalue, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope) {
 	// Some type aliases to improve readability.
 	using M = Semantics::MIPSIO;
 	using I = Semantics::Instruction;
@@ -10591,11 +10574,11 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 
 	// Is it a variable?
 	if        (var_scope.has(lvalue_identifier.text)) {
-		const Var  &var  = var_scope.get(lvalue_identifier.text).get_var();
-		const Type &type = *var.type;
+		const Var       &var = var_scope.get(lvalue_identifier.text).get_var();
+		const TypeIndex type = var.type;
 
 		// What Type is it?
-		const Type &resolved_type = type.resolve_type();
+		const Type &resolved_type = storage_scope.type(type).resolve_type(storage_scope);
 		if        (resolved_type.is_primitive()) {
 			const Type::Primitive &resolved_primitive_type = resolved_type.get_primitive();
 
@@ -10612,14 +10595,14 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 			}
 
 			// It's a variable.
-			lvalue_source_analysis.lvalue_type             = &type;
+			lvalue_source_analysis.lvalue_type             = type;
 			lvalue_source_analysis.lvalue_index            = 0;
 			lvalue_source_analysis.lvalue_fixed_storage    = var.storage;
 			lvalue_source_analysis.is_lvalue_fixed_storage = true;
 		} else if (resolved_type.is_record() || resolved_type.is_array()) {
 			// Load the base address of the array or record.  Apply any provided accessors.
-			const Type *last_output_type = &type;
-			Index last_output_index = lvalue_source_analysis.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), var.storage)});
+			TypeIndex last_output_type  = type;
+			Index     last_output_index = lvalue_source_analysis.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), var.storage)});
 
 			for (const LvalueAccessorClause *lvalue_accessor_clause_ : std::as_const(lvalue_accessor_clauses)) {
 				const LvalueAccessorClause &lvalue_accessor_clause = *lvalue_accessor_clause_;
@@ -10631,7 +10614,7 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 
 						lvalue_source_analysis.lexeme_end = lvalue_accessor_clause_index.identifier + 1;
 
-						if (!last_output_type->resolve_type().is_record()) {
+						if (!storage_scope.type(last_output_type).resolve_type(storage_scope).is_record()) {
 							std::ostringstream sstr;
 							sstr
 								<< "Semantics::analyze_lvalue_source: error (line "
@@ -10645,17 +10628,17 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 						// Find the field.
 						bool     found  = false;
 						uint32_t offset = 0;
-						for (const std::pair<std::string, const Type *> &field : std::as_const(last_output_type->resolve_type().get_record().fields)) {
+						for (const std::pair<std::string, TypeIndex> &field : std::as_const(storage_scope.type(last_output_type).resolve_type(storage_scope).get_record().fields)) {
 							const std::string &field_name = field.first;
-							const Type        &field_type = *field.second;
+							const TypeIndex    field_type = field.second;
 
 							if (identifier.text == field_name) {
 								found = true;
-								last_output_type = &field_type;
+								last_output_type = field_type;
 								break;
 							}
 
-							offset += field_type.get_size();
+							offset += storage_scope.type(field_type).get_size();
 						}
 						if (!found) {
 							std::ostringstream sstr;
@@ -10672,7 +10655,7 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 						const Index record_offset_index          = lvalue_source_analysis.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(offset), 0, 0))});
 						const Index record_element_address_index = lvalue_source_analysis.instructions.add_instruction({I::AddFrom(B(), true)}, {last_output_index, record_offset_index});
 						// Dereference if the field type is primitive.  If the field type is another record or array, leave the address as is.
-						const Type &last_output_resolved_type = last_output_type->resolve_type();
+						const Type &last_output_resolved_type = storage_scope.type(last_output_type).resolve_type(storage_scope);
 						if (true || !last_output_resolved_type.is_primitive()) {
 							last_output_index = record_element_address_index;
 						} else {
@@ -10707,7 +10690,7 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 
 						lvalue_source_analysis.lexeme_end = lvalue_accessor_clause_array.rightbracket_operator0 + 1;
 
-						if (!last_output_type->resolve_type().is_array()) {
+						if (!storage_scope.type(last_output_type).resolve_type(storage_scope).is_array()) {
 							std::ostringstream sstr;
 							sstr
 								<< "Semantics::analyze_lvalue_source: error (line "
@@ -10719,30 +10702,30 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 						}
 
 						// Get the index expression, which should be an integer.
-						const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
-						const Type &value_resolved_type = value.output_type->resolve_type();
+						const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+						const Type &value_resolved_type = storage_scope.type(value.output_type).resolve_type(storage_scope);
 						if (!value_resolved_type.is_primitive() || !value_resolved_type.get_primitive().is_integer()) {
 							std::ostringstream sstr;
 							sstr
 								<< "Semantics::analyze_lvalue_source: error (line "
 								<< leftbracket_operator0.line << " col " << leftbracket_operator0.column
 								<< "): accessing an array with ``[]\" requires an integer index type, but the index is of a different type: "
-								<< value.output_type->get_tag_repr()
+								<< storage_scope.type(value.output_type).get_tag_repr()
 								;
 							throw SemanticsError(sstr.str());
 						}
 
 						// | The last output type is now the base type.
-						last_output_type = last_output_type->get_array().base_type;
+						last_output_type = storage_scope.type(last_output_type).get_array().base_type;
 						// | Get the integer's index.
 						const Index value_index                 = lvalue_source_analysis.instructions.merge(value.instructions) + value.output_index;
 						// | Now dereference the array.
-						const Index load_element_size_index     = lvalue_source_analysis.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(last_output_type->get_size()), 0, 0))});
+						const Index load_element_size_index     = lvalue_source_analysis.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(storage_scope.type(last_output_type).get_size()), 0, 0))});
 						const Index array_element_offset_index  = lvalue_source_analysis.instructions.add_instruction({I::MultFrom(B(), true)}, {load_element_size_index, value_index});
 						const Index ignore_index                = lvalue_source_analysis.instructions.add_instruction_indexed({I::Ignore(B())}, {{array_element_offset_index, 1}}, array_element_offset_index); (void) ignore_index;
 						const Index array_element_address_index = lvalue_source_analysis.instructions.add_instruction({I::AddFrom(B(), true)}, {last_output_index, array_element_offset_index});
 						// Actually dereference if the base type is primitive.  Just leave it at the address if the base type is a record or array.
-						const Type &last_output_resolved_type = last_output_type->resolve_type();
+						const Type &last_output_resolved_type = storage_scope.type(last_output_type).resolve_type(storage_scope);
 						if (true || !last_output_resolved_type.is_primitive()) {
 							last_output_index = array_element_address_index;
 						} else {
@@ -10820,16 +10803,14 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 
 Semantics::Expression::Expression() {}
 
-Semantics::Expression::Expression(const MIPSIO  &instructions, const Type  &output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(          instructions ), output_type(          &output_type ), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
-Semantics::Expression::Expression(const MIPSIO  &instructions,       Type &&output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(          instructions ), output_type(std::move(&output_type)), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
-Semantics::Expression::Expression(      MIPSIO &&instructions, const Type  &output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(std::move(instructions)), output_type(          &output_type ), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
-Semantics::Expression::Expression(      MIPSIO &&instructions,       Type &&output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(std::move(instructions)), output_type(std::move(&output_type)), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
+Semantics::Expression::Expression(const MIPSIO  &instructions, TypeIndex output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(          instructions ), output_type(output_type), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
+Semantics::Expression::Expression(      MIPSIO &&instructions, TypeIndex output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(std::move(instructions)), output_type(output_type), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
 
-Semantics::Expression Semantics::analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, bool no_dereference_record_array) {
-	return analyze_expression(grammar.expression_storage.at(expression), constant_scope, type_scope, routine_scope, var_scope, combined_scope, no_dereference_record_array);
+Semantics::Expression Semantics::analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, bool no_dereference_record_array) {
+	return analyze_expression(grammar.expression_storage.at(expression), constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, no_dereference_record_array);
 }
 
-Semantics::Expression Semantics::analyze_expression(const ::Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, bool no_dereference_record_array) {
+Semantics::Expression Semantics::analyze_expression(const ::Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, bool no_dereference_record_array) {
 	// Some type aliases to improve readability.
 	using M = Semantics::MIPSIO;
 	using I = Semantics::Instruction;
@@ -10853,7 +10834,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 	if (constant_value.is_static()) {
 		expression_semantics.lexeme_begin = constant_value.lexeme_begin;
 		expression_semantics.lexeme_end   = constant_value.lexeme_end;
-		expression_semantics.output_type  = &constant_value.get_static_type();
+		expression_semantics.output_type  = type_scope.index(constant_value.get_static_primitive_type().get_tag_repr());
 		expression_semantics.output_index = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), constant_value.get_static_primitive_type().is_word(), constant_value)});
 	} else {
 		// Branch according to the expression type.
@@ -10866,32 +10847,32 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression       &expression1    = grammar.expression_storage.at(pipe.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 
 				// Make sure left and right are of primitive types.
-				if (!left.output_type->resolve_type().is_primitive() || !right.output_type->resolve_type().is_primitive()) {
+				if (!storage_scope.type(left.output_type).resolve_type(storage_scope).is_primitive() || !storage_scope.type(right.output_type).resolve_type(storage_scope).is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< pipe_operator0.line << " col " << pipe_operator0.column
 						<< "): cannot apply bitwise OR on a non-primitive-typed expression, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &left_type  = left.output_type->resolve_type().get_primitive();
-				const Type::Primitive &right_type = left.output_type->resolve_type().get_primitive();
+				const Type::Primitive &left_type  = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
+				const Type::Primitive &right_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 
 				// Are the expressions of the same type?
-				if (left.output_type->tag != right.output_type->tag) {
+				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< pipe_operator0.line << " col " << pipe_operator0.column
 						<< "): refusing to OR values of different types, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -10924,34 +10905,34 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression            &expression1         = grammar.expression_storage.at(ampersand.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Make sure left and right are of primitive types.
-				if (!left.output_type->resolve_type().is_primitive() || !right.output_type->resolve_type().is_primitive()) {
+				if (!storage_scope.type(left.output_type).resolve_type(storage_scope).is_primitive() || !storage_scope.type(right.output_type).resolve_type(storage_scope).is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< ampersand_operator0.line << " col " << ampersand_operator0.column
 						<< "): cannot apply bitwise AND on a non-primitive-typed expression, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &left_type  = left.output_type->resolve_type().get_primitive();
-				const Type::Primitive &right_type = left.output_type->resolve_type().get_primitive();
+				const Type::Primitive &left_type  = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
+				const Type::Primitive &right_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 
 				// Are the expressions of the same type?
-				if (left.output_type->tag != right.output_type->tag) {
+				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< ampersand_operator0.line << " col " << ampersand_operator0.column
 						<< "): refusing to AND values of different types, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -10984,29 +10965,29 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression         &expression1      = grammar.expression_storage.at(equals.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (left.output_type->tag != right.output_type->tag) {
+				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< equals_operator0.line << " col " << equals_operator0.column
 						<< "): refusing to compare values of different types for =, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply = comparison depending on the type.
-				if        (left.output_type->resolve_type().is_primitive()) {
-					const Type::Primitive &left_type = left.output_type->resolve_type().get_primitive();
+				if        (storage_scope.type(left.output_type).resolve_type(storage_scope).is_primitive()) {
+					const Type::Primitive &left_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 					if (!left_type.is_string()) {
-						expression_semantics.output_type  = &Type::boolean_type;
+						expression_semantics.output_type  = type_scope.index("boolean");
 						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
 						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
 						const Index sub_index             = expression_semantics.instructions.add_instruction({I::SubFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
@@ -11019,18 +11000,18 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 							<< "Semantics::analyze_expression: error (line "
 							<< equals_operator0.line << " col " << equals_operator0.column
 							<< "): comparison of string types is not yet supported, for "
-							<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+							<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 							<< "."
 							;
 						throw SemanticsError(sstr.str());
 					}
-				} else if (left.output_type->resolve_type().is_record() || left.output_type->resolve_type().is_array()) {
+				} else if (storage_scope.type(left.output_type).resolve_type(storage_scope).is_record() || storage_scope.type(left.output_type).resolve_type(storage_scope).is_array()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< equals_operator0.line << " col " << equals_operator0.column
 						<< "): comparison of record or array types is not yet supported, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11040,7 +11021,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: internal error (line "
 						<< equals_operator0.line << " col " << equals_operator0.column
 						<< "): unhandled expression type for = comparison: "
-						<< left.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr()
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -11052,29 +11033,29 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression         &expression1        = grammar.expression_storage.at(lt_or_gt.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (left.output_type->tag != right.output_type->tag) {
+				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< lt_or_gt_operator0.line << " col " << lt_or_gt_operator0.column
 						<< "): refusing to compare values of different types for <>, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply <> comparison depending on the type.
-				if        (left.output_type->resolve_type().is_primitive()) {
-					const Type::Primitive &left_type = left.output_type->resolve_type().get_primitive();
+				if        (storage_scope.type(left.output_type).resolve_type(storage_scope).is_primitive()) {
+					const Type::Primitive &left_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 					if (!left_type.is_string()) {
-						expression_semantics.output_type  = &Type::boolean_type;
+						expression_semantics.output_type  = type_scope.index("boolean");
 						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
 						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
 						const Index sub_index             = expression_semantics.instructions.add_instruction({I::SubFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
@@ -11088,18 +11069,18 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 							<< "Semantics::analyze_expression: error (line "
 							<< lt_or_gt_operator0.line << " col " << lt_or_gt_operator0.column
 							<< "): comparison of string types is not yet supported, for "
-							<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+							<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 							<< "."
 							;
 						throw SemanticsError(sstr.str());
 					}
-				} else if (left.output_type->resolve_type().is_record() || left.output_type->resolve_type().is_array()) {
+				} else if (storage_scope.type(left.output_type).resolve_type(storage_scope).is_record() || storage_scope.type(left.output_type).resolve_type(storage_scope).is_array()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< lt_or_gt_operator0.line << " col " << lt_or_gt_operator0.column
 						<< "): comparison of record or array types is not yet supported, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11109,7 +11090,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: internal error (line "
 						<< lt_or_gt_operator0.line << " col " << lt_or_gt_operator0.column
 						<< "): unhandled expression type for <> comparison: "
-						<< left.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr()
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -11121,29 +11102,29 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression     &expression1  = grammar.expression_storage.at(le.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (left.output_type->tag != right.output_type->tag) {
+				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< le_operator0.line << " col " << le_operator0.column
 						<< "): refusing to compare values of different types for <=, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply <= comparison depending on the type.
-				if        (left.output_type->resolve_type().is_primitive()) {
-					const Type::Primitive &left_type = left.output_type->resolve_type().get_primitive();
+				if        (storage_scope.type(left.output_type).resolve_type(storage_scope).is_primitive()) {
+					const Type::Primitive &left_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 					if (!left_type.is_string()) {
-						expression_semantics.output_type  = &Type::boolean_type;
+						expression_semantics.output_type  = type_scope.index("boolean");
 						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
 						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
 						const Index lt_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word(), true)}, {left.output_index + left_index, right.output_index + right_index});
@@ -11158,18 +11139,18 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 							<< "Semantics::analyze_expression: error (line "
 							<< le_operator0.line << " col " << le_operator0.column
 							<< "): comparison of string types is not yet supported, for "
-							<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+							<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 							<< "."
 							;
 						throw SemanticsError(sstr.str());
 					}
-				} else if (left.output_type->resolve_type().is_record() || left.output_type->resolve_type().is_array()) {
+				} else if (storage_scope.type(left.output_type).resolve_type(storage_scope).is_record() || storage_scope.type(left.output_type).resolve_type(storage_scope).is_array()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< le_operator0.line << " col " << le_operator0.column
 						<< "): comparison of record or array types is not yet supported, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11179,7 +11160,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: internal error (line "
 						<< le_operator0.line << " col " << le_operator0.column
 						<< "): unhandled expression type for <= comparison: "
-						<< left.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr()
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -11191,29 +11172,29 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression     &expression1  = grammar.expression_storage.at(ge.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (left.output_type->tag != right.output_type->tag) {
+				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< ge_operator0.line << " col " << ge_operator0.column
 						<< "): refusing to compare values of different types for >=, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply >= comparison depending on the type.
-				if        (left.output_type->resolve_type().is_primitive()) {
-					const Type::Primitive &left_type = left.output_type->resolve_type().get_primitive();
+				if        (storage_scope.type(left.output_type).resolve_type(storage_scope).is_primitive()) {
+					const Type::Primitive &left_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 					if (!left_type.is_string()) {
-						expression_semantics.output_type  = &Type::boolean_type;
+						expression_semantics.output_type  = type_scope.index("boolean");
 						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
 						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
 						const Index gt_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word(), true)}, {right.output_index + right_index, left.output_index + left_index});
@@ -11228,18 +11209,18 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 							<< "Semantics::analyze_expression: error (line "
 							<< ge_operator0.line << " col " << ge_operator0.column
 							<< "): comparison of string types is not yet supported, for "
-							<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+							<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 							<< "."
 							;
 						throw SemanticsError(sstr.str());
 					}
-				} else if (left.output_type->resolve_type().is_record() || left.output_type->resolve_type().is_array()) {
+				} else if (storage_scope.type(left.output_type).resolve_type(storage_scope).is_record() || storage_scope.type(left.output_type).resolve_type(storage_scope).is_array()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< ge_operator0.line << " col " << ge_operator0.column
 						<< "): comparison of record or array types is not yet supported, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11249,7 +11230,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: internal error (line "
 						<< ge_operator0.line << " col " << ge_operator0.column
 						<< "): unhandled expression type for >= comparison: "
-						<< left.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr()
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -11261,29 +11242,29 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression     &expression1  = grammar.expression_storage.at(lt.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (left.output_type->tag != right.output_type->tag) {
+				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< lt_operator0.line << " col " << lt_operator0.column
 						<< "): refusing to compare values of different types for <, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply < comparison depending on the type.
-				if        (left.output_type->resolve_type().is_primitive()) {
-					const Type::Primitive &left_type = left.output_type->resolve_type().get_primitive();
+				if        (storage_scope.type(left.output_type).resolve_type(storage_scope).is_primitive()) {
+					const Type::Primitive &left_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 					if (!left_type.is_string()) {
-						expression_semantics.output_type  = &Type::boolean_type;
+						expression_semantics.output_type  = type_scope.index("boolean");
 						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
 						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
 						const Index lt_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word(), true)}, {left.output_index + left_index, right.output_index + right_index});
@@ -11294,18 +11275,18 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 							<< "Semantics::analyze_expression: error (line "
 							<< lt_operator0.line << " col " << lt_operator0.column
 							<< "): comparison of string types is not yet supported, for "
-							<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+							<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 							<< "."
 							;
 						throw SemanticsError(sstr.str());
 					}
-				} else if (left.output_type->resolve_type().is_record() || left.output_type->resolve_type().is_array()) {
+				} else if (storage_scope.type(left.output_type).resolve_type(storage_scope).is_record() || storage_scope.type(left.output_type).resolve_type(storage_scope).is_array()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< lt_operator0.line << " col " << lt_operator0.column
 						<< "): comparison of record or array types is not yet supported, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11315,7 +11296,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: internal error (line "
 						<< lt_operator0.line << " col " << lt_operator0.column
 						<< "): unhandled expression type for < comparison: "
-						<< left.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr()
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -11327,29 +11308,29 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression     &expression1  = grammar.expression_storage.at(gt.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (left.output_type->tag != right.output_type->tag) {
+				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< gt_operator0.line << " col " << gt_operator0.column
 						<< "): refusing to compare values of different types for >, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply > comparison depending on the type.
-				if        (left.output_type->resolve_type().is_primitive()) {
-					const Type::Primitive &left_type = left.output_type->resolve_type().get_primitive();
+				if        (storage_scope.type(left.output_type).resolve_type(storage_scope).is_primitive()) {
+					const Type::Primitive &left_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 					if (!left_type.is_string()) {
-						expression_semantics.output_type  = &Type::boolean_type;
+						expression_semantics.output_type  = type_scope.index("boolean");
 						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
 						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
 						const Index gt_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word(), true)}, {right.output_index + right_index, left.output_index + left_index});
@@ -11360,18 +11341,18 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 							<< "Semantics::analyze_expression: error (line "
 							<< gt_operator0.line << " col " << gt_operator0.column
 							<< "): comparison of string types is not yet supported, for "
-							<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+							<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 							<< "."
 							;
 						throw SemanticsError(sstr.str());
 					}
-				} else if (left.output_type->resolve_type().is_record() || left.output_type->resolve_type().is_array()) {
+				} else if (storage_scope.type(left.output_type).resolve_type(storage_scope).is_record() || storage_scope.type(left.output_type).resolve_type(storage_scope).is_array()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< gt_operator0.line << " col " << gt_operator0.column
 						<< "): comparison of record or array types is not yet supported, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11381,7 +11362,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: internal error (line "
 						<< gt_operator0.line << " col " << gt_operator0.column
 						<< "): unhandled expression type for > comparison: "
-						<< left.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr()
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -11393,25 +11374,25 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression       &expression1    = grammar.expression_storage.at(plus.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Make sure left and right are of primitive types.
-				if (!left.output_type->resolve_type().is_primitive() || !right.output_type->resolve_type().is_primitive()) {
+				if (!storage_scope.type(left.output_type).resolve_type(storage_scope).is_primitive() || !storage_scope.type(right.output_type).resolve_type(storage_scope).is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< plus_operator0.line << " col " << plus_operator0.column
 						<< "): cannot apply addition on a non-primitive-typed expression, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &left_type  = left.output_type->resolve_type().get_primitive();
-				const Type::Primitive &right_type = left.output_type->resolve_type().get_primitive();
+				const Type::Primitive &left_type  = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
+				const Type::Primitive &right_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 
 				// Are we attempting to operate on a non-integer?
 				if (left_type.is_char() || left_type.is_boolean() || right_type.is_char() || right_type.is_boolean()) {
@@ -11420,20 +11401,20 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: error (line "
 						<< plus_operator0.line << " col " << plus_operator0.column
 						<< "): refusing to apply addition on a non-integer, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Are the expressions of the same type?
-				if (left.output_type->tag != right.output_type->tag) {
+				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< plus_operator0.line << " col " << plus_operator0.column
 						<< "): refusing to add values of different types, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11466,25 +11447,25 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression        &expression1     = grammar.expression_storage.at(minus.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Make sure left and right are of primitive types.
-				if (!left.output_type->resolve_type().is_primitive() || !right.output_type->resolve_type().is_primitive()) {
+				if (!storage_scope.type(left.output_type).resolve_type(storage_scope).is_primitive() || !storage_scope.type(right.output_type).resolve_type(storage_scope).is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< minus_operator0.line << " col " << minus_operator0.column
 						<< "): cannot apply subtraction on a non-primitive-typed expression, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &left_type  = left.output_type->resolve_type().get_primitive();
-				const Type::Primitive &right_type = left.output_type->resolve_type().get_primitive();
+				const Type::Primitive &left_type  = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
+				const Type::Primitive &right_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 
 				// Are we attempting to operate on a non-integer?
 				if (left_type.is_char() || left_type.is_boolean() || right_type.is_char() || right_type.is_boolean()) {
@@ -11493,20 +11474,20 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: error (line "
 						<< minus_operator0.line << " col " << minus_operator0.column
 						<< "): refusing to apply subtraction a non-integer, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Are the expressions of the same type?
-				if (left.output_type->tag != right.output_type->tag) {
+				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< minus_operator0.line << " col " << minus_operator0.column
 						<< "): refusing to subtract values of different types, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11539,25 +11520,25 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression        &expression1     = grammar.expression_storage.at(times.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Make sure left and right are of primitive types.
-				if (!left.output_type->resolve_type().is_primitive() || !right.output_type->resolve_type().is_primitive()) {
+				if (!storage_scope.type(left.output_type).resolve_type(storage_scope).is_primitive() || !storage_scope.type(right.output_type).resolve_type(storage_scope).is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< times_operator0.line << " col " << times_operator0.column
 						<< "): cannot apply multiplication on a non-primitive-typed expression, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &left_type  = left.output_type->resolve_type().get_primitive();
-				const Type::Primitive &right_type = left.output_type->resolve_type().get_primitive();
+				const Type::Primitive &left_type  = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
+				const Type::Primitive &right_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 
 				// Are we attempting to operate on a non-integer?
 				if (left_type.is_char() || left_type.is_boolean() || right_type.is_char() || right_type.is_boolean()) {
@@ -11566,20 +11547,20 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: error (line "
 						<< times_operator0.line << " col " << times_operator0.column
 						<< "): refusing to apply multiplication on a non-integer, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Are the expressions of the same type?
-				if (left.output_type->tag != right.output_type->tag) {
+				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< times_operator0.line << " col " << times_operator0.column
 						<< "): refusing to multiply values of different types, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11614,25 +11595,25 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression        &expression1     = grammar.expression_storage.at(slash.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Make sure left and right are of primitive types.
-				if (!left.output_type->resolve_type().is_primitive() || !right.output_type->resolve_type().is_primitive()) {
+				if (!storage_scope.type(left.output_type).resolve_type(storage_scope).is_primitive() || !storage_scope.type(right.output_type).resolve_type(storage_scope).is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< slash_operator0.line << " col " << slash_operator0.column
 						<< "): cannot apply division on a non-primitive-typed expression, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &left_type  = left.output_type->resolve_type().get_primitive();
-				const Type::Primitive &right_type = left.output_type->resolve_type().get_primitive();
+				const Type::Primitive &left_type  = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
+				const Type::Primitive &right_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 
 				// Are we attempting to operate on a non-integer?
 				if (left_type.is_char() || left_type.is_boolean() || right_type.is_char() || right_type.is_boolean()) {
@@ -11641,20 +11622,20 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: error (line "
 						<< slash_operator0.line << " col " << slash_operator0.column
 						<< "): refusing to apply division on a non-integer, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Are the expressions of the same type?
-				if (left.output_type->tag != right.output_type->tag) {
+				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< slash_operator0.line << " col " << slash_operator0.column
 						<< "): refusing to divide values of different types, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11689,25 +11670,25 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression          &expression1       = grammar.expression_storage.at(percent.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Make sure left and right are of primitive types.
-				if (!left.output_type->resolve_type().is_primitive() || !right.output_type->resolve_type().is_primitive()) {
+				if (!storage_scope.type(left.output_type).resolve_type(storage_scope).is_primitive() || !storage_scope.type(right.output_type).resolve_type(storage_scope).is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< percent_operator0.line << " col " << percent_operator0.column
 						<< "): cannot apply mod on a non-primitive-typed expression, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &left_type  = left.output_type->resolve_type().get_primitive();
-				const Type::Primitive &right_type = left.output_type->resolve_type().get_primitive();
+				const Type::Primitive &left_type  = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
+				const Type::Primitive &right_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 
 				// Are we attempting to operate on a non-integer?
 				if (left_type.is_char() || left_type.is_boolean() || right_type.is_char() || right_type.is_boolean()) {
@@ -11716,20 +11697,20 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: error (line "
 						<< percent_operator0.line << " col " << percent_operator0.column
 						<< "): refusing to apply mod on a non-integer, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Are the expressions of the same type?
-				if (left.output_type->tag != right.output_type->tag) {
+				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< percent_operator0.line << " col " << percent_operator0.column
 						<< "): refusing to mod values of different types, for "
-						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
+						<< storage_scope.type(left.output_type).get_tag_repr() << " with " << storage_scope.type(right.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11765,23 +11746,23 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression        &expression0     = grammar.expression_storage.at(tilde.expression);
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 				expression_semantics.lexeme_begin = tilde.tilde_operator0;
 				expression_semantics.lexeme_end   = value.lexeme_end;
 
 				// Make sure value is of primitive type.
-				if (!value.output_type->resolve_type().is_primitive()) {
+				if (!storage_scope.type(value.output_type).resolve_type(storage_scope).is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< tilde_operator0.line << " col " << tilde_operator0.column
 						<< "): cannot apply bitwise NOT on a non-primitive-typed expression, for "
-						<< value.output_type->get_tag_repr()
+						<< storage_scope.type(value.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &value_type  = value.output_type->resolve_type().get_primitive();
+				const Type::Primitive &value_type  = storage_scope.type(value.output_type).resolve_type(storage_scope).get_primitive();
 
 				// Are we attempting to operate on a string?
 				if (value_type.is_string()) {
@@ -11808,23 +11789,23 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression             &expression0     = grammar.expression_storage.at(unary_minus.expression);
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 				expression_semantics.lexeme_begin = unary_minus.minus_operator0;
 				expression_semantics.lexeme_end   = value.lexeme_end;
 
 				// Make sure value is of primitive type.
-				if (!value.output_type->resolve_type().is_primitive()) {
+				if (!storage_scope.type(value.output_type).resolve_type(storage_scope).is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< minus_operator0.line << " col " << minus_operator0.column
 						<< "): cannot apply unary minus on a non-primitive-typed expression, for "
-						<< value.output_type->get_tag_repr()
+						<< storage_scope.type(value.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &value_type = value.output_type->resolve_type().get_primitive();
+				const Type::Primitive &value_type = storage_scope.type(value.output_type).resolve_type(storage_scope).get_primitive();
 
 				// Are we attempting to operate on a non-integer?
 				if (value_type.is_char() || value_type.is_boolean()) {
@@ -11833,7 +11814,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: error (line "
 						<< minus_operator0.line << " col " << minus_operator0.column
 						<< "): refusing to apply unary minus on a non-integer, for "
-						<< value.output_type->get_tag_repr()
+						<< storage_scope.type(value.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11867,7 +11848,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const LexemeOperator            &rightparenthesis_operator0 = grammar.lexemes.at(parentheses.rightparenthesis_operator0).get_operator();
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 				expression_semantics.lexeme_begin = parentheses.leftparenthesis_operator0;
 				expression_semantics.lexeme_end   = parentheses.rightparenthesis_operator0 + 1;
 
@@ -11932,7 +11913,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.output_type = *routine_declaration.output;
 
 				// Output types of arrays or records are currently unsupported.
-				if (!(*routine_declaration.output)->resolve_type().is_primitive()) {
+				if (!storage_scope.type(*routine_declaration.output).resolve_type(storage_scope).is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
@@ -12046,10 +12027,10 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				std::set<Storage>                                                                       in_register_refs;
 				std::map<std::vector<const ::Expression *>::size_type, std::vector<Storage>::size_type> register_ref_arguments;
 				for (std::vector<const ::Expression *>::size_type argument = 0; argument < expressions.size(); ++argument) {
-					const ::Expression                  &argument_expression_symbol = *expressions[argument];
-					const std::pair<bool, const Type *> &parameter                  = routine_declaration.parameters[argument];
-					const bool                           is_parameter_ref           = parameter.first;
-					const Type                          &parameter_type             = *parameter.second;
+					const ::Expression               &argument_expression_symbol = *expressions[argument];
+					const std::pair<bool, TypeIndex> &parameter                  = routine_declaration.parameters[argument];
+					const bool                        is_parameter_ref           = parameter.first;
+					const TypeIndex                   parameter_type             = parameter.second;
 
 					// Is this parameter a reference?
 					if (is_parameter_ref) {
@@ -12140,10 +12121,10 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Evaluate all arguments.
 				std::vector<Index> argument_outputs;
 				for (std::vector<const ::Expression *>::size_type argument = 0; argument < expressions.size(); ++argument) {
-					const ::Expression                  &argument_expression_symbol = *expressions[argument];
-					const std::pair<bool, const Type *> &parameter                  = routine_declaration.parameters[argument];
-					const bool                           is_parameter_ref           = parameter.first;
-					const Type                          &parameter_type             = *parameter.second;
+					const ::Expression               &argument_expression_symbol = *expressions[argument];
+					const std::pair<bool, TypeIndex> &parameter                  = routine_declaration.parameters[argument];
+					const bool                        is_parameter_ref           = parameter.first;
+					const TypeIndex                   parameter_type             = parameter.second;
 
 					std::map<std::vector<const ::Expression *>::size_type, std::vector<Storage>::size_type>::const_iterator register_ref_arguments_search = register_ref_arguments.find(argument);
 
@@ -12159,19 +12140,19 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 							argument_outputs.push_back(last_call_index);
 						}
 					} else {
-						const Expression argument_expression  = analyze_expression(argument_expression_symbol, constant_scope, type_scope, routine_scope, var_scope, combined_scope, true);
+						const Expression argument_expression  = analyze_expression(argument_expression_symbol, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, true);
 						const Index argument_expression_index = expression_semantics.instructions.merge(argument_expression.instructions) + argument_expression.output_index;
 						expression_semantics.instructions.add_sequence_connection(last_call_index, argument_expression_index);
 						last_call_index = argument_expression_index;
 
-						if (!all_arrays_records_are_refs && !is_parameter_ref && !parameter_type.resolve_type().is_primitive()) {
+						if (!all_arrays_records_are_refs && !is_parameter_ref && !storage_scope.type(parameter_type).resolve_type(storage_scope).is_primitive()) {
 							// TODO
 							throw SemanticsError("TODO: TODO: implement copying of arrays and records for non-Ref Vars.");
 						}
 
 						argument_outputs.push_back(argument_expression_index);
 
-						if (argument_expression.output_type->resolve_type() != parameter_type.resolve_type()) {
+						if (!storage_scope.type(argument_expression.output_type).resolve_type(storage_scope).matches(storage_scope.type(parameter_type).resolve_type(storage_scope), storage_scope)) {
 							std::ostringstream sstr;
 							sstr
 								<< "Semantics::analyze_expression: error (line "
@@ -12185,7 +12166,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 
 						if (argument < 4) {
 							// argument_outputs[argument] should be ignored for argument < 4, but it's there anyway.
-							const bool input_word = !parameter_type.is_primitive() || parameter_type.get_primitive().is_word();
+							const bool input_word = !storage_scope.type(parameter_type).is_primitive() || storage_scope.type(parameter_type).get_primitive().is_word();
 							last_call_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, input_word, 0, true, false, Storage("$a" + std::to_string(argument)), Storage())}, {argument_expression_index}, last_call_index);
 						}
 					}
@@ -12215,12 +12196,12 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				if (expressions.size() > 4) {
 					last_call_index = expression_semantics.instructions.add_instruction({I::AddSp(B(), -4*(expressions.size() - 4))}, {}, last_call_index);
 					for (std::vector<const ::Expression *>::size_type argument = 4; argument < expressions.size(); ++argument) {
-						const ::Expression                  &argument_expression_symbol = *expressions[argument]; (void) argument_expression_symbol;
-						const std::pair<bool, const Type *> &parameter                  = routine_declaration.parameters[argument];
-						const bool                           is_parameter_ref           = parameter.first; (void) is_parameter_ref;
-						const Type                          &parameter_type             = *parameter.second;
+						const ::Expression               &argument_expression_symbol = *expressions[argument]; (void) argument_expression_symbol;
+						const std::pair<bool, TypeIndex> &parameter                  = routine_declaration.parameters[argument];
+						const bool                        is_parameter_ref           = parameter.first; (void) is_parameter_ref;
+						const TypeIndex                   parameter_type             = parameter.second;
 
-						const bool     input_word          = (register_ref_arguments.find(argument) != register_ref_arguments.cend()) || !parameter_type.is_primitive() || parameter_type.get_primitive().is_word();
+						const bool     input_word          = (register_ref_arguments.find(argument) != register_ref_arguments.cend()) || !storage_scope.type(parameter_type).is_primitive() || storage_scope.type(parameter_type).get_primitive().is_word();
 						const uint32_t register_ref_offset = 4 * (argument - 4);
 						last_call_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, input_word, 0, true, false, Storage("$sp", 4, register_ref_offset, true), Storage())}, {argument_outputs[argument]}, last_call_index);
 					}
@@ -12250,7 +12231,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				}
 
 				// Retrieve the output from $v0.
-				const bool output_word = !(*routine_declaration.output)->is_primitive() || (*routine_declaration.output)->get_primitive().is_word();
+				const bool output_word = !storage_scope.type(*routine_declaration.output).is_primitive() || storage_scope.type(*routine_declaration.output).get_primitive().is_word();
 				last_call_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), output_word, true, 0, false, true, {}, Storage("$v0"))}, {}, last_call_index);
 				expression_semantics.output_index = last_call_index;
 
@@ -12266,23 +12247,23 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Convert an integer to a char.
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 				expression_semantics.lexeme_begin = chr.chr_keyword0;
 				expression_semantics.lexeme_end   = chr.rightparenthesis_operator0 + 1;
 
 				// Make sure value is of primitive type.
-				if (!value.output_type->resolve_type().is_primitive()) {
+				if (!storage_scope.type(value.output_type).resolve_type(storage_scope).is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< chr_keyword0.line << " col " << chr_keyword0.column
 						<< "): cannot apply chr() on a non-primitive-typed expression, for "
-						<< value.output_type->get_tag_repr()
+						<< storage_scope.type(value.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &value_type = value.output_type->resolve_type().get_primitive();
+				const Type::Primitive &value_type = storage_scope.type(value.output_type).resolve_type(storage_scope).get_primitive();
 
 				// Are we attempting to operate on a non-integer?
 				if (value_type.is_char() || value_type.is_boolean()) {
@@ -12291,7 +12272,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: error (line "
 						<< chr_keyword0.line << " col " << chr_keyword0.column
 						<< "): refusing to apply chr() on a non-integer, for "
-						<< value.output_type->get_tag_repr()
+						<< storage_scope.type(value.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -12312,7 +12293,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 
 				// Apply chr() depending on the integer type.
 				// Truncate all but the lowest bits.  We may be storing e.g. to a byte in an array.
-				expression_semantics.output_type = &Type::char_type;
+				expression_semantics.output_type = type_scope.index("char");
 				const Index value_index  = expression_semantics.instructions.merge(value.instructions);
 				const Index resize_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), Type::Primitive::char_type.is_word(), Type::Primitive::integer_type.is_word())}, {value.output_index + value_index});
 				expression_semantics.output_index = resize_index;
@@ -12327,23 +12308,23 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Convert a char to an integer.
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 				expression_semantics.lexeme_begin = ord.ord_keyword0;
 				expression_semantics.lexeme_end   = ord.rightparenthesis_operator0 + 1;
 
 				// Make sure value is of primitive type.
-				if (!value.output_type->resolve_type().is_primitive()) {
+				if (!storage_scope.type(value.output_type).resolve_type(storage_scope).is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< ord_keyword0.line << " col " << ord_keyword0.column
 						<< "): cannot apply ord() on a non-primitive-typed expression, for "
-						<< value.output_type->get_tag_repr()
+						<< storage_scope.type(value.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &value_type = value.output_type->resolve_type().get_primitive();
+				const Type::Primitive &value_type = storage_scope.type(value.output_type).resolve_type(storage_scope).get_primitive();
 
 				// Are we attempting to operate on a non-char?
 				if (value_type.is_integer() || value_type.is_boolean()) {
@@ -12352,7 +12333,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: error (line "
 						<< ord_keyword0.line << " col " << ord_keyword0.column
 						<< "): refusing to apply ord() on a non-char, for "
-						<< value.output_type->get_tag_repr()
+						<< storage_scope.type(value.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -12375,7 +12356,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// MIPS's "lb" should load a 1-byte value to the lowest bits
 				// and fill the rest with 0s if loading from a memory address.
 				// (We could always reset it to 0 before loading if not.)
-				expression_semantics.output_type = &Type::integer_type;
+				expression_semantics.output_type = type_scope.index("integer");
 				const Index value_index  = expression_semantics.instructions.merge(value.instructions);
 				const Index resize_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), Type::Primitive::integer_type.is_word(), Type::Primitive::char_type.is_word())}, {value.output_index + value_index});
 				expression_semantics.output_index = resize_index;
@@ -12390,23 +12371,23 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Find the predecessor of a value.
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 				expression_semantics.lexeme_begin = pred.pred_keyword0;
 				expression_semantics.lexeme_end   = pred.rightparenthesis_operator0 + 1;
 
 				// Make sure value is of primitive type.
-				if (!value.output_type->resolve_type().is_primitive()) {
+				if (!storage_scope.type(value.output_type).resolve_type(storage_scope).is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< pred_keyword0.line << " col " << pred_keyword0.column
 						<< "): cannot apply pred() on a non-primitive-typed expression, for "
-						<< value.output_type->get_tag_repr()
+						<< storage_scope.type(value.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &value_type = value.output_type->resolve_type().get_primitive();
+				const Type::Primitive &value_type = storage_scope.type(value.output_type).resolve_type(storage_scope).get_primitive();
 
 				// Are we attempting to operate on a string?
 				if (value_type.is_string()) {
@@ -12445,23 +12426,23 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Find the successor of a value.
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 				expression_semantics.lexeme_begin = succ.succ_keyword0;
 				expression_semantics.lexeme_end   = succ.rightparenthesis_operator0 + 1;
 
 				// Make sure value is of primitive type.
-				if (!value.output_type->resolve_type().is_primitive()) {
+				if (!storage_scope.type(value.output_type).resolve_type(storage_scope).is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< succ_keyword0.line << " col " << succ_keyword0.column
 						<< "): cannot apply succ() on a non-primitive-typed expression, for "
-						<< value.output_type->get_tag_repr()
+						<< storage_scope.type(value.output_type).get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &value_type = value.output_type->resolve_type().get_primitive();
+				const Type::Primitive &value_type = storage_scope.type(value.output_type).resolve_type(storage_scope).get_primitive();
 
 				// Are we attempting to operate on a string?
 				if (value_type.is_string()) {
@@ -12507,13 +12488,13 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 
 				// An lvalue in an expression corresponds a read / a LoadFrom.
 
-				LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue_symbol, constant_scope, type_scope, routine_scope, var_scope, combined_scope);
+				LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue_symbol, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				expression_semantics.output_type  = lvalue_source_analysis.lvalue_type;
 				expression_semantics.lexeme_begin = lvalue_source_analysis.lexeme_begin;
 				expression_semantics.lexeme_end   = lvalue_source_analysis.lexeme_end;
 				if (lvalue_source_analysis.is_lvalue_fixed_storage) {
 					// No accessors or instructions; just load from the storage.
-					const bool is_word = lvalue_source_analysis.lvalue_type->resolve_type().get_primitive().is_word();
+					const bool is_word = storage_scope.type(lvalue_source_analysis.lvalue_type).resolve_type(storage_scope).get_primitive().is_word();
 					const Index load_lvalue_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, false, true, Storage(), lvalue_source_analysis.lvalue_fixed_storage)});
 					expression_semantics.output_index = load_lvalue_index;
 				} else {
@@ -12521,12 +12502,12 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 					const Index load_address_index = expression_semantics.instructions.merge(lvalue_source_analysis.instructions) + lvalue_source_analysis.lvalue_index;
 
 					// Dereference the address if it's primitive.
-					if (!lvalue_source_analysis.lvalue_type->resolve_type().is_primitive()) {
+					if (!storage_scope.type(lvalue_source_analysis.lvalue_type).resolve_type(storage_scope).is_primitive()) {
 						// It's an array or record; output the address.
 						expression_semantics.output_index = load_address_index;
 					} else {
 						// It's a primitive.  Dereference.
-						const bool is_word = lvalue_source_analysis.lvalue_type->resolve_type().get_primitive().is_word();
+						const bool is_word = storage_scope.type(lvalue_source_analysis.lvalue_type).resolve_type(storage_scope).get_primitive().is_word();
 						const Index dereference_address_index = expression_semantics.instructions.add_instruction(I::LoadFrom({B(), is_word, false, 0, false, false, Storage(), Storage(), false, true}), {load_address_index});
 						expression_semantics.output_index = dereference_address_index;
 					}
@@ -12561,7 +12542,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 Semantics::Block::Block()
 	{}
 
-Semantics::Block::Block(const MIPSIO &instructions, MIPSIO::Index front, MIPSIO::Index back, const std::map<std::string, const Type *> &local_variables, uint64_t lexeme_begin, uint64_t lexeme_end)
+Semantics::Block::Block(const MIPSIO &instructions, MIPSIO::Index front, MIPSIO::Index back, const std::map<std::string, TypeIndex> &local_variables, uint64_t lexeme_begin, uint64_t lexeme_end)
 	: instructions(instructions)
 	, front(front)
 	, back(back)
@@ -12570,7 +12551,7 @@ Semantics::Block::Block(const MIPSIO &instructions, MIPSIO::Index front, MIPSIO:
 	, lexeme_end(lexeme_end)
 	{}
 
-Semantics::Block::Block(MIPSIO &&instructions, MIPSIO::Index front, MIPSIO::Index back, const std::map<std::string, const Type *> &local_variables, uint64_t lexeme_begin, uint64_t lexeme_end)
+Semantics::Block::Block(MIPSIO &&instructions, MIPSIO::Index front, MIPSIO::Index back, const std::map<std::string, TypeIndex> &local_variables, uint64_t lexeme_begin, uint64_t lexeme_end)
 	: instructions(std::move(instructions))
 	, front(front)
 	, back(back)
@@ -12584,7 +12565,7 @@ Semantics::Block::Block(MIPSIO &&instructions, MIPSIO::Index front, MIPSIO::Inde
 // Note: this does not need to necessarily correspond to a ::Block in the
 // grammar tree but can be a sequence of statements without a BEGIN and END
 // keyword.
-Semantics::Block Semantics::analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<uint64_t> &statements, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const Symbol &cleanup_symbol) {
+Semantics::Block Semantics::analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<uint64_t> &statements, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, const Symbol &cleanup_symbol) {
 	// Some type aliases to improve readability.
 	using M = Semantics::MIPSIO;
 	using I = Semantics::Instruction;
@@ -12620,7 +12601,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				block.lexeme_begin = lvalue.identifier;
 
 				// Lookup the lvalue.
-				LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue, constant_scope, type_scope, routine_scope, var_scope, combined_scope);
+				LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 
 				// Merge the lvalue lookup instructions if there was not a fixed storage found.
 				Index lvalue_index;
@@ -12633,18 +12614,18 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				// LoadFrom to store the output to whatever the lvalue refers to.
 
 				// Analyze the expression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 
 				block.lexeme_end = value.lexeme_end;
 
 				// Make sure the expression is of the expected type.
-				if (value.output_type->resolve_type() != lvalue_source_analysis.lvalue_type->resolve_type()) {
+				if (!storage_scope.type(value.output_type).resolve_type(storage_scope).matches(storage_scope.type(lvalue_source_analysis.lvalue_type).resolve_type(storage_scope), storage_scope)) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_statements: error (line "
 						<< lvalue_source_analysis.lvalue_identifier->line << " col " << lvalue_source_analysis.lvalue_identifier->column
 						<< "): assignment from an expression of one type into a variable of a different type, for "
-						<< "<" << lvalue_source_analysis.lvalue_type->get_repr() << "> := <" << value.output_type->get_repr() << ">"
+						<< "<" << storage_scope.type(lvalue_source_analysis.lvalue_type).get_repr(storage_scope) << "> := <" << storage_scope.type(value.output_type).get_repr(storage_scope) << ">"
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -12655,7 +12636,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				block.back = value_index;
 
 				// Writing arrays and records (copying them) is currently unimplemented.
-				if (value.output_type->resolve_type().is_record() || value.output_type->resolve_type().is_array()) {
+				if (storage_scope.type(value.output_type).resolve_type(storage_scope).is_record() || storage_scope.type(value.output_type).resolve_type(storage_scope).is_array()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_statements: error (line "
@@ -12667,9 +12648,9 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 
 				// Write to the lvalue.
 				if (!lvalue_source_analysis.is_lvalue_fixed_storage) {
-					block.back = block.instructions.add_instruction({I::LoadFrom(B(), value.output_type->resolve_type().get_primitive().is_word())}, {lvalue_index, value_index}, {block.back});
+					block.back = block.instructions.add_instruction({I::LoadFrom(B(), storage_scope.type(value.output_type).resolve_type(storage_scope).get_primitive().is_word())}, {lvalue_index, value_index}, {block.back});
 				} else {
-					block.back = block.instructions.add_instruction({I::LoadFrom(B(), lvalue_source_analysis.lvalue_fixed_storage.max_size == 4, value.output_type->resolve_type().get_primitive().is_word(), 0, true, false, lvalue_source_analysis.lvalue_fixed_storage, Storage(), false, false)}, {value_index}, {block.back});
+					block.back = block.instructions.add_instruction({I::LoadFrom(B(), lvalue_source_analysis.lvalue_fixed_storage.max_size == 4, storage_scope.type(value.output_type).resolve_type(storage_scope).get_primitive().is_word(), 0, true, false, lvalue_source_analysis.lvalue_fixed_storage, Storage(), false, false)}, {value_index}, {block.back});
 				}
 
 				// We're done.
@@ -12788,7 +12769,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 	return block;
 }
 
-Semantics::Block Semantics::analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const StatementSequence &statement_sequence, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const Symbol &cleanup_symbol) {
+Semantics::Block Semantics::analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const StatementSequence &statement_sequence, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, const Symbol &cleanup_symbol) {
 	const Statement             &first_statement         = grammar.statement_storage.at(statement_sequence.statement);
 	const StatementPrefixedList &statement_prefixed_list = grammar.statement_prefixed_list_storage.at(statement_sequence.statement_prefixed_list);
 
@@ -12845,11 +12826,11 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 	}
 
 	// Forward to analyze_statements.
-	return analyze_statements(routine_declaration, statement_indices, constant_scope, type_scope, routine_scope, var_scope, combined_scope, cleanup_symbol);
+	return analyze_statements(routine_declaration, statement_indices, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol);
 }
 
 // | Analyze a BEGIN [statement]... END block.
-std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const std::map<std::string, const Type *> &local_variables, bool is_main) {
+std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, const std::map<std::string, TypeIndex> &local_variables, bool is_main) {
 	// Some type aliases to improve readability.
 	using M = Semantics::MIPSIO;
 	using I = Semantics::Instruction;
@@ -12915,15 +12896,15 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 #endif /* #if 0 */
 	// Handle parameters.
 	uint32_t stack_argument_total_size = 0;
-	for (const std::pair<bool, const Type *> &parameter : std::as_const(routine_declaration.parameters)) {
-		const std::vector<std::pair<bool, const Type *>>::size_type   parameter_index      = &parameter - &routine_declaration.parameters[0];
-		const std::string                                            &parameter_identifier = parameter_identifiers[parameter_index];
+	for (const std::pair<bool, TypeIndex> &parameter : std::as_const(routine_declaration.parameters)) {
+		const std::vector<std::pair<bool, TypeIndex>>::size_type   parameter_index      = &parameter - &routine_declaration.parameters[0];
+		const std::string                                         &parameter_identifier = parameter_identifiers[parameter_index];
 
-		const bool  parameter_is_ref = parameter.first;
-		const Type &parameter_type   = *parameter.second;
+		const bool      parameter_is_ref = parameter.first;
+		const TypeIndex parameter_type   = parameter.second;
 
 		// Fail if the parameter type is not fixed width.
-		if (!parameter_type.get_fixed_width()) {
+		if (!storage_scope.type(parameter_type).get_fixed_width()) {
 			std::ostringstream sstr;
 			sstr
 				<< "Semantics::analyze_block: error: parameter ``"
@@ -12973,21 +12954,21 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			local_var_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
 			local_combined_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
 		} else {
-			if        (!all_arrays_records_are_refs && !parameter_is_ref && !parameter_type.resolve_type().is_primitive()) {
+			if        (!all_arrays_records_are_refs && !parameter_is_ref && !storage_scope.type(parameter_type).resolve_type(storage_scope).is_primitive()) {
 				// TODO: copy arrays and records.
 				std::ostringstream sstr;
 				sstr << "Semantics::analyze_block: error: copying of arrays and records for non-Ref vars in arguments is currently not supported.";
 				throw SemanticsError(sstr.str());
-			} else if (!parameter_is_ref && !parameter_type.get_fixed_width()) {
+			} else if (!parameter_is_ref && !storage_scope.type(parameter_type).get_fixed_width()) {
 				std::ostringstream sstr;
 				sstr << "Semantics::analyze_block: error: loading non-fixed-width arguments is not supported.";
 				throw SemanticsError(sstr.str());
-			} else if (!parameter_is_ref && parameter_type.get_size() != 4 && parameter_type.get_size() != 1) {
+			} else if (!parameter_is_ref && storage_scope.type(parameter_type).get_size() != 4 && storage_scope.type(parameter_type).get_size() != 1) {
 				std::ostringstream sstr;
 				sstr << "Semantics::analyze_block: error: loading fixed-width variable non-array/non-record arguments of size neither 4 nor 1 is currently not supported.";
 				throw SemanticsError(sstr.str());
 			} else {
-				const bool is_word = !parameter_type.is_primitive() || parameter_type.get_primitive().is_word();
+				const bool is_word = !storage_scope.type(parameter_type).is_primitive() || storage_scope.type(parameter_type).get_primitive().is_word();
 
 				stack_argument_total_size += Instruction::AddSp::round_to_align(is_word ? 4 : 1);
 
@@ -13001,12 +12982,12 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 	}
 
 	// Handle local variables.
-	for (const std::pair<std::string, const Type *> &local_variable : std::as_const(local_variables)) {
+	for (const std::pair<std::string, TypeIndex> &local_variable : std::as_const(local_variables)) {
 		const std::string &local_variable_identifier = local_variable.first;
-		const Type        &local_variable_type       = *local_variable.second;
+		const TypeIndex   &local_variable_type       = local_variable.second;
 
 		// Fail if the variable type is not fixed width.
-		if (!local_variable_type.get_fixed_width()) {
+		if (!storage_scope.type(local_variable_type).get_fixed_width()) {
 			std::ostringstream sstr;
 			sstr
 				<< "Semantics::analyze_block: error: local variable ``"
@@ -13066,17 +13047,17 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 		}
 
 		// Add the variable.
-		if (available_temporary_registers.size() > 0 && (local_variable_type.get_size() == 4 || local_variable_type.get_size() == 1)) {
+		if (available_temporary_registers.size() > 0 && (storage_scope.type(local_variable_type).get_size() == 4 || storage_scope.type(local_variable_type).get_size() == 1)) {
 			const std::string temporary_register = *available_temporary_registers.cbegin();
-			const bool is_word = !local_variable_type.is_primitive() || local_variable_type.get_primitive().is_word();
+			const bool is_word = !storage_scope.type(local_variable_type).is_primitive() || storage_scope.type(local_variable_type).get_primitive().is_word();
 			available_temporary_registers.erase(std::as_const(temporary_register));
 			Storage temporary_storage(is_word ? 4 : 1, false, Symbol(), std::as_const(temporary_register), false, 0, true, true);
 			local_var_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, temporary_storage))});
 			local_combined_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, temporary_storage))});
 		} else {
-			const uint32_t size = local_variable_type.get_size();
+			const uint32_t size = storage_scope.type(local_variable_type).get_size();
 			Storage stack_storage;
-			if (!local_variable_type.resolve_type().is_record() && !local_variable_type.resolve_type().is_array()) {
+			if (!storage_scope.type(local_variable_type).resolve_type(storage_scope).is_record() && !storage_scope.type(local_variable_type).resolve_type(storage_scope).is_array()) {
 				stack_storage = Storage(size, false, Symbol(), "$sp", true, stack_allocated, false, false);
 			} else {
 				stack_storage = Storage(4, false, Symbol(), "$sp", false, stack_allocated, false, false);
@@ -13088,7 +13069,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 	}
 
 	// Analyze the statements in the block.
-	Block block_semantics = analyze_statements(routine_declaration, statement_sequence, constant_scope, type_scope, routine_scope, local_var_scope, local_combined_scope, cleanup_symbol);
+	Block block_semantics = analyze_statements(routine_declaration, statement_sequence, constant_scope, type_scope, routine_scope, local_var_scope, local_combined_scope, storage_scope, cleanup_symbol);
 
 	// Make sure front and back are valid by making sure there is at least one instruction.
 	if (block_semantics.instructions.instructions.size() <= 0) {
@@ -13106,12 +13087,12 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 	const std::vector<uint64_t> &permutation                  = prepare_permutation.second;
 
 	// Handle Semantics::Block-local variables (there are none currently).
-	for (const std::pair<std::string, const Type *> &local_variable : std::as_const(block_semantics.local_variables)) {
+	for (const std::pair<std::string, TypeIndex> &local_variable : std::as_const(block_semantics.local_variables)) {
 		const std::string &local_variable_identifier = local_variable.first;
-		const Type        &local_variable_type       = *local_variable.second;
+		const TypeIndex   &local_variable_type       = local_variable.second;
 
 		// Fail if the variable type is not fixed width.
-		if (!local_variable_type.get_fixed_width()) {
+		if (!storage_scope.type(local_variable_type).get_fixed_width()) {
 			std::ostringstream sstr;
 			sstr
 				<< "Semantics::analyze_block: error: local variable ``"
@@ -13195,17 +13176,17 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 		}
 
 		// Add the variable.
-		if (available_temporary_registers.size() > 0 && (local_variable_type.get_size() == 4 || local_variable_type.get_size() == 1)) {
+		if (available_temporary_registers.size() > 0 && (storage_scope.type(local_variable_type).get_size() == 4 || storage_scope.type(local_variable_type).get_size() == 1)) {
 			const std::string temporary_register = *available_temporary_registers.cbegin();
-			const bool is_word = !local_variable_type.is_primitive() || local_variable_type.get_primitive().is_word();
+			const bool is_word = !storage_scope.type(local_variable_type).is_primitive() || storage_scope.type(local_variable_type).get_primitive().is_word();
 			available_temporary_registers.erase(std::as_const(temporary_register));
 			Storage temporary_storage(is_word ? 4 : 1, false, Symbol(), std::as_const(temporary_register), false, 0, true, true);
 			local_var_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, temporary_storage))});
 			local_combined_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, temporary_storage))});
 		} else {
-			const uint32_t size = local_variable_type.get_size();
+			const uint32_t size = storage_scope.type(local_variable_type).get_size();
 			Storage stack_storage;
-			if (!local_variable_type.resolve_type().is_record() && !local_variable_type.resolve_type().is_array()) {
+			if (!storage_scope.type(local_variable_type).resolve_type(storage_scope).is_record() && !storage_scope.type(local_variable_type).resolve_type(storage_scope).is_array()) {
 				stack_storage = Storage(size, false, Symbol(), "$sp", true, stack_allocated, false, false);
 			} else {
 				stack_storage = Storage(4, false, Symbol(), "$sp", false, stack_allocated, false, false);
@@ -13266,29 +13247,29 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 #if 0
 	// Now load all arguments as copies.  This does not need to be reversed; callers push and pop arguments when calling.
 	uint32_t stack_argument_total_size = 0;
-	for (const std::pair<bool, const Type *> &parameter : std::as_const(routine_declaration.parameters)) {
-		const std::vector<std::pair<bool, const Type *>>::size_type   parameter_index      = &parameter - &routine_declaration.parameters[0];
-		const std::string                                            &parameter_identifier = parameter_identifiers[parameter_index];
+	for (const std::pair<bool, TypeIndex> &parameter : std::as_const(routine_declaration.parameters)) {
+		const std::vector<std::pair<bool, TypeIndex>>::size_type   parameter_index      = &parameter - &routine_declaration.parameters[0];
+		const std::string                                         &parameter_identifier = parameter_identifiers[parameter_index];
 
-		const bool  parameter_is_ref = parameter.first;
-		const Type &parameter_type   = *parameter.second;
+		const bool       parameter_is_ref = parameter.first;
+		const TypeIndex &parameter_type   = parameter.second;
 
 		if (parameter_index >= 4) {
-			if        (!all_arrays_records_are_refs && !parameter_is_ref && !parameter_type.resolve_type().is_primitive()) {
+			if        (!all_arrays_records_are_refs && !parameter_is_ref && !storage_scope.type(parameter_type).resolve_type(storage_scope).is_primitive()) {
 				// TODO: copy arrays and records.
 				std::ostringstream sstr;
 				sstr << "Semantics::analyze_block: error: copying of arrays and records for non-Ref vars in arguments is currently not supported.";
 				throw SemanticsError(sstr.str());
-			} else if (!parameter_is_ref && !parameter_type.get_fixed_width()) {
+			} else if (!parameter_is_ref && !storage_scope.type(parameter_type).get_fixed_width()) {
 				std::ostringstream sstr;
 				sstr << "Semantics::analyze_block: error: loading non-fixed-width arguments is not supported.";
 				throw SemanticsError(sstr.str());
-			} else if (!parameter_is_ref && parameter_type.get_size() != 4 && parameter_type.get_size() != 1) {
+			} else if (!parameter_is_ref && storage_scope.type(parameter_type).get_size() != 4 && storage_scope.type(parameter_type).get_size() != 1) {
 				std::ostringstream sstr;
 				sstr << "Semantics::analyze_block: error: loading fixed-width variable non-array/non-record arguments of size neither 4 nor 1 is currently not supported.";
 				throw SemanticsError(sstr.str());
 			} else {
-				const bool is_word = !parameter_type.is_primitive() || parameter_type.get_primitive().is_word();
+				const bool is_word = !storage_scope.type(parameter_type).is_primitive() || storage_scope.type(parameter_type).get_primitive().is_word();
 
 				// Lookup the identifier binding in var_scope for the argument.
 				if (!var_scope.has(parameter_identifier)) {
@@ -13611,7 +13592,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 	}
 
 	// Next, analyze local var definitions.
-	std::map<std::string, const Type *> local_variables;
+	std::map<std::string, TypeIndex> local_variables;
 	switch (var_decl_opt.branch) {
 		case VarDeclOpt::empty_branch: {
 			// No local variable declarations.  Nothing to do here.
@@ -13674,7 +13655,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 				const LexemeOperator &semicolon_operator0 = grammar.lexemes.at(next_typed_identifier_sequence->semicolon_operator0).get_operator(); (void) semicolon_operator0;
 
 				// Get a copy of the subtype or construct a new anonymous subtype using "storage_scope".
-				const Type *next_semantics_type;
+				TypeIndex next_semantics_type;
 				// Branch on next_type.  If it's in the "simple" type alias
 				// format, it should refer to an existing type, although it's
 				// not a type alias.  Otherwise, create an anonymous type.
@@ -13695,11 +13676,11 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 					}
 
 					// Set next_semantics_type.
-					next_semantics_type = &local_type_scope.get(simple_identifier.text).get_type();
+					next_semantics_type = local_type_scope.index(simple_identifier.text);
 				} else {
 					// Create an anonymous type.
 					Type anonymous_type = analyze_type("", next_type, local_constant_scope, local_type_scope, storage_scope);
-					next_semantics_type = &storage_scope.insert("", anonymous_type).get_type();
+					next_semantics_type = storage_scope.add("", anonymous_type);
 				}
 
 				// Unpack the ident_list.
@@ -13790,7 +13771,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 					local_variables.insert({next_identifier->text, next_semantics_type});
 
 					// Local variable-width variables are currently unsupported.
-					if (!next_semantics_type->get_fixed_width()) {
+					if (!storage_scope.type(next_semantics_type).get_fixed_width()) {
 						std::ostringstream sstr;
 						sstr
 							<< "Semantics::analyze_routine: error (line "
@@ -13816,7 +13797,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 
 	// We've finished handling extra constants, types, and variables.
 	// Proceed to analyze_block.
-	return analyze_block(routine_declaration, parameter_identifiers, block, local_constant_scope, local_type_scope, routine_scope, var_scope, local_combined_scope, local_variables, false);
+	return analyze_block(routine_declaration, parameter_identifiers, block, local_constant_scope, local_type_scope, routine_scope, var_scope, local_combined_scope, storage_scope, local_variables, false);
 }
 
 // | Get the symbol to a string literal, tracking it if this is the first time encountering it.
@@ -14335,7 +14316,7 @@ void Semantics::analyze() {
 				const LexemeOperator &semicolon_operator0 = grammar.lexemes.at(next_typed_identifier_sequence->semicolon_operator0).get_operator(); (void) semicolon_operator0;
 
 				// Get a copy of the subtype or construct a new anonymous subtype using "storage_scope".
-				const Type *next_semantics_type;
+				TypeIndex next_semantics_type;
 				// Branch on next_type.  If it's in the "simple" type alias
 				// format, it should refer to an existing type, although it's
 				// not a type alias.  Otherwise, create an anonymous type.
@@ -14356,11 +14337,11 @@ void Semantics::analyze() {
 					}
 
 					// Set next_semantics_type.
-					next_semantics_type = &top_level_type_scope.get(simple_identifier.text).get_type();
+					next_semantics_type = top_level_type_scope.index(simple_identifier.text);
 				} else {
 					// Create an anonymous type.
 					Type anonymous_type = analyze_type("", next_type, top_level_constant_scope, top_level_type_scope, storage_scope);
-					next_semantics_type = &storage_scope.insert("", anonymous_type).get_type();
+					next_semantics_type = storage_scope.add("", anonymous_type);
 				}
 
 				// Unpack the ident_list.
@@ -14448,18 +14429,18 @@ void Semantics::analyze() {
 					const std::string next_identifier_text = std::as_const(next_identifier->text);
 					const Symbol var_symbol("global_var_", next_identifier_text, top_level_vars.size());
 					Storage var_storage;
-					if (!next_semantics_type->resolve_type().is_array() && !next_semantics_type->resolve_type().is_record()) {
-						var_storage = Storage(var_symbol, true, next_semantics_type->get_size(), 0);
+					if (!storage_scope.type(next_semantics_type).resolve_type(storage_scope).is_array() && !storage_scope.type(next_semantics_type).resolve_type(storage_scope).is_record()) {
+						var_storage = Storage(var_symbol, true, storage_scope.type(next_semantics_type).get_size(), 0);
 					} else {
 						var_storage = Storage(var_symbol, false, 4, 0);
 					}
-					const IdentifierScope::IdentifierBinding::Var var(*next_semantics_type, var_storage);
+					const IdentifierScope::IdentifierBinding::Var var(next_semantics_type, var_storage);
 					top_level_vars.push_back(var);
 					top_level_var_scope.insert({next_identifier_text, IdentifierScope::IdentifierBinding(var)});
 					top_level_scope.insert({next_identifier_text, IdentifierScope::IdentifierBinding(var)});
 
 					// Global variable-width variables are currently unsupported.
-					if (!var.type->get_fixed_width()) {
+					if (!storage_scope.type(var.type).get_fixed_width()) {
 						std::ostringstream sstr;
 						sstr
 							<< "Semantics::analyze: error (line "
@@ -14471,11 +14452,11 @@ void Semantics::analyze() {
 
 					// Compile the variable references.
 					output.add_line(Output::global_vars_section, ":", var_storage.global_address);
-					if        (var.type->get_size() == 4) {
+					if        (storage_scope.type(var.type).get_size() == 4) {
 						std::ostringstream sline;
 						sline << "\t.word  " << std::right << std::setw(11) << "0";
 						output.add_line(Output::global_vars_section, sline.str());
-					} else if (var.type->get_size() == 1) {
+					} else if (storage_scope.type(var.type).get_size() == 1) {
 						std::ostringstream sline;
 						sline << "\t.byte  " << std::right << std::setw(11) << "0";
 						output.add_line(Output::global_vars_section, sline.str());
@@ -14484,7 +14465,7 @@ void Semantics::analyze() {
 						sline_align << "\t.align " << std::right << std::setw(11) << "4";
 						output.add_line(Output::global_vars_section, sline_align.str());
 						std::ostringstream sline;
-						sline << "\t.space " << std::right << std::setw(11) << var.type->get_size();
+						sline << "\t.space " << std::right << std::setw(11) << storage_scope.type(var.type).get_size();
 						output.add_line(Output::global_vars_section, sline.str());
 					}
 				}
@@ -14672,7 +14653,7 @@ void Semantics::analyze() {
 						}
 
 						// Handle the formal parameters.
-						std::vector<std::pair<bool, const Type *>> parameters;
+						std::vector<std::pair<bool, TypeIndex>> parameters;
 						for (const FormalParameter *next_formal_parameter : std::as_const(formal_parameter_collection)) {
 							const VarOrRef       &var_or_ref      = grammar.var_or_ref_storage.at(next_formal_parameter->var_or_ref);
 							const IdentList      &ident_list      = grammar.ident_list_storage.at(next_formal_parameter->ident_list);
@@ -14708,7 +14689,7 @@ void Semantics::analyze() {
 							// Get the parameter type.
 							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope);
 							// Store a copy of this type in our anonymous type storage.
-							const Type *parameter_type = &storage_scope.insert("", temporary_type).get_type();
+							TypeIndex parameter_type = storage_scope.add("", temporary_type);
 
 							// Unpack the ident_list.
 							const LexemeIdentifier       &first_identifier         = grammar.lexemes.at(ident_list.identifier).get_identifier();
@@ -14774,7 +14755,7 @@ void Semantics::analyze() {
 
 						// Add the routine declaration to scope.
 						Symbol routine_symbol("routine_", identifier.text, forward.identifier);
-						IdentifierScope::IdentifierBinding::RoutineDeclaration routine_declaration(routine_symbol, parameters, std::optional<const Type *>());
+						IdentifierScope::IdentifierBinding::RoutineDeclaration routine_declaration(routine_symbol, parameters, std::optional<TypeIndex>());
 						IdentifierScope::IdentifierBinding binding {routine_declaration};
 						top_level_routine_scope.insert({identifier.text, binding});
 						top_level_scope.insert({identifier.text, binding});
@@ -14898,7 +14879,7 @@ void Semantics::analyze() {
 						}
 
 						// Handle the formal parameters.
-						std::vector<std::pair<bool, const Type *>> parameters;
+						std::vector<std::pair<bool, TypeIndex>> parameters;
 						for (const FormalParameter *next_formal_parameter : std::as_const(formal_parameter_collection)) {
 							const VarOrRef       &var_or_ref      = grammar.var_or_ref_storage.at(next_formal_parameter->var_or_ref);
 							const IdentList      &ident_list      = grammar.ident_list_storage.at(next_formal_parameter->ident_list);
@@ -14934,7 +14915,7 @@ void Semantics::analyze() {
 							// Get the parameter type.
 							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope);
 							// Store a copy of this type in our anonymous type storage.
-							const Type *parameter_type = &storage_scope.insert("", temporary_type).get_type();
+							TypeIndex parameter_type = storage_scope.add("", temporary_type);
 
 							// Unpack the ident_list.
 							const LexemeIdentifier       &first_identifier         = grammar.lexemes.at(ident_list.identifier).get_identifier();
@@ -15004,7 +14985,7 @@ void Semantics::analyze() {
 						if (!top_level_routine_scope.has(identifier.text)) {
 							// Get the analyzed routine declaration.
 							routine_symbol = Symbol("routine_", identifier.text, definition.identifier);
-							routine_declaration = IdentifierScope::IdentifierBinding::RoutineDeclaration(routine_symbol, parameters, std::optional<const Type *>());
+							routine_declaration = IdentifierScope::IdentifierBinding::RoutineDeclaration(routine_symbol, parameters, std::optional<TypeIndex>());
 
 							// Add the routine declaration to scope.
 							IdentifierScope::IdentifierBinding binding {routine_declaration};
@@ -15019,9 +15000,9 @@ void Semantics::analyze() {
 
 							// Get the analyzed routine declaration.
 							routine_symbol = std::as_const(declared_routine_declaration.location);
-							routine_declaration = IdentifierScope::IdentifierBinding::RoutineDeclaration(routine_symbol, parameters, std::optional<const Type *>());
+							routine_declaration = IdentifierScope::IdentifierBinding::RoutineDeclaration(routine_symbol, parameters, std::optional<TypeIndex>());
 
-							if (routine_declaration != declared_routine_declaration) {
+							if (!routine_declaration.matches(declared_routine_declaration, storage_scope)) {
 								std::ostringstream sstr;
 								sstr
 									<< "Semantics::analyze: error (line "
@@ -15105,7 +15086,7 @@ void Semantics::analyze() {
 						// Get the output type.
 						Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope);
 						// Store a copy of this type in our anonymous type storage.
-						const Type *output_type = &storage_scope.insert("", temporary_type).get_type();
+						TypeIndex output_type = storage_scope.add("", temporary_type);
 
 						// Collect the formal parameters in the list.
 						std::vector<const FormalParameter *> formal_parameter_collection;
@@ -15173,7 +15154,7 @@ void Semantics::analyze() {
 						}
 
 						// Handle the formal parameters.
-						std::vector<std::pair<bool, const Type *>> parameters;
+						std::vector<std::pair<bool, TypeIndex>> parameters;
 						for (const FormalParameter *next_formal_parameter : std::as_const(formal_parameter_collection)) {
 							const VarOrRef       &var_or_ref      = grammar.var_or_ref_storage.at(next_formal_parameter->var_or_ref);
 							const IdentList      &ident_list      = grammar.ident_list_storage.at(next_formal_parameter->ident_list);
@@ -15209,7 +15190,7 @@ void Semantics::analyze() {
 							// Get the parameter type.
 							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope);
 							// Store a copy of this type in our anonymous type storage.
-							const Type *parameter_type = &storage_scope.insert("", temporary_type).get_type();
+							TypeIndex parameter_type = storage_scope.add("", temporary_type);
 
 							// Unpack the ident_list.
 							const LexemeIdentifier       &first_identifier         = grammar.lexemes.at(ident_list.identifier).get_identifier();
@@ -15275,7 +15256,7 @@ void Semantics::analyze() {
 
 						// Add the routine declaration to scope.
 						Symbol routine_symbol("routine_", identifier.text, forward.identifier);
-						IdentifierScope::IdentifierBinding::RoutineDeclaration routine_declaration(routine_symbol, parameters, std::optional<const Type *>(output_type));
+						IdentifierScope::IdentifierBinding::RoutineDeclaration routine_declaration(routine_symbol, parameters, std::optional<TypeIndex>(output_type));
 						IdentifierScope::IdentifierBinding binding {routine_declaration};
 						top_level_routine_scope.insert({identifier.text, binding});
 						top_level_scope.insert({identifier.text, binding});
@@ -15338,7 +15319,7 @@ void Semantics::analyze() {
 						// Get the output type.
 						Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope);
 						// Store a copy of this type in our anonymous type storage.
-						const Type *output_type = &storage_scope.insert("", temporary_type).get_type();
+						TypeIndex output_type = storage_scope.add("", temporary_type);
 
 						// Collect the formal parameters in the list.
 						std::vector<const FormalParameter *> formal_parameter_collection;
@@ -15406,7 +15387,7 @@ void Semantics::analyze() {
 						}
 
 						// Handle the formal parameters.
-						std::vector<std::pair<bool, const Type *>> parameters;
+						std::vector<std::pair<bool, TypeIndex>> parameters;
 						for (const FormalParameter *next_formal_parameter : std::as_const(formal_parameter_collection)) {
 							const VarOrRef       &var_or_ref      = grammar.var_or_ref_storage.at(next_formal_parameter->var_or_ref);
 							const IdentList      &ident_list      = grammar.ident_list_storage.at(next_formal_parameter->ident_list);
@@ -15442,7 +15423,7 @@ void Semantics::analyze() {
 							// Get the parameter type.
 							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope);
 							// Store a copy of this type in our anonymous type storage.
-							const Type *parameter_type = &storage_scope.insert("", temporary_type).get_type();
+							TypeIndex parameter_type = storage_scope.add("", temporary_type);
 
 							// Unpack the ident_list.
 							const LexemeIdentifier       &first_identifier         = grammar.lexemes.at(ident_list.identifier).get_identifier();
@@ -15512,7 +15493,7 @@ void Semantics::analyze() {
 						if (!top_level_routine_scope.has(identifier.text)) {
 							// Get the analyzed routine declaration.
 							routine_symbol = Symbol("routine_", identifier.text, definition.identifier);
-							routine_declaration = IdentifierScope::IdentifierBinding::RoutineDeclaration(routine_symbol, parameters, std::optional<const Type *>(output_type));
+							routine_declaration = IdentifierScope::IdentifierBinding::RoutineDeclaration(routine_symbol, parameters, std::optional<TypeIndex >(output_type));
 
 							// Add the routine declaration to scope.
 							IdentifierScope::IdentifierBinding binding {routine_declaration};
@@ -15527,9 +15508,9 @@ void Semantics::analyze() {
 
 							// Get the analyzed routine declaration.
 							routine_symbol = std::as_const(declared_routine_declaration.location);
-							routine_declaration = IdentifierScope::IdentifierBinding::RoutineDeclaration(routine_symbol, parameters, std::optional<const Type *>(output_type));
+							routine_declaration = IdentifierScope::IdentifierBinding::RoutineDeclaration(routine_symbol, parameters, std::optional<TypeIndex>(output_type));
 
-							if (routine_declaration != declared_routine_declaration) {
+							if (!routine_declaration.matches(declared_routine_declaration, storage_scope)) {
 								std::ostringstream sstr;
 								sstr
 									<< "Semantics::analyze: error (line "
@@ -15599,10 +15580,10 @@ void Semantics::analyze() {
 
 	// Emit main definition.
 	Symbol main_routine_symbol("", "main", 0);
-	std::vector<std::pair<bool, const Type *>> main_parameters;
-	IdentifierScope::IdentifierBinding::RoutineDeclaration main_routine_declaration(main_routine_symbol, main_parameters, std::optional<const Type *>());
+	std::vector<std::pair<bool, TypeIndex >> main_parameters;
+	IdentifierScope::IdentifierBinding::RoutineDeclaration main_routine_declaration(main_routine_symbol, main_parameters, std::optional<TypeIndex >());
 	std::vector<Output::Line> main_routine_definition_lines;
-	main_routine_definition_lines = analyze_block(main_routine_declaration, {}, block, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope, {}, true);
+	main_routine_definition_lines = analyze_block(main_routine_declaration, {}, block, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope, storage_scope, {}, true);
 	output.add_line(Output::text_section, ":", main_routine_symbol);
 	output.add_lines(Output::text_section, main_routine_definition_lines);
 

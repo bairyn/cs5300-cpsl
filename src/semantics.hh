@@ -191,6 +191,7 @@ public:
 	// Note: this class uses raw Type pointers.  The lifetime of them should
 	// not exceed the lifetime of the IdentifierScope in which the Type is
 	// stored.
+	using TypeIndex = uint64_t;
 	class Type {
 	public:
 		// | Anonymous types have .identifier == "".
@@ -251,59 +252,43 @@ public:
 
 			inline bool operator==(const Primitive &other) const;
 			inline bool operator!=(const Primitive &other) const;
+
+			bool matches(const Primitive &other, const IdentifierScope &storage_scope) const;
+			bool matches(const Primitive &other) const;
 		};
 
 		class Simple : public Base {
 		public:
 			Simple();
-#if 0
-			Simple(const Base &base, const Type *referent);
-			Simple(Base &&base, const Type *referent);
-#endif /* #if 0 */
-			// | referent must be non-null; this is not checked!  (TODO: check)
-			Simple(const std::string &identifier, const Type &referent);
-			// | referent must be non-null (not checked!), its identifier must be in scope, and the identifier must refer to a type.
-			Simple(const std::string &identifier, const Type &referent, const IdentifierScope &identifier_type_scope);
-			const Type *referent;
+			Simple(const std::string &identifier, TypeIndex referent, const IdentifierScope &storage_scope);
+			TypeIndex referent;
 
 			// | Resolve a chain of aliases.
-			const Type &resolve_type(bool check_cycles = true) const;
+			const Type &resolve_type(const IdentifierScope &storage_scope, bool check_cycles = true) const;
 
-			inline bool operator< (const Simple &other) const;
-			inline bool operator> (const Simple &other) const;
-			inline bool operator<=(const Simple &other) const;
-			inline bool operator>=(const Simple &other) const;
-
-			inline bool operator==(const Simple &other) const;
-			inline bool operator!=(const Simple &other) const;
+			bool matches(const Simple &other, const IdentifierScope &storage_scope) const;
 		};
 
 		class Record : public Base {
 		public:
 			Record();
-			Record(const std::string &identifier, const std::vector<std::pair<std::string, const Type *>> &fields);
-			Record(const std::string &identifier, std::vector<std::pair<std::string, const Type *>> &&fields);
+			Record(const std::string &identifier, const std::vector<std::pair<std::string, TypeIndex>> &fields, const IdentifierScope &storage_scope);
+			Record(const std::string &identifier, std::vector<std::pair<std::string, TypeIndex>> &&fields, const IdentifierScope &storage_scope);
 			// | Ordered list of identifier, type pairs.
-			std::vector<std::pair<std::string, const Type *>> fields;
+			std::vector<std::pair<std::string, TypeIndex>> fields;
 
 			// | Used for comparison and equality checking.
-			std::vector<std::pair<std::string, Type>> get_dereferenced_fields() const;
+			std::vector<std::pair<std::string, Type>> get_dereferenced_fields(const IdentifierScope &storage_scope) const;
 
-			inline bool operator< (const Record &other) const;
-			inline bool operator> (const Record &other) const;
-			inline bool operator<=(const Record &other) const;
-			inline bool operator>=(const Record &other) const;
-
-			inline bool operator==(const Record &other) const;
-			inline bool operator!=(const Record &other) const;
+			bool matches(const Record &other, const IdentifierScope &storage_scope) const;
 		};
 
 		class Array : public Base {
 		public:
 			Array();
-			Array(const std::string &identifier, const Type &base_type, int32_t min_index, int32_t max_index);
+			Array(const std::string &identifier, TypeIndex base_type, int32_t min_index, int32_t max_index, const IdentifierScope &storage_scope);
 
-			const Type *base_type;  // ^ This is an array of values of what type?
+			TypeIndex base_type;  // ^ This is an array of values of what type?
 			int32_t min_index;
 			int32_t max_index;
 
@@ -315,13 +300,7 @@ public:
 			uint32_t get_offset_of_index(int32_t index) const;
 			int32_t get_index_of_offset(uint32_t offset) const;
 
-			inline bool operator< (const Array &other) const;
-			inline bool operator> (const Array &other) const;
-			inline bool operator<=(const Array &other) const;
-			inline bool operator>=(const Array &other) const;
-
-			inline bool operator==(const Array &other) const;
-			inline bool operator!=(const Array &other) const;
+			bool matches(const Array &other, const IdentifierScope &storage_scope) const;
 		};
 
 		enum tag_e {
@@ -389,19 +368,13 @@ public:
 		// | Return "primitive", "simple", "record", or "array".
 		static std::string get_tag_repr(tag_t tag);
 		std::string get_tag_repr() const;
-		std::string get_repr() const;
+		std::string get_repr(const IdentifierScope &storage_scope) const;
 
 		// | If this is a type alias, resolve the type to get the base type;
 		// otherwise, just return this type.
-		const Type &resolve_type(bool check_cycles = true) const;
+		const Type &resolve_type(const IdentifierScope &storage_scope, bool check_cycles = true) const;
 
-		inline bool operator< (const Type &other) const;
-		inline bool operator> (const Type &other) const;
-		inline bool operator<=(const Type &other) const;
-		inline bool operator>=(const Type &other) const;
-
-		inline bool operator==(const Type &other) const;
-		inline bool operator!=(const Type &other) const;
+		bool matches(const Type &other, const IdentifierScope &storage_scope) const;
 	};
 
 	// | The result of a constant expression.
@@ -607,8 +580,8 @@ public:
 			class Var {
 			public:
 				Var();
-				Var(const Type &type, const Storage &storage);
-				const Type *type;
+				Var(TypeIndex type, const Storage &storage);
+				TypeIndex type;
 				Storage storage;
 			};
 
@@ -616,22 +589,16 @@ public:
 			class RoutineDeclaration {
 			public:
 				RoutineDeclaration();
-				RoutineDeclaration(const Symbol &location, const std::vector<std::pair<bool, const Type *>> &parameters, std::optional<const Type *> output);
+				RoutineDeclaration(const Symbol &location, const std::vector<std::pair<bool, TypeIndex>> &parameters, std::optional<TypeIndex> output);
 				Symbol location;
 				// | <is_ref, type>
-				std::vector<std::pair<bool, const Type *>> parameters;
-				std::optional<const Type *>                output;
+				std::vector<std::pair<bool, TypeIndex>> parameters;
+				std::optional<TypeIndex>                output;
 
-				std::vector<std::pair<bool, Type>> get_dereferenced_parameters() const;
-				std::optional<Type>                get_dereferenced_output()     const;
+				std::vector<std::pair<bool, Type>> get_dereferenced_parameters(const IdentifierScope &storage_scope) const;
+				std::optional<Type>                get_dereferenced_output(const IdentifierScope &storage_scope)     const;
 
-				inline bool operator< (const RoutineDeclaration &other) const;
-				inline bool operator> (const RoutineDeclaration &other) const;
-				inline bool operator<=(const RoutineDeclaration &other) const;
-				inline bool operator>=(const RoutineDeclaration &other) const;
-
-				inline bool operator==(const RoutineDeclaration &other) const;
-				inline bool operator!=(const RoutineDeclaration &other) const;
+				bool matches(const RoutineDeclaration &other, const IdentifierScope &storage_scope) const;
 			};
 
 			using data_t = std::variant<
@@ -692,16 +659,25 @@ public:
 
 		const IdentifierBinding &insert(const std::pair<std::string, IdentifierBinding> &pair);
 		const IdentifierBinding &insert(const std::string &pair, const IdentifierBinding &identifier_binding);
+		      uint64_t           add   (const std::pair<std::string, IdentifierBinding> &pair);
+		      uint64_t           add   (const std::string &pair, const IdentifierBinding &identifier_binding);
 
-		bool has(std::string identifier) const;
+		bool has(const std::string &identifier) const;
 
-		const IdentifierBinding  &get(std::string identifier) const;
-		//IdentifierBinding       &&get(std::string identifier);
+		const IdentifierBinding  &get(const std::string &identifier) const;
+		//IdentifierBinding       &&get(const std::string &identifier);
+		uint64_t                  index(const std::string &identifier) const;
 
-		const IdentifierBinding  &operator[](std::string identifier) const;
-		//IdentifierBinding       &&operator[](std::string identifier);
+		const IdentifierBinding  &operator[](const std::string &identifier) const;
+		//IdentifierBinding       &&operator[](const std::string &identifier);
 
-		std::optional<IdentifierBinding> lookup_copy(std::string identifier) const;
+		std::optional<IdentifierBinding> lookup_copy(const std::string &identifier) const;
+
+		// | Since types are accessed often in the code, conveniently provide these accessors.
+		const Type &type(TypeIndex type_index) const;
+		const Type &type(const std::string &identifier) const;
+		const Type &resolve_type(TypeIndex type_index) const;
+		const Type &resolve_type(const std::string &identifier) const;
 	};
 
 	Semantics();
@@ -1440,18 +1416,18 @@ public:
 	class LvalueSourceAnalysis {
 	public:
 		LvalueSourceAnalysis();
-		LvalueSourceAnalysis(const MIPSIO  &instructions, const LexemeIdentifier &lvalue_identifier, const Type &lvalue_type, MIPSIO::Index lvalue_index, const Storage &lvalue_fixed_storage, bool is_lvalue_fixed_storage, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
-		LvalueSourceAnalysis(      MIPSIO &&instructions, const LexemeIdentifier &lvalue_identifier, const Type &lvalue_type, MIPSIO::Index lvalue_index, const Storage &lvalue_fixed_storage, bool is_lvalue_fixed_storage, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+		LvalueSourceAnalysis(const MIPSIO  &instructions, const LexemeIdentifier &lvalue_identifier, TypeIndex lvalue_type, MIPSIO::Index lvalue_index, const Storage &lvalue_fixed_storage, bool is_lvalue_fixed_storage, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+		LvalueSourceAnalysis(      MIPSIO &&instructions, const LexemeIdentifier &lvalue_identifier, TypeIndex lvalue_type, MIPSIO::Index lvalue_index, const Storage &lvalue_fixed_storage, bool is_lvalue_fixed_storage, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
 		MIPSIO                  instructions;  // Empty if lvalue_fixed_storage.
 		const LexemeIdentifier *lvalue_identifier;
-		const Type             *lvalue_type;
+		TypeIndex               lvalue_type;
 		MIPSIO::Index           lvalue_index = 0;
 		Storage                 lvalue_fixed_storage;
 		bool                    is_lvalue_fixed_storage = false;  // If it's fixed storage, the type resolves to a primitive.  If it's not fixed storage, the type may or may not resolve to a primitive.  It's fixed storage only if there are no accessors.  If there are accessors, this is not a fixed storage.
 		uint64_t                lexeme_begin = 0;
 		uint64_t                lexeme_end   = 0;
 	};
-	LvalueSourceAnalysis analyze_lvalue_source(const Lvalue &lvalue, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
+	LvalueSourceAnalysis analyze_lvalue_source(const Lvalue &lvalue, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope);
 
 	class Expression {
 	public:
@@ -1460,16 +1436,14 @@ public:
 #if 0
 		std::vector<Call> calls;
 #endif /* #if 0 */
-		const Type     *output_type;
+		TypeIndex      output_type;
 		MIPSIO::Index  output_index;
 		uint64_t       lexeme_begin = 0;
 		uint64_t       lexeme_end   = 0;
 
 		Expression();  // (No instructions; null type.)
-		Expression(const MIPSIO  &instructions, const Type  &output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
-		Expression(const MIPSIO  &instructions,       Type &&output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
-		Expression(      MIPSIO &&instructions, const Type  &output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
-		Expression(      MIPSIO &&instructions,       Type &&output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+		Expression(const MIPSIO  &instructions, TypeIndex output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+		Expression(      MIPSIO &&instructions, TypeIndex output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
 
 // TODO: inline support.
 #if 0
@@ -1489,8 +1463,8 @@ public:
 	};
 
 	// The non-const part is the ability to store strings.
-	Expression analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, bool no_dereference_record_array = false);
-	Expression analyze_expression(const ::Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, bool no_dereference_record_array = false);
+	Expression analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, bool no_dereference_record_array = false);
+	Expression analyze_expression(const ::Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, bool no_dereference_record_array = false);
 
 	// | A computation graph from needed input storage units to needed output storage units.
 	// MIPSIO with input types and locations and output types and locations.
@@ -1535,13 +1509,13 @@ public:
 		// conflicts / duplicates.
 		MIPSIO::Index    front = 0;  // Ignored if instructions is empty.
 		MIPSIO::Index    back  = 0;  // Ignored if instructions is empty.
-		std::map<std::string, const Type *> local_variables;  // Turns out no statements can introduce local variables, so this is unneeded.
+		std::map<std::string, TypeIndex> local_variables;  // Turns out no statements can introduce local variables, so this is unneeded.
 		uint64_t         lexeme_begin = 0;
 		uint64_t         lexeme_end   = 0;
 
 		Block();
-		Block(const MIPSIO  &instructions, MIPSIO::Index front, MIPSIO::Index back, const std::map<std::string, const Type *> &local_variables, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
-		Block(      MIPSIO &&instructions, MIPSIO::Index front, MIPSIO::Index back, const std::map<std::string, const Type *> &local_variables, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+		Block(const MIPSIO  &instructions, MIPSIO::Index front, MIPSIO::Index back, const std::map<std::string, TypeIndex> &local_variables, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+		Block(      MIPSIO &&instructions, MIPSIO::Index front, MIPSIO::Index back, const std::map<std::string, TypeIndex> &local_variables, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
 	};
 
 	// | Analyze a sequence of statements.
@@ -1549,11 +1523,11 @@ public:
 	// Note: this does not need to necessarily correspond to a ::Block in the
 	// grammar tree but can be a sequence of statements without a BEGIN and END
 	// keyword.
-	Block analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<uint64_t> &statements, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const Symbol &cleanup_symbol);
-	Block analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const StatementSequence &statement_sequence, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const Symbol &cleanup_symbol);
+	Block analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<uint64_t> &statements, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, const Symbol &cleanup_symbol);
+	Block analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const StatementSequence &statement_sequence, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, const Symbol &cleanup_symbol);
 
 	// | Analyze a BEGIN [statement]... END block.
-	std::vector<Output::Line> analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const std::map<std::string, const Type *> &local_variables = {}, bool is_main = false);
+	std::vector<Output::Line> analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, const std::map<std::string, TypeIndex> &local_variables = {}, bool is_main = false);
 
 	// | Analyze a routine definition.
 	//
