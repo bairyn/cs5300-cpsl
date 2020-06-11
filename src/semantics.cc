@@ -1630,7 +1630,7 @@ Semantics::ConstantValue::ConstantValue(char char_, uint64_t lexeme_begin, uint6
 	{}
 
 Semantics::ConstantValue::ConstantValue(bool boolean, uint64_t lexeme_begin, uint64_t lexeme_end)
-	: tag(integer_tag)
+	: tag(boolean_tag)
 	, data(boolean)
 	, lexeme_begin(lexeme_begin)
 	, lexeme_end(lexeme_end)
