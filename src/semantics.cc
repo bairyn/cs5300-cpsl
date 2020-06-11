@@ -4396,6 +4396,105 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 	}
 }
 
+std::vector<Semantics::Output::Line> Semantics::Instruction::emit_binary_operation(const Instruction &instruction, const Output::Line &binary_operation, bool is_save_word, bool is_word_load, const std::vector<Storage> &storages) {
+	// Check sizes.
+	if (Storage::get_sizes(storages) != instruction.get_all_sizes()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::emit_binary_operation: the number or sizes of storage units provided does not match what was expected for a(n) " << instruction.get_tag_repr() << " instruction.";
+		throw SemanticsError(sstr.str());
+	}
+	const Storage &left_source_storage  = storages[0];
+	const Storage &right_source_storage = storages[1];
+	const Storage &destination_storage  = storages[2];
+
+	// Prepare output vector.
+	std::vector<Output::Line> lines;
+
+	// Emit a symbol for this instruction if there is one.
+	if (instruction.get_base().has_symbol) {
+		lines.push_back({":", instruction.get_base().symbol});
+	}
+
+	// If !this->is_word, replace sw with sb and lw with lb.
+	//
+	// 4 storage types for destination:
+	// 	1: global_address + x  (Error.)
+	// 	2: x(global_address)   (Store into this address.)
+	// 	3: $reg                (Store into this register.)
+	// 	4: x($reg)             (Store into this dereferenced register.)
+	//
+	// 4 storage types for a source:
+	// 	1: global_address + x  (Read this address.)
+	// 	2: x(global_address)   (Read from this address.)
+	// 	3: $reg                (Read from this register.)
+	// 	4: x($reg)             (Read from this dereferenced register.)
+
+	// Get sized save and load operations.
+	Output::Line sized_save = is_save_word ? "\tsw    " : "\tsb    ";
+	Output::Line sized_load = is_save_word ? "\tlw    " : "\tlb    ";
+
+	// Part 1: load right_storage.
+	std::string right_register = "$t9";
+	bool is_t9_free            = false;
+	if        (right_source_storage.is_register_direct()) {
+		right_register = right_source_storage.register_;
+		is_t9_free     = true;
+	} else if (right_source_storage.is_register_dereference()) {
+		std::string offset_string = right_source_storage.offset == 0 ? "" : std::to_string(right_source_storage.offset);
+		lines.push_back(sized_load + right_register + ", " + offset_string + "(" + right_source_storage.register_ + ")");
+	} else if (right_source_storage.is_global_address()) {
+		lines.push_back("\tla    " + right_register + ", " + right_source_storage.global_address);
+		if (right_source_storage.offset != 0) {
+			lines.push_back("\tla    " + right_register + ", " + std::to_string(right_source_storage.offset) + "(" + right_register + ")");
+		}
+	} else { //right_source_storage.is_global_dereference)
+		lines.push_back("\tla    " + right_register + ", " + right_source_storage.global_address);
+		std::string offset_string = right_source_storage.offset == 0 ? "" : std::to_string(right_source_storage.offset);
+		lines.push_back(sized_load + "" + right_register + ", " + offset_string + "(" + right_register + ")");
+	}
+
+	// Part 2: load left_storage.
+	std::string left_register = is_t9_free ? "$t9" : "$t8";
+	bool is_t8_free           = is_t9_free;
+	if        (left_source_storage.is_register_direct()) {
+		left_register = left_source_storage.register_;
+		is_t8_free    = true;
+	} else if (left_source_storage.is_register_dereference()) {
+		std::string offset_string = left_source_storage.offset == 0 ? "" : std::to_string(left_source_storage.offset);
+		lines.push_back(sized_load + left_register + ", " + offset_string + "(" + left_source_storage.register_ + ")");
+	} else if (left_source_storage.is_global_address()) {
+		lines.push_back("\tla    " + left_register + ", " + left_source_storage.global_address);
+		if (left_source_storage.offset != 0) {
+			lines.push_back("\tla    " + left_register + ", " + std::to_string(left_source_storage.offset) + "(" + left_register + ")");
+		}
+	} else { //left_source_storage.is_global_dereference)
+		lines.push_back("\tla    " + left_register + ", " + left_source_storage.global_address);
+		std::string offset_string = left_source_storage.offset == 0 ? "" : std::to_string(left_source_storage.offset);
+		lines.push_back(sized_load + "" + left_register + ", " + offset_string + "(" + left_register + ")");
+	}
+
+	// Part 3: write to the destination.
+	if        (destination_storage.is_register_direct()) {
+		lines.push_back(binary_operation + destination_storage.register_ + ", " + left_register + ", " + right_register);
+	} else if (destination_storage.is_register_dereference()) {
+		lines.push_back(binary_operation + "$t9" + ", " + left_register + ", " + right_register);
+		std::string offset_string = destination_storage.offset == 0 ? "" : std::to_string(destination_storage.offset);
+		lines.push_back(sized_save + "$t9" + ", " + offset_string + "(" + destination_storage.register_ + ")");
+	} else if (destination_storage.is_global_address()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::emit_binary_operation: error: cannot save to a global address without dereferencing it.";
+		throw SemanticsError(sstr.str());
+	} else { //destination_storage.is_global_dereference)
+		lines.push_back(binary_operation + "$t9" + ", " + left_register + ", " + right_register);
+		lines.push_back("\tla    $t8, " + destination_storage.global_address);
+		std::string offset_string = destination_storage.offset == 0 ? "" : std::to_string(destination_storage.offset);
+		lines.push_back(sized_save + "$t9, " + offset_string + "($t8)");
+	}
+
+	// Return the output.
+	return lines;
+}
+
 Semantics::Instruction::Base::Base()
 	: has_symbol(false)
 	{}
@@ -4591,7 +4690,9 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::AddSp::emit(const s
 	}
 
 	// Emit the addition or subtraction.
-	lines.push_back("\taddiu $sp, $sp, " + std::to_string(offset));
+	if (offset != 0) {
+		lines.push_back("\taddiu $sp, $sp, " + std::to_string(offset));
+	}
 
 	// Return the output.
 	return lines;
@@ -4679,7 +4780,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadImmediate::emit
 	// 	4: li   $t9, constant_non_string
 	// 	   sw   $t9, destination_storage.offset(REG)
 
-	// Get sizes save operations.
+	// Get sizes save operation.
 	Output::Line sized_save;
 
 	if (is_word) {
@@ -4940,154 +5041,15 @@ std::vector<uint32_t> Semantics::Instruction::LessThanFrom::get_output_sizes() c
 std::vector<uint32_t> Semantics::Instruction::LessThanFrom::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::LessThanFrom::emit(const std::vector<Storage> &storages) const {
-	// Check sizes.
-	if (Storage::get_sizes(storages) != get_all_sizes()) {
-		std::ostringstream sstr;
-		sstr << "Semantics::Instruction::LessThanFrom::emit: the number or sizes of storage units provided does not match what was expected.";
-		throw SemanticsError(sstr.str());
-	}
-	const Storage &left_source_storage  = storages[0];
-	const Storage &right_source_storage = storages[1];
-	const Storage &destination_storage  = storages[2];
-
-	// Prepare output vector.
-	std::vector<Output::Line> lines;
-
-	// Emit a symbol for this instruction if there is one.
-	if (has_symbol) {
-		lines.push_back({":", symbol});
-	}
-
-	// If !this->is_word, replace sw with sb and lw with lb.
-	//
-	// 4 storage types for destination:
-	// 	1: global_address + x  (Error.)
-	// 	2: x(global_address)   (Store into this address.)
-	// 	3: $reg                (Store into this register.)
-	// 	4: x($reg)             (Store into this dereferenced register.)
-	//
-	// 4 storage types for a source:
-	// 	1: global_address + x  (Read this address.)
-	// 	2: x(global_address)   (Read from this address.)
-	// 	3: $reg                (Read from this register.)
-	// 	4: x($reg)             (Read from this dereferenced register.)
-
-	Output::Line sized_load;
-	Output::Line sized_save;
-
-	if (is_word) {
-		sized_load = "\tlw    ";
-	} else {
-		sized_load = "\tlb    ";
-	}
-	sized_save = "\tsb    ";
-
-	Output::Line slt_operator;
+	Output::Line binary_operator;
 
 	if (!is_signed) {
-		slt_operator = "\tsltu  ";
+		binary_operator = "\tsltu  ";
 	} else {
-		slt_operator = "\tslt   ";
+		binary_operator = "\tslt   ";
 	}
 
-	// Part 1: get left source address.
-	if           (left_source_storage.is_global_address()) {
-		lines.push_back("\tla    $t8, " + left_source_storage.global_address);
-		if (left_source_storage.offset != 0) {
-			lines.push_back("\tla    $t8, " + std::to_string(left_source_storage.offset) + "($t8)");
-		}
-	} else if    (left_source_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t8, " + left_source_storage.global_address);
-		lines.push_back("\tlw    $t8, " + std::to_string(left_source_storage.offset) + "($t8)");
-	} else if    (left_source_storage.is_register_direct()) {
-	} else {  // (left_source_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t8, " + std::to_string(left_source_storage.offset) + "(" + left_source_storage.register_ + ")");
-	}
-
-	// Part 2: load left source.
-	if (!left_source_storage.is_register_direct()) {
-		lines.push_back(sized_load + "$t8, ($t8)");
-	}
-
-	// Part 3: get right source address.
-	if           (right_source_storage.is_global_address()) {
-		lines.push_back("\tla    $t9, " + right_source_storage.global_address);
-		if (right_source_storage.offset != 0) {
-			lines.push_back("\tla    $t9, " + std::to_string(right_source_storage.offset) + "($t9)");
-		}
-	} else if    (right_source_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t9, " + right_source_storage.global_address);
-		lines.push_back("\tlw    $t9, " + std::to_string(right_source_storage.offset) + "($t9)");
-	} else if    (right_source_storage.is_register_direct()) {
-	} else {  // (right_source_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t9, " + std::to_string(right_source_storage.offset) + "(" + right_source_storage.register_ + ")");
-	}
-
-	// Part 4: load right source.
-	if (!right_source_storage.is_register_direct()) {
-		lines.push_back(sized_load + "$t9, ($t9)");
-	}
-
-	// Part 5: if both $t8 and $t9 are used, $t8 += $t9, to free $t9 for destination.
-	// If $t8 is free but $t9 is used, mark $t8 as being free.
-	std::string destination_address_register;
-	std::string sum_register;
-	if (left_source_storage.is_register_direct()) {
-		// $t8 is free.
-		destination_address_register = "$t8";
-		sum_register                 = "$t9";
-	} else {
-		// Make sure $t9 is free.
-		destination_address_register = "$t9";
-		sum_register                 = "$t8";
-		if (!(right_source_storage.is_register_direct())) {
-			lines.push_back(slt_operator + "$t8, $t8, $t9");
-		}
-	}
-
-	// Part 6: get destination address.
-	if           (destination_storage.is_global_address()) {
-		lines.push_back("\tla    " + destination_address_register + ", " + destination_storage.global_address);
-		if (destination_storage.offset != 0) {
-			lines.push_back("\tla    " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_address_register + ")");
-		}
-	} else if    (destination_storage.is_global_dereference()) {
-		lines.push_back("\tla    " + destination_address_register + ", " + destination_storage.global_address);
-		lines.push_back("\tlw    " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_address_register + ")");
-	} else if    (destination_storage.is_register_direct()) {
-	} else {  // (destination_storage.is_register_dereference()) {
-		lines.push_back("\tla    " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_storage.register_ + ")");
-	}
-
-	// Part 7: write destination.
-	if (destination_storage.is_register_direct()) {
-		if           ( left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back(slt_operator + destination_storage.register_ + ", " + left_source_storage.register_ + ", " + right_source_storage.register_);
-		} else if    ( left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			lines.push_back(slt_operator + destination_storage.register_ + ", " + left_source_storage.register_ + ", $t9");
-		} else if    (!left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back(slt_operator + destination_storage.register_ + ", $t8, " + right_source_storage.register_);
-		} else {  // (!left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			lines.push_back(slt_operator + destination_storage.register_ + ", $t8, $t9");
-		}
-	} else {
-		if           ( left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back(slt_operator + sum_register + ", " + left_source_storage.register_ + ", " + right_source_storage.register_);
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		} else if    ( left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			lines.push_back(slt_operator + sum_register + ", " + left_source_storage.register_ + ", $t9");
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		} else if    (!left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back(slt_operator + sum_register + ", $t8, " + right_source_storage.register_);
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		} else {  // (!left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			// (Addition already performed before loading the address.)
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		}
-	}
-
-	// Return the output.
-	return lines;
+	return emit_binary_operation(Instruction(*this), binary_operator, true, is_word, storages);
 }
 
 Semantics::Instruction::NorFrom::NorFrom()
@@ -5104,147 +5066,7 @@ std::vector<uint32_t> Semantics::Instruction::NorFrom::get_output_sizes() const 
 std::vector<uint32_t> Semantics::Instruction::NorFrom::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::NorFrom::emit(const std::vector<Storage> &storages) const {
-	// Check sizes.
-	if (Storage::get_sizes(storages) != get_all_sizes()) {
-		std::ostringstream sstr;
-		sstr << "Semantics::Instruction::NorFrom::emit: the number or sizes of storage units provided does not match what was expected.";
-		throw SemanticsError(sstr.str());
-	}
-	const Storage &left_source_storage  = storages[0];
-	const Storage &right_source_storage = storages[1];
-	const Storage &destination_storage  = storages[2];
-
-	// Prepare output vector.
-	std::vector<Output::Line> lines;
-
-	// Emit a symbol for this instruction if there is one.
-	if (has_symbol) {
-		lines.push_back({":", symbol});
-	}
-
-	// If !this->is_word, replace sw with sb and lw with lb.
-	//
-	// 4 storage types for destination:
-	// 	1: global_address + x  (Error.)
-	// 	2: x(global_address)   (Store into this address.)
-	// 	3: $reg                (Store into this register.)
-	// 	4: x($reg)             (Store into this dereferenced register.)
-	//
-	// 4 storage types for a source:
-	// 	1: global_address + x  (Read this address.)
-	// 	2: x(global_address)   (Read from this address.)
-	// 	3: $reg                (Read from this register.)
-	// 	4: x($reg)             (Read from this dereferenced register.)
-
-	Output::Line sized_load;
-	Output::Line sized_save;
-
-	if (is_word) {
-		sized_load = "\tlw    ";
-		sized_save = "\tsw    ";
-	} else {
-		sized_load = "\tlb    ";
-		sized_save = "\tsb    ";
-	}
-
-	// Part 1: get left source address.
-	if           (left_source_storage.is_global_address()) {
-		lines.push_back("\tla    $t8, " + left_source_storage.global_address);
-		if (left_source_storage.offset != 0) {
-			lines.push_back("\tla    $t8, " + std::to_string(left_source_storage.offset) + "($t8)");
-		}
-	} else if    (left_source_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t8, " + left_source_storage.global_address);
-		lines.push_back("\tlw    $t8, " + std::to_string(left_source_storage.offset) + "($t8)");
-	} else if    (left_source_storage.is_register_direct()) {
-	} else {  // (left_source_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t8, " + std::to_string(left_source_storage.offset) + "(" + left_source_storage.register_ + ")");
-	}
-
-	// Part 2: load left source.
-	if (!left_source_storage.is_register_direct()) {
-		lines.push_back(sized_load + "$t8, ($t8)");
-	}
-
-	// Part 3: get right source address.
-	if           (right_source_storage.is_global_address()) {
-		lines.push_back("\tla    $t9, " + right_source_storage.global_address);
-		if (right_source_storage.offset != 0) {
-			lines.push_back("\tla    $t9, " + std::to_string(right_source_storage.offset) + "($t9)");
-		}
-	} else if    (right_source_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t9, " + right_source_storage.global_address);
-		lines.push_back("\tlw    $t9, " + std::to_string(right_source_storage.offset) + "($t9)");
-	} else if    (right_source_storage.is_register_direct()) {
-	} else {  // (right_source_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t9, " + std::to_string(right_source_storage.offset) + "(" + right_source_storage.register_ + ")");
-	}
-
-	// Part 4: load right source.
-	if (!right_source_storage.is_register_direct()) {
-		lines.push_back(sized_load + "$t9, ($t9)");
-	}
-
-	// Part 5: if both $t8 and $t9 are used, $t8 += $t9, to free $t9 for destination.
-	// If $t8 is free but $t9 is used, mark $t8 as being free.
-	std::string destination_address_register;
-	std::string sum_register;
-	if (left_source_storage.is_register_direct()) {
-		// $t8 is free.
-		destination_address_register = "$t8";
-		sum_register                 = "$t9";
-	} else {
-		// Make sure $t9 is free.
-		destination_address_register = "$t9";
-		sum_register                 = "$t8";
-		if (!(right_source_storage.is_register_direct())) {
-			lines.push_back("\tnor   $t8, $t8, $t9");
-		}
-	}
-
-	// Part 6: get destination address.
-	if           (destination_storage.is_global_address()) {
-		lines.push_back("\tla    " + destination_address_register + ", " + destination_storage.global_address);
-		if (destination_storage.offset != 0) {
-			lines.push_back("\tla    " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_address_register + ")");
-		}
-	} else if    (destination_storage.is_global_dereference()) {
-		lines.push_back("\tla    " + destination_address_register + ", " + destination_storage.global_address);
-		lines.push_back("\tlw    " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_address_register + ")");
-	} else if    (destination_storage.is_register_direct()) {
-	} else {  // (destination_storage.is_register_dereference()) {
-		lines.push_back("\tla    " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_storage.register_ + ")");
-	}
-
-	// Part 7: write destination.
-	if (destination_storage.is_register_direct()) {
-		if           ( left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back("\tnor   " + destination_storage.register_ + ", " + left_source_storage.register_ + ", " + right_source_storage.register_);
-		} else if    ( left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			lines.push_back("\tnor   " + destination_storage.register_ + ", " + left_source_storage.register_ + ", $t9");
-		} else if    (!left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back("\tnor   " + destination_storage.register_ + ", $t8, " + right_source_storage.register_);
-		} else {  // (!left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			lines.push_back("\tnor   " + destination_storage.register_ + ", $t8, $t9");
-		}
-	} else {
-		if           ( left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back("\tnor   " + sum_register + ", " + left_source_storage.register_ + ", " + right_source_storage.register_);
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		} else if    ( left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			lines.push_back("\tnor   " + sum_register + ", " + left_source_storage.register_ + ", $t9");
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		} else if    (!left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back("\tnor   " + sum_register + ", $t8, " + right_source_storage.register_);
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		} else {  // (!left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			// (NOR already performed before loading the address.)
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		}
-	}
-
-	// Return the output.
-	return lines;
+	return emit_binary_operation(Instruction(*this), "\tnor   ", is_word, is_word, storages);
 }
 
 Semantics::Instruction::AndFrom::AndFrom()
@@ -5261,147 +5083,7 @@ std::vector<uint32_t> Semantics::Instruction::AndFrom::get_output_sizes() const 
 std::vector<uint32_t> Semantics::Instruction::AndFrom::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::AndFrom::emit(const std::vector<Storage> &storages) const {
-	// Check sizes.
-	if (Storage::get_sizes(storages) != get_all_sizes()) {
-		std::ostringstream sstr;
-		sstr << "Semantics::Instruction::AndFrom::emit: the number or sizes of storage units provided does not match what was expected.";
-		throw SemanticsError(sstr.str());
-	}
-	const Storage &left_source_storage  = storages[0];
-	const Storage &right_source_storage = storages[1];
-	const Storage &destination_storage  = storages[2];
-
-	// Prepare output vector.
-	std::vector<Output::Line> lines;
-
-	// Emit a symbol for this instruction if there is one.
-	if (has_symbol) {
-		lines.push_back({":", symbol});
-	}
-
-	// If !this->is_word, replace sw with sb and lw with lb.
-	//
-	// 4 storage types for destination:
-	// 	1: global_address + x  (Error.)
-	// 	2: x(global_address)   (Store into this address.)
-	// 	3: $reg                (Store into this register.)
-	// 	4: x($reg)             (Store into this dereferenced register.)
-	//
-	// 4 storage types for a source:
-	// 	1: global_address + x  (Read this address.)
-	// 	2: x(global_address)   (Read from this address.)
-	// 	3: $reg                (Read from this register.)
-	// 	4: x($reg)             (Read from this dereferenced register.)
-
-	Output::Line sized_load;
-	Output::Line sized_save;
-
-	if (is_word) {
-		sized_load = "\tlw    ";
-		sized_save = "\tsw    ";
-	} else {
-		sized_load = "\tlb    ";
-		sized_save = "\tsb    ";
-	}
-
-	// Part 1: get left source address.
-	if           (left_source_storage.is_global_address()) {
-		lines.push_back("\tla    $t8, " + left_source_storage.global_address);
-		if (left_source_storage.offset != 0) {
-			lines.push_back("\tla    $t8, " + std::to_string(left_source_storage.offset) + "($t8)");
-		}
-	} else if    (left_source_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t8, " + left_source_storage.global_address);
-		lines.push_back("\tlw    $t8, " + std::to_string(left_source_storage.offset) + "($t8)");
-	} else if    (left_source_storage.is_register_direct()) {
-	} else {  // (left_source_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t8, " + std::to_string(left_source_storage.offset) + "(" + left_source_storage.register_ + ")");
-	}
-
-	// Part 2: load left source.
-	if (!left_source_storage.is_register_direct()) {
-		lines.push_back(sized_load + "$t8, ($t8)");
-	}
-
-	// Part 3: get right source address.
-	if           (right_source_storage.is_global_address()) {
-		lines.push_back("\tla    $t9, " + right_source_storage.global_address);
-		if (right_source_storage.offset != 0) {
-			lines.push_back("\tla    $t9, " + std::to_string(right_source_storage.offset) + "($t9)");
-		}
-	} else if    (right_source_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t9, " + right_source_storage.global_address);
-		lines.push_back("\tlw    $t9, " + std::to_string(right_source_storage.offset) + "($t9)");
-	} else if    (right_source_storage.is_register_direct()) {
-	} else {  // (right_source_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t9, " + std::to_string(right_source_storage.offset) + "(" + right_source_storage.register_ + ")");
-	}
-
-	// Part 4: load right source.
-	if (!right_source_storage.is_register_direct()) {
-		lines.push_back(sized_load + "$t9, ($t9)");
-	}
-
-	// Part 5: if both $t8 and $t9 are used, $t8 += $t9, to free $t9 for destination.
-	// If $t8 is free but $t9 is used, mark $t8 as being free.
-	std::string destination_address_register;
-	std::string sum_register;
-	if (left_source_storage.is_register_direct()) {
-		// $t8 is free.
-		destination_address_register = "$t8";
-		sum_register                 = "$t9";
-	} else {
-		// Make sure $t9 is free.
-		destination_address_register = "$t9";
-		sum_register                 = "$t8";
-		if (!(right_source_storage.is_register_direct())) {
-			lines.push_back("\tand   $t8, $t8, $t9");
-		}
-	}
-
-	// Part 6: get destination address.
-	if           (destination_storage.is_global_address()) {
-		lines.push_back("\tla    " + destination_address_register + ", " + destination_storage.global_address);
-		if (destination_storage.offset != 0) {
-			lines.push_back("\tla    " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_address_register + ")");
-		}
-	} else if    (destination_storage.is_global_dereference()) {
-		lines.push_back("\tla    " + destination_address_register + ", " + destination_storage.global_address);
-		lines.push_back("\tlw    " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_address_register + ")");
-	} else if    (destination_storage.is_register_direct()) {
-	} else {  // (destination_storage.is_register_dereference()) {
-		lines.push_back("\tla    " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_storage.register_ + ")");
-	}
-
-	// Part 7: write destination.
-	if (destination_storage.is_register_direct()) {
-		if           ( left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back("\tand   " + destination_storage.register_ + ", " + left_source_storage.register_ + ", " + right_source_storage.register_);
-		} else if    ( left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			lines.push_back("\tand   " + destination_storage.register_ + ", " + left_source_storage.register_ + ", $t9");
-		} else if    (!left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back("\tand   " + destination_storage.register_ + ", $t8, " + right_source_storage.register_);
-		} else {  // (!left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			lines.push_back("\tand   " + destination_storage.register_ + ", $t8, $t9");
-		}
-	} else {
-		if           ( left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back("\tand   " + sum_register + ", " + left_source_storage.register_ + ", " + right_source_storage.register_);
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		} else if    ( left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			lines.push_back("\tand   " + sum_register + ", " + left_source_storage.register_ + ", $t9");
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		} else if    (!left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back("\tand   " + sum_register + ", $t8, " + right_source_storage.register_);
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		} else {  // (!left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			// (AND already performed before loading the address.)
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		}
-	}
-
-	// Return the output.
-	return lines;
+	return emit_binary_operation(Instruction(*this), "\tand   ", is_word, is_word, storages);
 }
 
 Semantics::Instruction::OrFrom::OrFrom()
@@ -5418,155 +5100,16 @@ std::vector<uint32_t> Semantics::Instruction::OrFrom::get_output_sizes() const {
 std::vector<uint32_t> Semantics::Instruction::OrFrom::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::OrFrom::emit(const std::vector<Storage> &storages) const {
-	// Check sizes.
-	if (Storage::get_sizes(storages) != get_all_sizes()) {
-		std::ostringstream sstr;
-		sstr << "Semantics::Instruction::OrFrom::emit: the number or sizes of storage units provided does not match what was expected.";
-		throw SemanticsError(sstr.str());
-	}
-	const Storage &left_source_storage  = storages[0];
-	const Storage &right_source_storage = storages[1];
-	const Storage &destination_storage  = storages[2];
-
-	// Prepare output vector.
-	std::vector<Output::Line> lines;
-
-	// Emit a symbol for this instruction if there is one.
-	if (has_symbol) {
-		lines.push_back({":", symbol});
-	}
-
-	// If !this->is_word, replace sw with sb and lw with lb.
-	//
-	// 4 storage types for destination:
-	// 	1: global_address + x  (Error.)
-	// 	2: x(global_address)   (Store into this address.)
-	// 	3: $reg                (Store into this register.)
-	// 	4: x($reg)             (Store into this dereferenced register.)
-	//
-	// 4 storage types for a source:
-	// 	1: global_address + x  (Read this address.)
-	// 	2: x(global_address)   (Read from this address.)
-	// 	3: $reg                (Read from this register.)
-	// 	4: x($reg)             (Read from this dereferenced register.)
-
-	Output::Line sized_load;
-	Output::Line sized_save;
-
-	if (is_word) {
-		sized_load = "\tlw    ";
-		sized_save = "\tsw    ";
-	} else {
-		sized_load = "\tlb    ";
-		sized_save = "\tsb    ";
-	}
-
-	// Part 1: get left source address.
-	if           (left_source_storage.is_global_address()) {
-		lines.push_back("\tla    $t8, " + left_source_storage.global_address);
-		if (left_source_storage.offset != 0) {
-			lines.push_back("\tla    $t8, " + std::to_string(left_source_storage.offset) + "($t8)");
-		}
-	} else if    (left_source_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t8, " + left_source_storage.global_address);
-		lines.push_back("\tlw    $t8, " + std::to_string(left_source_storage.offset) + "($t8)");
-	} else if    (left_source_storage.is_register_direct()) {
-	} else {  // (left_source_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t8, " + std::to_string(left_source_storage.offset) + "(" + left_source_storage.register_ + ")");
-	}
-
-	// Part 2: load left source.
-	if (!left_source_storage.is_register_direct()) {
-		lines.push_back(sized_load + "$t8, ($t8)");
-	}
-
-	// Part 3: get right source address.
-	if           (right_source_storage.is_global_address()) {
-		lines.push_back("\tla    $t9, " + right_source_storage.global_address);
-		if (right_source_storage.offset != 0) {
-			lines.push_back("\tla    $t9, " + std::to_string(right_source_storage.offset) + "($t9)");
-		}
-	} else if    (right_source_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t9, " + right_source_storage.global_address);
-		lines.push_back("\tlw    $t9, " + std::to_string(right_source_storage.offset) + "($t9)");
-	} else if    (right_source_storage.is_register_direct()) {
-	} else {  // (right_source_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t9, " + std::to_string(right_source_storage.offset) + "(" + right_source_storage.register_ + ")");
-	}
-
-	// Part 4: load right source.
-	if (!right_source_storage.is_register_direct()) {
-		lines.push_back(sized_load + "$t9, ($t9)");
-	}
-
-	// Part 5: if both $t8 and $t9 are used, $t8 += $t9, to free $t9 for destination.
-	// If $t8 is free but $t9 is used, mark $t8 as being free.
-	std::string destination_address_register;
-	std::string sum_register;
-	if (left_source_storage.is_register_direct()) {
-		// $t8 is free.
-		destination_address_register = "$t8";
-		sum_register                 = "$t9";
-	} else {
-		// Make sure $t9 is free.
-		destination_address_register = "$t9";
-		sum_register                 = "$t8";
-		if (!(right_source_storage.is_register_direct())) {
-			lines.push_back("\tor    $t8, $t8, $t9");
-		}
-	}
-
-	// Part 6: get destination address.
-	if           (destination_storage.is_global_address()) {
-		lines.push_back("\tla    " + destination_address_register + ", " + destination_storage.global_address);
-		if (destination_storage.offset != 0) {
-			lines.push_back("\tla    " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_address_register + ")");
-		}
-	} else if    (destination_storage.is_global_dereference()) {
-		lines.push_back("\tla    " + destination_address_register + ", " + destination_storage.global_address);
-		lines.push_back("\tlw    " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_address_register + ")");
-	} else if    (destination_storage.is_register_direct()) {
-	} else {  // (destination_storage.is_register_dereference()) {
-		lines.push_back("\tla    " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_storage.register_ + ")");
-	}
-
-	// Part 7: write destination.
-	if (destination_storage.is_register_direct()) {
-		if           ( left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back("\tor    " + destination_storage.register_ + ", " + left_source_storage.register_ + ", " + right_source_storage.register_);
-		} else if    ( left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			lines.push_back("\tor    " + destination_storage.register_ + ", " + left_source_storage.register_ + ", $t9");
-		} else if    (!left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back("\tor    " + destination_storage.register_ + ", $t8, " + right_source_storage.register_);
-		} else {  // (!left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			lines.push_back("\tor    " + destination_storage.register_ + ", $t8, $t9");
-		}
-	} else {
-		if           ( left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back("\tor    " + sum_register + ", " + left_source_storage.register_ + ", " + right_source_storage.register_);
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		} else if    ( left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			lines.push_back("\tor    " + sum_register + ", " + left_source_storage.register_ + ", $t9");
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		} else if    (!left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back("\tor    " + sum_register + ", $t8, " + right_source_storage.register_);
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		} else {  // (!left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			// (NOR already performed before loading the address.)
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		}
-	}
-
-	// Return the output.
-	return lines;
+	return emit_binary_operation(Instruction(*this), "\tor    ", is_word, is_word, storages);
 }
 
 Semantics::Instruction::AddFrom::AddFrom()
 	{}
 
-Semantics::Instruction::AddFrom::AddFrom(const Base &base, bool is_word)
+Semantics::Instruction::AddFrom::AddFrom(const Base &base, bool is_word, bool is_signed)
 	: Base(base)
 	, is_word(is_word)
+	, is_signed(is_signed)
 	{}
 
 std::vector<uint32_t> Semantics::Instruction::AddFrom::get_input_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1), static_cast<uint32_t>(is_word ? 4 : 1)}; }
@@ -5575,155 +5118,24 @@ std::vector<uint32_t> Semantics::Instruction::AddFrom::get_output_sizes() const 
 std::vector<uint32_t> Semantics::Instruction::AddFrom::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::AddFrom::emit(const std::vector<Storage> &storages) const {
-	// Check sizes.
-	if (Storage::get_sizes(storages) != get_all_sizes()) {
-		std::ostringstream sstr;
-		sstr << "Semantics::Instruction::AddFrom::emit: the number or sizes of storage units provided does not match what was expected.";
-		throw SemanticsError(sstr.str());
-	}
-	const Storage &left_source_storage  = storages[0];
-	const Storage &right_source_storage = storages[1];
-	const Storage &destination_storage  = storages[2];
+	Output::Line binary_operator;
 
-	// Prepare output vector.
-	std::vector<Output::Line> lines;
-
-	// Emit a symbol for this instruction if there is one.
-	if (has_symbol) {
-		lines.push_back({":", symbol});
-	}
-
-	// If !this->is_word, replace sw with sb and lw with lb.
-	//
-	// 4 storage types for destination:
-	// 	1: global_address + x  (Error.)
-	// 	2: x(global_address)   (Store into this address.)
-	// 	3: $reg                (Store into this register.)
-	// 	4: x($reg)             (Store into this dereferenced register.)
-	//
-	// 4 storage types for a source:
-	// 	1: global_address + x  (Read this address.)
-	// 	2: x(global_address)   (Read from this address.)
-	// 	3: $reg                (Read from this register.)
-	// 	4: x($reg)             (Read from this dereferenced register.)
-
-	Output::Line sized_load;
-	Output::Line sized_save;
-
-	if (is_word) {
-		sized_load = "\tlw    ";
-		sized_save = "\tsw    ";
+	if (!is_signed) {
+		binary_operator = "\taddu  ";
 	} else {
-		sized_load = "\tlb    ";
-		sized_save = "\tsb    ";
+		binary_operator = "\tadd   ";
 	}
 
-	// Part 1: get left source address.
-	if           (left_source_storage.is_global_address()) {
-		lines.push_back("\tla    $t8, " + left_source_storage.global_address);
-		if (left_source_storage.offset != 0) {
-			lines.push_back("\tla    $t8, " + std::to_string(left_source_storage.offset) + "($t8)");
-		}
-	} else if    (left_source_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t8, " + left_source_storage.global_address);
-		lines.push_back("\tlw    $t8, " + std::to_string(left_source_storage.offset) + "($t8)");
-	} else if    (left_source_storage.is_register_direct()) {
-	} else {  // (left_source_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t8, " + std::to_string(left_source_storage.offset) + "(" + left_source_storage.register_ + ")");
-	}
-
-	// Part 2: load left source.
-	if (!left_source_storage.is_register_direct()) {
-		lines.push_back(sized_load + "$t8, ($t8)");
-	}
-
-	// Part 3: get right source address.
-	if           (right_source_storage.is_global_address()) {
-		lines.push_back("\tla    $t9, " + right_source_storage.global_address);
-		if (right_source_storage.offset != 0) {
-			lines.push_back("\tla    $t9, " + std::to_string(right_source_storage.offset) + "($t9)");
-		}
-	} else if    (right_source_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t9, " + right_source_storage.global_address);
-		lines.push_back("\tlw    $t9, " + std::to_string(right_source_storage.offset) + "($t9)");
-	} else if    (right_source_storage.is_register_direct()) {
-	} else {  // (right_source_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t9, " + std::to_string(right_source_storage.offset) + "(" + right_source_storage.register_ + ")");
-	}
-
-	// Part 4: load right source.
-	if (!right_source_storage.is_register_direct()) {
-		lines.push_back(sized_load + "$t9, ($t9)");
-	}
-
-	// Part 5: if both $t8 and $t9 are used, $t8 += $t9, to free $t9 for destination.
-	// If $t8 is free but $t9 is used, mark $t8 as being free.
-	std::string destination_address_register;
-	std::string sum_register;
-	if (left_source_storage.is_register_direct()) {
-		// $t8 is free.
-		destination_address_register = "$t8";
-		sum_register                 = "$t9";
-	} else {
-		// Make sure $t9 is free.
-		destination_address_register = "$t9";
-		sum_register                 = "$t8";
-		if (!(right_source_storage.is_register_direct())) {
-			lines.push_back("\taddu  $t8, $t8, $t9");
-		}
-	}
-
-	// Part 6: get destination address.
-	if           (destination_storage.is_global_address()) {
-		lines.push_back("\tla    " + destination_address_register + ", " + destination_storage.global_address);
-		if (destination_storage.offset != 0) {
-			lines.push_back("\tla   " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_address_register + ")");
-		}
-	} else if    (destination_storage.is_global_dereference()) {
-		lines.push_back("\tla    " + destination_address_register + ", " + destination_storage.global_address);
-		lines.push_back("\tlw    " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_address_register + ")");
-	} else if    (destination_storage.is_register_direct()) {
-	} else {  // (destination_storage.is_register_dereference()) {
-		lines.push_back("\tla    " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_storage.register_ + ")");
-	}
-
-	// Part 7: write destination.
-	if (destination_storage.is_register_direct()) {
-		if           ( left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back("\taddu  " + destination_storage.register_ + ", " + left_source_storage.register_ + ", " + right_source_storage.register_);
-		} else if    ( left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			lines.push_back("\taddu  " + destination_storage.register_ + ", " + left_source_storage.register_ + ", $t9");
-		} else if    (!left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back("\taddu  " + destination_storage.register_ + ", $t8, " + right_source_storage.register_);
-		} else {  // (!left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			lines.push_back("\taddu  " + destination_storage.register_ + ", $t8, $t9");
-		}
-	} else {
-		if           ( left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back("\taddu  " + sum_register + ", " + left_source_storage.register_ + ", " + right_source_storage.register_);
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		} else if    ( left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			lines.push_back("\taddu  " + sum_register + ", " + left_source_storage.register_ + ", $t9");
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		} else if    (!left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back("\taddu  " + sum_register + ", $t8, " + right_source_storage.register_);
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		} else {  // (!left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			// (Addition already performed before loading the address.)
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		}
-	}
-
-	// Return the output.
-	return lines;
+	return emit_binary_operation(Instruction(*this), binary_operator, is_word, is_word, storages);
 }
 
 Semantics::Instruction::SubFrom::SubFrom()
 	{}
 
-Semantics::Instruction::SubFrom::SubFrom(const Base &base, bool is_word)
+Semantics::Instruction::SubFrom::SubFrom(const Base &base, bool is_word, bool is_signed)
 	: Base(base)
 	, is_word(is_word)
+	, is_signed(is_signed)
 	{}
 
 std::vector<uint32_t> Semantics::Instruction::SubFrom::get_input_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1), static_cast<uint32_t>(is_word ? 4 : 1)}; }
@@ -5732,179 +5144,57 @@ std::vector<uint32_t> Semantics::Instruction::SubFrom::get_output_sizes() const 
 std::vector<uint32_t> Semantics::Instruction::SubFrom::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::SubFrom::emit(const std::vector<Storage> &storages) const {
-	// Check sizes.
-	if (Storage::get_sizes(storages) != get_all_sizes()) {
-		std::ostringstream sstr;
-		sstr << "Semantics::Instruction::SubFrom::emit: the number or sizes of storage units provided does not match what was expected.";
-		throw SemanticsError(sstr.str());
-	}
-	const Storage &left_source_storage  = storages[0];
-	const Storage &right_source_storage = storages[1];
-	const Storage &destination_storage  = storages[2];
+	Output::Line binary_operator;
 
-	// Prepare output vector.
-	std::vector<Output::Line> lines;
-
-	// Emit a symbol for this instruction if there is one.
-	if (has_symbol) {
-		lines.push_back({":", symbol});
-	}
-
-	// If !this->is_word, replace sw with sb and lw with lb.
-	//
-	// 4 storage types for destination:
-	// 	1: global_address + x  (Error.)
-	// 	2: x(global_address)   (Store into this address.)
-	// 	3: $reg                (Store into this register.)
-	// 	4: x($reg)             (Store into this dereferenced register.)
-	//
-	// 4 storage types for a source:
-	// 	1: global_address + x  (Read this address.)
-	// 	2: x(global_address)   (Read from this address.)
-	// 	3: $reg                (Read from this register.)
-	// 	4: x($reg)             (Read from this dereferenced register.)
-
-	Output::Line sized_load;
-	Output::Line sized_save;
-
-	if (is_word) {
-		sized_load = "\tlw    ";
-		sized_save = "\tsw    ";
+	if (!is_signed) {
+		binary_operator = "\tsubu  ";
 	} else {
-		sized_load = "\tlb    ";
-		sized_save = "\tsb    ";
+		binary_operator = "\tsub   ";
 	}
 
-	// Part 1: get left source address.
-	if           (left_source_storage.is_global_address()) {
-		lines.push_back("\tla    $t8, " + left_source_storage.global_address);
-		if (left_source_storage.offset != 0) {
-			lines.push_back("\tla    $t8, " + std::to_string(left_source_storage.offset) + "($t8)");
-		}
-	} else if    (left_source_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t8, " + left_source_storage.global_address);
-		lines.push_back("\tlw    $t8, " + std::to_string(left_source_storage.offset) + "($t8)");
-	} else if    (left_source_storage.is_register_direct()) {
-	} else {  // (left_source_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t8, " + std::to_string(left_source_storage.offset) + "(" + left_source_storage.register_ + ")");
-	}
-
-	// Part 2: load left source.
-	if (!left_source_storage.is_register_direct()) {
-		lines.push_back(sized_load + "$t8, ($t8)");
-	}
-
-	// Part 3: get right source address.
-	if           (right_source_storage.is_global_address()) {
-		lines.push_back("\tla    $t9, " + right_source_storage.global_address);
-		if (right_source_storage.offset != 0) {
-			lines.push_back("\tla    $t9, " + std::to_string(right_source_storage.offset) + "($t9)");
-		}
-	} else if    (right_source_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t9, " + right_source_storage.global_address);
-		lines.push_back("\tlw    $t9, " + std::to_string(right_source_storage.offset) + "($t9)");
-	} else if    (right_source_storage.is_register_direct()) {
-	} else {  // (right_source_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t9, " + std::to_string(right_source_storage.offset) + "(" + right_source_storage.register_ + ")");
-	}
-
-	// Part 4: load right source.
-	if (!right_source_storage.is_register_direct()) {
-		lines.push_back(sized_load + "$t9, ($t9)");
-	}
-
-	// Part 5: if both $t8 and $t9 are used, $t8 += $t9, to free $t9 for destination.
-	// If $t8 is free but $t9 is used, mark $t8 as being free.
-	std::string destination_address_register;
-	std::string sum_register;
-	if (left_source_storage.is_register_direct()) {
-		// $t8 is free.
-		destination_address_register = "$t8";
-		sum_register                 = "$t9";
-	} else {
-		// Make sure $t9 is free.
-		destination_address_register = "$t9";
-		sum_register                 = "$t8";
-		if (!(right_source_storage.is_register_direct())) {
-			lines.push_back("\tsubu  $t8, $t8, $t9");
-		}
-	}
-
-	// Part 6: get destination address.
-	if           (destination_storage.is_global_address()) {
-		lines.push_back("\tla    " + destination_address_register + ", " + destination_storage.global_address);
-		if (destination_storage.offset != 0) {
-			lines.push_back("\tla    " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_address_register + ")");
-		}
-	} else if    (destination_storage.is_global_dereference()) {
-		lines.push_back("\tla    " + destination_address_register + ", " + destination_storage.global_address);
-		lines.push_back("\tlw    " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_address_register + ")");
-	} else if    (destination_storage.is_register_direct()) {
-	} else {  // (destination_storage.is_register_dereference()) {
-		lines.push_back("\tla    " + destination_address_register + ", " + std::to_string(destination_storage.offset) + "(" + destination_storage.register_ + ")");
-	}
-
-	// Part 7: write destination.
-	if (destination_storage.is_register_direct()) {
-		if           ( left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back("\tsubu  " + destination_storage.register_ + ", " + left_source_storage.register_ + ", " + right_source_storage.register_);
-		} else if    ( left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			lines.push_back("\tsubu  " + destination_storage.register_ + ", " + left_source_storage.register_ + ", $t9");
-		} else if    (!left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back("\tsubu  " + destination_storage.register_ + ", $t8, " + right_source_storage.register_);
-		} else {  // (!left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			lines.push_back("\tsubu  " + destination_storage.register_ + ", $t8, $t9");
-		}
-	} else {
-		if           ( left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back("\tsubu  " + sum_register + ", " + left_source_storage.register_ + ", " + right_source_storage.register_);
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		} else if    ( left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			lines.push_back("\tsubu  " + sum_register + ", " + left_source_storage.register_ + ", $t9");
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		} else if    (!left_source_storage.is_register_direct() &&  right_source_storage.is_register_direct()) {
-			lines.push_back("\tsubu  " + sum_register + ", $t8, " + right_source_storage.register_);
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		} else {  // (!left_source_storage.is_register_direct() && !right_source_storage.is_register_direct()) {
-			// (Subtraction already performed before loading the address.)
-			lines.push_back(sized_save + sum_register + ", (" + destination_address_register + ")");
-		}
-	}
-
-	// Return the output.
-	return lines;
+	return emit_binary_operation(Instruction(*this), binary_operator, is_word, is_word, storages);
 }
 
 Semantics::Instruction::MultFrom::MultFrom()
 	{}
 
-Semantics::Instruction::MultFrom::MultFrom(const Base &base, bool is_word)
+Semantics::Instruction::MultFrom::MultFrom(const Base &base, bool is_word, bool ignore_hi, bool ignore_lo)
 	: Base(base)
 	, is_word(is_word)
+	, ignore_hi(ignore_hi)
+	, ignore_lo(ignore_lo)
 	{}
 
 std::vector<uint32_t> Semantics::Instruction::MultFrom::get_input_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1), static_cast<uint32_t>(is_word ? 4 : 1)}; }
 std::vector<uint32_t> Semantics::Instruction::MultFrom::get_working_sizes() const { return {}; }
-std::vector<uint32_t> Semantics::Instruction::MultFrom::get_output_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1), static_cast<uint32_t>(is_word ? 4 : 1)}; }
+std::vector<uint32_t> Semantics::Instruction::MultFrom::get_output_sizes() const { if (ignore_hi && ignore_lo) { return {}; } else if (ignore_hi != ignore_lo) { return {static_cast<uint32_t>(is_word ? 4 : 1)}; } else { return {static_cast<uint32_t>(is_word ? 4 : 1), static_cast<uint32_t>(is_word ? 4 : 1)}; } }
 std::vector<uint32_t> Semantics::Instruction::MultFrom::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::MultFrom::emit(const std::vector<Storage> &storages) const {
+	// Get operations and configuration.
+	const Instruction  instruction(*this);
+	const bool         is_save_word     = is_word;
+	const bool         is_load_word     = is_word;
+	const Output::Line binary_operation = "\tmult  ";
+
 	// Check sizes.
-	if (Storage::get_sizes(storages) != get_all_sizes()) {
+	if (Storage::get_sizes(storages) != instruction.get_all_sizes()) {
 		std::ostringstream sstr;
-		sstr << "Semantics::Instruction::MultFrom::emit: the number or sizes of storage units provided does not match what was expected.";
+		sstr << "Semantics::Instruction::MultFrom::emit: the number or sizes of storage units provided does not match what was expected for a(n) " << instruction.get_tag_repr() << " instruction.";
 		throw SemanticsError(sstr.str());
 	}
-	const Storage &left_source_storage       = storages[0];
-	const Storage &right_source_storage      = storages[1];
-	const Storage &left_destination_storage  = storages[2];
-	const Storage &right_destination_storage = storages[3];
+	std::vector<Storage>::size_type next_storage_index = 0;
+	Storage null_storage;
+	const Storage &left_source_storage       = storages[next_storage_index++];
+	const Storage &right_source_storage      = storages[next_storage_index++];
+	const Storage &left_destination_storage  = ignore_lo ? null_storage : storages[next_storage_index++];
+	const Storage &right_destination_storage = ignore_hi ? null_storage : storages[next_storage_index++];
 
 	// Prepare output vector.
 	std::vector<Output::Line> lines;
 
 	// Emit a symbol for this instruction if there is one.
-	if (has_symbol) {
+	if (instruction.get_base().has_symbol) {
 		lines.push_back({":", symbol});
 	}
 
@@ -5922,112 +5212,91 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::MultFrom::emit(cons
 	// 	3: $reg                (Read from this register.)
 	// 	4: x($reg)             (Read from this dereferenced register.)
 
-	Output::Line sized_load;
-	Output::Line sized_save;
+	// Get sized save and load operations.
+	Output::Line sized_save = is_save_word ? "\tsw    " : "\tsb    ";
+	Output::Line sized_load = is_save_word ? "\tlw    " : "\tlb    ";
 
-	if (is_word) {
-		sized_load = "\tlw    ";
-		sized_save = "\tsw    ";
-	} else {
-		sized_load = "\tlb    ";
-		sized_save = "\tsb    ";
-	}
-
-	// Part 1: get left source address.
-	if           (left_source_storage.is_global_address()) {
-		lines.push_back("\tla    $t8, " + left_source_storage.global_address);
-		if (left_source_storage.offset != 0) {
-			lines.push_back("\tla    $t8, " + std::to_string(left_source_storage.offset) + "($t8)");
-		}
-	} else if    (left_source_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t8, " + left_source_storage.global_address);
-		lines.push_back("\tlw    $t8, " + std::to_string(left_source_storage.offset) + "($t8)");
-	} else if    (left_source_storage.is_register_direct()) {
-	} else {  // (left_source_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t8, " + std::to_string(left_source_storage.offset) + "(" + left_source_storage.register_ + ")");
-	}
-
-	// Part 2: load left source.
-	if (!left_source_storage.is_register_direct()) {
-		lines.push_back(sized_load + "$t8, ($t8)");
-	}
-
-	// Part 3: get right source address.
-	if           (right_source_storage.is_global_address()) {
-		lines.push_back("\tla    $t9, " + right_source_storage.global_address);
+	// Part 1: load right_storage.
+	std::string right_register = "$t9";
+	bool is_t9_free            = false;
+	if        (right_source_storage.is_register_direct()) {
+		right_register = right_source_storage.register_;
+		is_t9_free     = true;
+	} else if (right_source_storage.is_register_dereference()) {
+		std::string offset_string = right_source_storage.offset == 0 ? "" : std::to_string(right_source_storage.offset);
+		lines.push_back(sized_load + right_register + ", " + offset_string + "(" + right_source_storage.register_ + ")");
+	} else if (right_source_storage.is_global_address()) {
+		lines.push_back("\tla    " + right_register + ", " + right_source_storage.global_address);
 		if (right_source_storage.offset != 0) {
-			lines.push_back("\tla    $t9, " + std::to_string(right_source_storage.offset) + "($t9)");
+			lines.push_back("\tla    " + right_register + ", " + std::to_string(right_source_storage.offset) + "(" + right_register + ")");
 		}
-	} else if    (right_source_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t9, " + right_source_storage.global_address);
-		lines.push_back("\tlw    $t9, " + std::to_string(right_source_storage.offset) + "($t9)");
-	} else if    (right_source_storage.is_register_direct()) {
-	} else {  // (right_source_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t9, " + std::to_string(right_source_storage.offset) + "(" + right_source_storage.register_ + ")");
+	} else { //right_source_storage.is_global_dereference)
+		lines.push_back("\tla    " + right_register + ", " + right_source_storage.global_address);
+		std::string offset_string = right_source_storage.offset == 0 ? "" : std::to_string(right_source_storage.offset);
+		lines.push_back(sized_load + "" + right_register + ", " + offset_string + "(" + right_register + ")");
 	}
 
-	// Part 4: load right source.
-	if (!right_source_storage.is_register_direct()) {
-		lines.push_back(sized_load + "$t9, ($t9)");
-	}
-
-	// Part 5: perform multiplication.
-	std::string left_source_register;
-	std::string right_source_register;
-	if (left_source_storage.is_register_direct()) {
-		left_source_register = left_source_storage.register_;
-	} else {
-		left_source_register = "$t8";
-	}
-	if (right_source_storage.is_register_direct()) {
-		right_source_register = right_source_storage.register_;
-	} else {
-		right_source_register = "$t9";
-	}
-	lines.push_back("\tmult  " + left_source_register + ", " + right_source_register);
-
-	// Part 6: get left destination address.
-	if           (left_destination_storage.is_global_address()) {
-		lines.push_back("\tla    $t8, " + left_destination_storage.global_address);
-		if (left_destination_storage.offset != 0) {
-			lines.push_back("\tla    $t8, " + std::to_string(left_destination_storage.offset) + "($t8)");
+	// Part 2: load left_storage.
+	std::string left_register = is_t9_free ? "$t9" : "$t8";
+	bool is_t8_free           = is_t9_free;
+	if        (left_source_storage.is_register_direct()) {
+		left_register = left_source_storage.register_;
+		is_t8_free    = true;
+	} else if (left_source_storage.is_register_dereference()) {
+		std::string offset_string = left_source_storage.offset == 0 ? "" : std::to_string(left_source_storage.offset);
+		lines.push_back(sized_load + left_register + ", " + offset_string + "(" + left_source_storage.register_ + ")");
+	} else if (left_source_storage.is_global_address()) {
+		lines.push_back("\tla    " + left_register + ", " + left_source_storage.global_address);
+		if (left_source_storage.offset != 0) {
+			lines.push_back("\tla    " + left_register + ", " + std::to_string(left_source_storage.offset) + "(" + left_register + ")");
 		}
-	} else if    (left_destination_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t8, " + left_destination_storage.global_address);
-		lines.push_back("\tlw    $t8, " + std::to_string(left_destination_storage.offset) + "($t8)");
-	} else if    (left_destination_storage.is_register_direct()) {
-	} else {  // (left_destination_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t8, " + std::to_string(left_destination_storage.offset) + "(" + left_destination_storage.register_ + ")");
+	} else { //left_source_storage.is_global_dereference)
+		lines.push_back("\tla    " + left_register + ", " + left_source_storage.global_address);
+		std::string offset_string = left_source_storage.offset == 0 ? "" : std::to_string(left_source_storage.offset);
+		lines.push_back(sized_load + "" + left_register + ", " + offset_string + "(" + left_register + ")");
 	}
 
-	// Part 7: save left destination.
-	if (!left_destination_storage.is_register_direct()) {
-		lines.push_back("\tmflo  $t9");
-		lines.push_back(sized_save + "$t9, ($t8)");
-	} else {
-		lines.push_back("\tmflo  " + left_destination_storage.register_);
-	}
+	// Part 3: perform the binary operation.
+	lines.push_back(binary_operation + left_register + ", " + right_register);
 
-	// Part 8: get right destination address.
-	if           (right_destination_storage.is_global_address()) {
-		lines.push_back("\tla    $t9, " + right_destination_storage.global_address);
-		if (right_destination_storage.offset != 0) {
-			lines.push_back("\tla    $t9, " + std::to_string(right_destination_storage.offset) + "($t9)");
+	// Part 4: write to the left destination.
+	if (!ignore_lo) {
+		if        (left_destination_storage.is_register_direct()) {
+			lines.push_back("\tmflo  " + left_destination_storage.register_);
+		} else if (left_destination_storage.is_register_dereference()) {
+			lines.push_back("\tmflo  $t9");
+			std::string offset_string = left_destination_storage.offset == 0 ? "" : std::to_string(left_destination_storage.offset);
+			lines.push_back(sized_save + "$t9" + ", " + offset_string + "(" + left_destination_storage.register_ + ")");
+		} else if (left_destination_storage.is_global_address()) {
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::MultFrom::emit: error: cannot save to a global address without dereferencing it.";
+			throw SemanticsError(sstr.str());
+		} else { //left_destination_storage.is_global_dereference)
+			lines.push_back("\tmflo  $t9");
+			lines.push_back("\tla    $t8, " + left_destination_storage.global_address);
+			std::string offset_string = left_destination_storage.offset == 0 ? "" : std::to_string(left_destination_storage.offset);
+			lines.push_back(sized_save + "$t9, " + offset_string + "($t8)");
 		}
-	} else if    (right_destination_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t9, " + right_destination_storage.global_address);
-		lines.push_back("\tlw    $t9, " + std::to_string(right_destination_storage.offset) + "($t9)");
-	} else if    (right_destination_storage.is_register_direct()) {
-	} else {  // (right_destination_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t9, " + std::to_string(right_destination_storage.offset) + "(" + right_destination_storage.register_ + ")");
 	}
 
-	// Part 9: save right destination.
-	if (!right_destination_storage.is_register_direct()) {
-		lines.push_back("\tmfhi  $t8");
-		lines.push_back(sized_save + "$t8, ($t9)");
-	} else {
-		lines.push_back("\tmfhi  " + right_destination_storage.register_);
+	// Part 5: write to the right destination.
+	if (!ignore_hi) {
+		if        (right_destination_storage.is_register_direct()) {
+			lines.push_back("\tmfhi  " + right_destination_storage.register_);
+		} else if (right_destination_storage.is_register_dereference()) {
+			lines.push_back("\tmfhi  $t9");
+			std::string offset_string = right_destination_storage.offset == 0 ? "" : std::to_string(left_destination_storage.offset);
+			lines.push_back(sized_save + "$t9" + ", " + offset_string + "(" + right_destination_storage.register_ + ")");
+		} else if (right_destination_storage.is_global_address()) {
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::MultFrom::emit: error: cannot save to a global address without dereferencing it.";
+			throw SemanticsError(sstr.str());
+		} else { //right_destination_storage.is_global_dereference)
+			lines.push_back("\tmfhi  $t9");
+			lines.push_back("\tla    $t8, " + right_destination_storage.global_address);
+			std::string offset_string = right_destination_storage.offset == 0 ? "" : std::to_string(left_destination_storage.offset);
+			lines.push_back(sized_save + "$t9, " + offset_string + "($t8)");
+		}
 	}
 
 	// Return the output.
@@ -6037,33 +5306,43 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::MultFrom::emit(cons
 Semantics::Instruction::DivFrom::DivFrom()
 	{}
 
-Semantics::Instruction::DivFrom::DivFrom(const Base &base, bool is_word)
+Semantics::Instruction::DivFrom::DivFrom(const Base &base, bool is_word, bool ignore_hi, bool ignore_lo)
 	: Base(base)
 	, is_word(is_word)
+	, ignore_hi(ignore_hi)
+	, ignore_lo(ignore_lo)
 	{}
 
 std::vector<uint32_t> Semantics::Instruction::DivFrom::get_input_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1), static_cast<uint32_t>(is_word ? 4 : 1)}; }
 std::vector<uint32_t> Semantics::Instruction::DivFrom::get_working_sizes() const { return {}; }
-std::vector<uint32_t> Semantics::Instruction::DivFrom::get_output_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1), static_cast<uint32_t>(is_word ? 4 : 1)}; }
+std::vector<uint32_t> Semantics::Instruction::DivFrom::get_output_sizes() const { if (ignore_hi && ignore_lo) { return {}; } else if (ignore_hi != ignore_lo) { return {static_cast<uint32_t>(is_word ? 4 : 1)}; } else { return {static_cast<uint32_t>(is_word ? 4 : 1), static_cast<uint32_t>(is_word ? 4 : 1)}; } }
 std::vector<uint32_t> Semantics::Instruction::DivFrom::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::DivFrom::emit(const std::vector<Storage> &storages) const {
+	// Get operations and configuration.
+	const Instruction  instruction(*this);
+	const bool         is_save_word     = is_word;
+	const bool         is_load_word     = is_word;
+	const Output::Line binary_operation = "\tdiv   ";
+
 	// Check sizes.
-	if (Storage::get_sizes(storages) != get_all_sizes()) {
+	if (Storage::get_sizes(storages) != instruction.get_all_sizes()) {
 		std::ostringstream sstr;
-		sstr << "Semantics::Instruction::DivFrom::emit: the number or sizes of storage units provided does not match what was expected.";
+		sstr << "Semantics::Instruction::DivFrom::emit: the number or sizes of storage units provided does not match what was expected for a(n) " << instruction.get_tag_repr() << " instruction.";
 		throw SemanticsError(sstr.str());
 	}
-	const Storage &left_source_storage       = storages[0];
-	const Storage &right_source_storage      = storages[1];
-	const Storage &left_destination_storage  = storages[2];
-	const Storage &right_destination_storage = storages[3];
+	std::vector<Storage>::size_type next_storage_index = 0;
+	Storage null_storage;
+	const Storage &left_source_storage       = storages[next_storage_index++];
+	const Storage &right_source_storage      = storages[next_storage_index++];
+	const Storage &left_destination_storage  = ignore_lo ? null_storage : storages[next_storage_index++];
+	const Storage &right_destination_storage = ignore_hi ? null_storage : storages[next_storage_index++];
 
 	// Prepare output vector.
 	std::vector<Output::Line> lines;
 
 	// Emit a symbol for this instruction if there is one.
-	if (has_symbol) {
+	if (instruction.get_base().has_symbol) {
 		lines.push_back({":", symbol});
 	}
 
@@ -6081,112 +5360,91 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::DivFrom::emit(const
 	// 	3: $reg                (Read from this register.)
 	// 	4: x($reg)             (Read from this dereferenced register.)
 
-	Output::Line sized_load;
-	Output::Line sized_save;
+	// Get sized save and load operations.
+	Output::Line sized_save = is_save_word ? "\tsw    " : "\tsb    ";
+	Output::Line sized_load = is_save_word ? "\tlw    " : "\tlb    ";
 
-	if (is_word) {
-		sized_load = "\tlw    ";
-		sized_save = "\tsw    ";
-	} else {
-		sized_load = "\tlb    ";
-		sized_save = "\tsb    ";
-	}
-
-	// Part 1: get left source address.
-	if           (left_source_storage.is_global_address()) {
-		lines.push_back("\tla    $t8, " + left_source_storage.global_address);
-		if (left_source_storage.offset != 0) {
-			lines.push_back("\tla    $t8, " + std::to_string(left_source_storage.offset) + "($t8)");
-		}
-	} else if    (left_source_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t8, " + left_source_storage.global_address);
-		lines.push_back("\tlw    $t8, " + std::to_string(left_source_storage.offset) + "($t8)");
-	} else if    (left_source_storage.is_register_direct()) {
-	} else {  // (left_source_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t8, " + std::to_string(left_source_storage.offset) + "(" + left_source_storage.register_ + ")");
-	}
-
-	// Part 2: load left source.
-	if (!left_source_storage.is_register_direct()) {
-		lines.push_back(sized_load + "$t8, ($t8)");
-	}
-
-	// Part 3: get right source address.
-	if           (right_source_storage.is_global_address()) {
-		lines.push_back("\tla    $t9, " + right_source_storage.global_address);
+	// Part 1: load right_storage.
+	std::string right_register = "$t9";
+	bool is_t9_free            = false;
+	if        (right_source_storage.is_register_direct()) {
+		right_register = right_source_storage.register_;
+		is_t9_free     = true;
+	} else if (right_source_storage.is_register_dereference()) {
+		std::string offset_string = right_source_storage.offset == 0 ? "" : std::to_string(right_source_storage.offset);
+		lines.push_back(sized_load + right_register + ", " + offset_string + "(" + right_source_storage.register_ + ")");
+	} else if (right_source_storage.is_global_address()) {
+		lines.push_back("\tla    " + right_register + ", " + right_source_storage.global_address);
 		if (right_source_storage.offset != 0) {
-			lines.push_back("\tla    $t9, " + std::to_string(right_source_storage.offset) + "($t9)");
+			lines.push_back("\tla    " + right_register + ", " + std::to_string(right_source_storage.offset) + "(" + right_register + ")");
 		}
-	} else if    (right_source_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t9, " + right_source_storage.global_address);
-		lines.push_back("\tlw    $t9, " + std::to_string(right_source_storage.offset) + "($t9)");
-	} else if    (right_source_storage.is_register_direct()) {
-	} else {  // (right_source_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t9, " + std::to_string(right_source_storage.offset) + "(" + right_source_storage.register_ + ")");
+	} else { //right_source_storage.is_global_dereference)
+		lines.push_back("\tla    " + right_register + ", " + right_source_storage.global_address);
+		std::string offset_string = right_source_storage.offset == 0 ? "" : std::to_string(right_source_storage.offset);
+		lines.push_back(sized_load + "" + right_register + ", " + offset_string + "(" + right_register + ")");
 	}
 
-	// Part 4: load right source.
-	if (!right_source_storage.is_register_direct()) {
-		lines.push_back(sized_load + "$t9, ($t9)");
-	}
-
-	// Part 5: perform division.
-	std::string left_source_register;
-	std::string right_source_register;
-	if (left_source_storage.is_register_direct()) {
-		left_source_register = left_source_storage.register_;
-	} else {
-		left_source_register = "$t8";
-	}
-	if (right_source_storage.is_register_direct()) {
-		right_source_register = right_source_storage.register_;
-	} else {
-		right_source_register = "$t9";
-	}
-	lines.push_back("\tdiv   " + left_source_register + ", " + right_source_register);
-
-	// Part 6: get left destination address.
-	if           (left_destination_storage.is_global_address()) {
-		lines.push_back("\tla    $t8, " + left_destination_storage.global_address);
-		if (left_destination_storage.offset != 0) {
-			lines.push_back("\tla    $t8, " + std::to_string(left_destination_storage.offset) + "($t8)");
+	// Part 2: load left_storage.
+	std::string left_register = is_t9_free ? "$t9" : "$t8";
+	bool is_t8_free           = is_t9_free;
+	if        (left_source_storage.is_register_direct()) {
+		left_register = left_source_storage.register_;
+		is_t8_free    = true;
+	} else if (left_source_storage.is_register_dereference()) {
+		std::string offset_string = left_source_storage.offset == 0 ? "" : std::to_string(left_source_storage.offset);
+		lines.push_back(sized_load + left_register + ", " + offset_string + "(" + left_source_storage.register_ + ")");
+	} else if (left_source_storage.is_global_address()) {
+		lines.push_back("\tla    " + left_register + ", " + left_source_storage.global_address);
+		if (left_source_storage.offset != 0) {
+			lines.push_back("\tla    " + left_register + ", " + std::to_string(left_source_storage.offset) + "(" + left_register + ")");
 		}
-	} else if    (left_destination_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t8, " + left_destination_storage.global_address);
-		lines.push_back("\tlw    $t8, " + std::to_string(left_destination_storage.offset) + "($t8)");
-	} else if    (left_destination_storage.is_register_direct()) {
-	} else {  // (left_destination_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t8, " + std::to_string(left_destination_storage.offset) + "(" + left_destination_storage.register_ + ")");
+	} else { //left_source_storage.is_global_dereference)
+		lines.push_back("\tla    " + left_register + ", " + left_source_storage.global_address);
+		std::string offset_string = left_source_storage.offset == 0 ? "" : std::to_string(left_source_storage.offset);
+		lines.push_back(sized_load + "" + left_register + ", " + offset_string + "(" + left_register + ")");
 	}
 
-	// Part 7: save left destination.
-	if (!left_destination_storage.is_register_direct()) {
-		lines.push_back("\tmflo  $t9");
-		lines.push_back(sized_save + "$t9, ($t8)");
-	} else {
-		lines.push_back("\tmflo  " + left_destination_storage.register_);
-	}
+	// Part 3: perform the binary operation.
+	lines.push_back(binary_operation + left_register + ", " + right_register);
 
-	// Part 8: get right destination address.
-	if           (right_destination_storage.is_global_address()) {
-		lines.push_back("\tla    $t9, " + right_destination_storage.global_address);
-		if (right_destination_storage.offset != 0) {
-			lines.push_back("\tla    $t9, " + std::to_string(right_destination_storage.offset) + "($t9)");
+	// Part 4: write to the left destination.
+	if (!ignore_lo) {
+		if        (left_destination_storage.is_register_direct()) {
+			lines.push_back("\tmflo  " + left_destination_storage.register_);
+		} else if (left_destination_storage.is_register_dereference()) {
+			lines.push_back("\tmflo  $t9");
+			std::string offset_string = left_destination_storage.offset == 0 ? "" : std::to_string(left_destination_storage.offset);
+			lines.push_back(sized_save + "$t9" + ", " + offset_string + "(" + left_destination_storage.register_ + ")");
+		} else if (left_destination_storage.is_global_address()) {
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::DivFrom::emit: error: cannot save to a global address without dereferencing it.";
+			throw SemanticsError(sstr.str());
+		} else { //left_destination_storage.is_global_dereference)
+			lines.push_back("\tmflo  $t9");
+			lines.push_back("\tla    $t8, " + left_destination_storage.global_address);
+			std::string offset_string = left_destination_storage.offset == 0 ? "" : std::to_string(left_destination_storage.offset);
+			lines.push_back(sized_save + "$t9, " + offset_string + "($t8)");
 		}
-	} else if    (right_destination_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t9, " + right_destination_storage.global_address);
-		lines.push_back("\tlw    $t9, " + std::to_string(right_destination_storage.offset) + "($t9)");
-	} else if    (right_destination_storage.is_register_direct()) {
-	} else {  // (right_destination_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t9, " + std::to_string(right_destination_storage.offset) + "(" + right_destination_storage.register_ + ")");
 	}
 
-	// Part 9: save right destination.
-	if (!right_destination_storage.is_register_direct()) {
-		lines.push_back("\tmfhi  $t8");
-		lines.push_back(sized_save + "$t8, ($t9)");
-	} else {
-		lines.push_back("\tmfhi  " + right_destination_storage.register_);
+	// Part 5: write to the right destination.
+	if (!ignore_hi) {
+		if        (right_destination_storage.is_register_direct()) {
+			lines.push_back("\tmfhi  " + right_destination_storage.register_);
+		} else if (right_destination_storage.is_register_dereference()) {
+			lines.push_back("\tmfhi  $t9");
+			std::string offset_string = right_destination_storage.offset == 0 ? "" : std::to_string(left_destination_storage.offset);
+			lines.push_back(sized_save + "$t9" + ", " + offset_string + "(" + right_destination_storage.register_ + ")");
+		} else if (right_destination_storage.is_global_address()) {
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::DivFrom::emit: error: cannot save to a global address without dereferencing it.";
+			throw SemanticsError(sstr.str());
+		} else { //right_destination_storage.is_global_dereference)
+			lines.push_back("\tmfhi  $t9");
+			lines.push_back("\tla    $t8, " + right_destination_storage.global_address);
+			std::string offset_string = right_destination_storage.offset == 0 ? "" : std::to_string(left_destination_storage.offset);
+			lines.push_back(sized_save + "$t9, " + offset_string + "($t8)");
+		}
 	}
 
 	// Return the output.

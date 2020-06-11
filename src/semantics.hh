@@ -772,6 +772,8 @@ public:
 		};
 		typedef enum tag_e tag_t;
 
+		static std::vector<Output::Line> emit_binary_operation(const Instruction &instruction, const Output::Line &binary_operation, bool is_save_word, bool is_word_load, const std::vector<Storage> &storages);
+
 		class Base {
 		public:
 			Base();
@@ -984,9 +986,11 @@ public:
 		class AddFrom : public Base {
 		public:
 			AddFrom();
-			AddFrom(const Base &base, bool is_word);
+			AddFrom(const Base &base, bool is_word, bool is_signed = false);
 			// | Are we loading a byte or a word?
 			bool is_word;
+			// | add or addu?
+			bool is_signed = false;
 
 			std::vector<uint32_t> get_input_sizes() const;
 			std::vector<uint32_t> get_working_sizes() const;
@@ -1000,9 +1004,11 @@ public:
 		class SubFrom : public Base {
 		public:
 			SubFrom();
-			SubFrom(const Base &base, bool is_word);
+			SubFrom(const Base &base, bool is_word, bool is_signed = false);
 			// | Are we loading a byte or a word?
 			bool is_word;
+			// | sub or subu?
+			bool is_signed = false;
 
 			std::vector<uint32_t> get_input_sizes() const;
 			std::vector<uint32_t> get_working_sizes() const;
@@ -1016,9 +1022,13 @@ public:
 		class MultFrom : public Base {
 		public:
 			MultFrom();
-			MultFrom(const Base &base, bool is_word);
+			MultFrom(const Base &base, bool is_word, bool ignore_hi = false, bool ignore_lo = false);
 			// | Are we loading a byte or a word?
 			bool is_word;
+			// | Ignore the upper 32 bits of the result?
+			bool ignore_hi = false;
+			// | Ignore the lower 32 bits of the result?
+			bool ignore_lo = false;
 
 			std::vector<uint32_t> get_input_sizes() const;
 			std::vector<uint32_t> get_working_sizes() const;
@@ -1028,13 +1038,17 @@ public:
 			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
 		};
 
-		// | Divide two storage units into two others: quotient, then remainder.
+		// | Divide two storage units into two others: quotient (Lo), then remainder (Hi).
 		class DivFrom : public Base {
 		public:
 			DivFrom();
-			DivFrom(const Base &base, bool is_word);
+			DivFrom(const Base &base, bool is_word, bool ignore_hi = false, bool ignore_lo = false);
 			// | Are we loading a byte or a word?
 			bool is_word;
+			// | Ignore the upper 32 bits of the result (remainder / Hi)?
+			bool ignore_hi = false;
+			// | Ignore the lower 32 bits of the result (quotient / Lo)?
+			bool ignore_lo = false;
 
 			std::vector<uint32_t> get_input_sizes() const;
 			std::vector<uint32_t> get_working_sizes() const;
