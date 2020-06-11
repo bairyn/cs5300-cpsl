@@ -718,9 +718,10 @@ public:
 		// | A collection of identifiers of constants available to the scope of the expression.
 		// Note: We don't record the identifier scope here.  There is only one
 		// identifier scope for each expression.
-		const IdentifierScope &expression_constant_scope
+		const IdentifierScope &expression_constant_scope,
+		const IdentifierScope &expression_var_scope
 	) const;
-	ConstantValue is_expression_constant(const ::Expression &expression, const IdentifierScope &expression_constant_scope) const;
+	ConstantValue is_expression_constant(const ::Expression &expression, const IdentifierScope &expression_constant_scope, const IdentifierScope &expression_var_scope) const;
 
 	// | From the parse tree Type, construct a Semantics::Type that represents the type.
 	//

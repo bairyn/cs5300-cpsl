@@ -2769,13 +2769,12 @@ void Semantics::set_grammar(Grammar &&grammar) {
 }
 
 // | Determine whether the expression in the grammar tree is a constant expression.
-//
-// TODO: this will work if the grammar parse tree is valid, but check for cycles in case there's a mistake somewhere.
 Semantics::ConstantValue Semantics::is_expression_constant(
 	// | Reference to the expression in the grammar tree.
 	uint64_t expression,
 	// | A collection of identifiers of constants available to the scope of the expression.
-	const IdentifierScope &expression_constant_scope
+	const IdentifierScope &expression_constant_scope,
+	const IdentifierScope &expression_var_scope
 ) const {
 	// TODO: assert() or assert(this->verify()) and configure macros to enable
 	// assertions only when debugging is enabled (DEBUG=1 is defined).
@@ -2805,12 +2804,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			// of evaluation is referentially transparent and the parser tree
 			// is left-recursive, check the expression on the right first,
 			// which is more efficient.)
-			ConstantValue right = is_expression_constant(pipe.expression1, expression_constant_scope);
+			ConstantValue right = is_expression_constant(pipe.expression1, expression_constant_scope, expression_var_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(pipe.expression0, expression_constant_scope);
+			ConstantValue left  = is_expression_constant(pipe.expression0, expression_constant_scope, expression_var_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -2869,12 +2868,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const ::Expression            &expression1         = grammar.expression_storage.at(ampersand.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(ampersand.expression1, expression_constant_scope);
+			ConstantValue right = is_expression_constant(ampersand.expression1, expression_constant_scope, expression_var_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(ampersand.expression0, expression_constant_scope);
+			ConstantValue left  = is_expression_constant(ampersand.expression0, expression_constant_scope, expression_var_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -2933,12 +2932,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const ::Expression         &expression1      = grammar.expression_storage.at(equals.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(equals.expression1, expression_constant_scope);
+			ConstantValue right = is_expression_constant(equals.expression1, expression_constant_scope, expression_var_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(equals.expression0, expression_constant_scope);
+			ConstantValue left  = is_expression_constant(equals.expression0, expression_constant_scope, expression_var_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -2987,12 +2986,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const ::Expression         &expression1        = grammar.expression_storage.at(lt_or_gt.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(lt_or_gt.expression1, expression_constant_scope);
+			ConstantValue right = is_expression_constant(lt_or_gt.expression1, expression_constant_scope, expression_var_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(lt_or_gt.expression0, expression_constant_scope);
+			ConstantValue left  = is_expression_constant(lt_or_gt.expression0, expression_constant_scope, expression_var_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -3041,12 +3040,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const ::Expression     &expression1  = grammar.expression_storage.at(le.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(le.expression1, expression_constant_scope);
+			ConstantValue right = is_expression_constant(le.expression1, expression_constant_scope, expression_var_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(le.expression0, expression_constant_scope);
+			ConstantValue left  = is_expression_constant(le.expression0, expression_constant_scope, expression_var_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -3095,12 +3094,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const ::Expression     &expression1  = grammar.expression_storage.at(ge.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(ge.expression1, expression_constant_scope);
+			ConstantValue right = is_expression_constant(ge.expression1, expression_constant_scope, expression_var_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(ge.expression0, expression_constant_scope);
+			ConstantValue left  = is_expression_constant(ge.expression0, expression_constant_scope, expression_var_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -3149,12 +3148,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const ::Expression     &expression1  = grammar.expression_storage.at(lt.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(lt.expression1, expression_constant_scope);
+			ConstantValue right = is_expression_constant(lt.expression1, expression_constant_scope, expression_var_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(lt.expression0, expression_constant_scope);
+			ConstantValue left  = is_expression_constant(lt.expression0, expression_constant_scope, expression_var_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -3203,12 +3202,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const ::Expression     &expression1  = grammar.expression_storage.at(gt.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(gt.expression1, expression_constant_scope);
+			ConstantValue right = is_expression_constant(gt.expression1, expression_constant_scope, expression_var_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(gt.expression0, expression_constant_scope);
+			ConstantValue left  = is_expression_constant(gt.expression0, expression_constant_scope, expression_var_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -3257,12 +3256,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const ::Expression       &expression1    = grammar.expression_storage.at(plus.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(plus.expression1, expression_constant_scope);
+			ConstantValue right = is_expression_constant(plus.expression1, expression_constant_scope, expression_var_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(plus.expression0, expression_constant_scope);
+			ConstantValue left  = is_expression_constant(plus.expression0, expression_constant_scope, expression_var_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -3341,12 +3340,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const ::Expression        &expression1     = grammar.expression_storage.at(minus.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(minus.expression1, expression_constant_scope);
+			ConstantValue right = is_expression_constant(minus.expression1, expression_constant_scope, expression_var_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(minus.expression0, expression_constant_scope);
+			ConstantValue left  = is_expression_constant(minus.expression0, expression_constant_scope, expression_var_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -3425,12 +3424,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const ::Expression        &expression1     = grammar.expression_storage.at(times.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(times.expression1, expression_constant_scope);
+			ConstantValue right = is_expression_constant(times.expression1, expression_constant_scope, expression_var_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(times.expression0, expression_constant_scope);
+			ConstantValue left  = is_expression_constant(times.expression0, expression_constant_scope, expression_var_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -3509,12 +3508,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const ::Expression        &expression1     = grammar.expression_storage.at(slash.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(slash.expression1, expression_constant_scope);
+			ConstantValue right = is_expression_constant(slash.expression1, expression_constant_scope, expression_var_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(slash.expression0, expression_constant_scope);
+			ConstantValue left  = is_expression_constant(slash.expression0, expression_constant_scope, expression_var_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -3613,12 +3612,12 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const ::Expression          &expression1       = grammar.expression_storage.at(percent.expression1); (void) expression1;
 
 			// Is either subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue right = is_expression_constant(percent.expression1, expression_constant_scope);
+			ConstantValue right = is_expression_constant(percent.expression1, expression_constant_scope, expression_var_scope);
 			if (right.is_dynamic()) {
 				expression_constant_value = right;
 				break;
 			}
-			ConstantValue left  = is_expression_constant(percent.expression0, expression_constant_scope);
+			ConstantValue left  = is_expression_constant(percent.expression0, expression_constant_scope, expression_var_scope);
 			if (left.is_dynamic()) {
 				expression_constant_value = left;
 				break;
@@ -3697,7 +3696,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const ::Expression        &expression0     = grammar.expression_storage.at(tilde.expression); (void) expression0;
 
 			// Is the subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue value = is_expression_constant(tilde.expression, expression_constant_scope);
+			ConstantValue value = is_expression_constant(tilde.expression, expression_constant_scope, expression_var_scope);
 			if (value.is_dynamic()) {
 				expression_constant_value = value;
 				break;
@@ -3740,7 +3739,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const ::Expression             &expression0     = grammar.expression_storage.at(unary_minus.expression); (void) expression0;
 
 			// Is the subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue value = is_expression_constant(unary_minus.expression, expression_constant_scope);
+			ConstantValue value = is_expression_constant(unary_minus.expression, expression_constant_scope, expression_var_scope);
 			if (value.is_dynamic()) {
 				expression_constant_value = value;
 				break;
@@ -3802,7 +3801,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			const LexemeOperator            &rightparenthesis_operator0 = grammar.lexemes.at(parentheses.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
 
 			// Is the subexpression dynamic?  If so, this expression is also dynamic.
-			ConstantValue value = is_expression_constant(parentheses.expression, expression_constant_scope);
+			ConstantValue value = is_expression_constant(parentheses.expression, expression_constant_scope, expression_var_scope);
 			if (value.is_dynamic()) {
 				expression_constant_value = value;
 				break;
@@ -3945,14 +3944,15 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 			}
 
 			// Lookup the identifier binding.
+			std::optional<IdentifierScope::IdentifierBinding> identifier_binding_var_search = expression_var_scope.lookup_copy(lexeme_identifier.text);
 			std::optional<IdentifierScope::IdentifierBinding> identifier_binding_search = expression_constant_scope.lookup_copy(lexeme_identifier.text);
-			if (!identifier_binding_search) {
+			if (!identifier_binding_search && !identifier_binding_var_search) {
 				std::ostringstream sstr;
 				sstr << "Semantics::is_expression_constant: error (line " << lexeme_identifier.line << " col " << lexeme_identifier.column << "): identifier out of scope when checking for constant lvalue: " << lexeme_identifier.text;
 				throw SemanticsError(sstr.str());
 			}
 
-			if (!identifier_binding_search->is_static()) {
+			if (!identifier_binding_search || !identifier_binding_search->is_static()) {
 				// The identifier does not refer to a constant expression.
 				expression_constant_value = ConstantValue(ConstantValue::Dynamic::dynamic, lvalue_symbol.identifier, lvalue_symbol.identifier + 1);
 				break;
@@ -3999,8 +3999,8 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 	return expression_constant_value;
 }
 
-Semantics::ConstantValue Semantics::is_expression_constant(const ::Expression &expression, const IdentifierScope &expression_constant_scope) const {
-	return is_expression_constant(&expression - &grammar.expression_storage[0], expression_constant_scope);
+Semantics::ConstantValue Semantics::is_expression_constant(const ::Expression &expression, const IdentifierScope &expression_constant_scope, const IdentifierScope &expression_var_scope) const {
+	return is_expression_constant(&expression - &grammar.expression_storage[0], expression_constant_scope, expression_var_scope);
 }
 
 // | From the parse tree Type, construct a Semantics::Type that represents the type.
@@ -4245,8 +4245,8 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 			}
 
 			// Get minimum and maximum indices.
-			ConstantValue min_index_value = is_expression_constant(expression0, type_constant_scope);
-			ConstantValue max_index_value = is_expression_constant(expression1, type_constant_scope);
+			ConstantValue min_index_value = is_expression_constant(expression0, type_constant_scope, {});
+			ConstantValue max_index_value = is_expression_constant(expression1, type_constant_scope, {});
 
 			// Make sure they're static (constant).
 			if (min_index_value.is_dynamic()) {
@@ -11526,7 +11526,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 	Expression expression_semantics;
 
 	// First, see if this expression is a constant value.
-	ConstantValue constant_value = is_expression_constant(expression_symbol, constant_scope);
+	ConstantValue constant_value = is_expression_constant(expression_symbol, constant_scope, var_scope);
 	if (constant_value.is_static()) {
 		expression_semantics.lexeme_begin = constant_value.lexeme_begin;
 		expression_semantics.lexeme_end   = constant_value.lexeme_end;
@@ -14149,7 +14149,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 				const LexemeOperator     &semicolon_operator0 = grammar.lexemes.at(next_constant_assignment->semicolon_operator0).get_operator(); (void) semicolon_operator0;
 
 				// Calculate the constant value.
-				ConstantValue constant_value = is_expression_constant(expression, local_constant_scope);
+				ConstantValue constant_value = is_expression_constant(expression, local_constant_scope, var_scope);
 
 				// Fail if this is not a static value.
 				if (!constant_value.is_static()) {
@@ -14841,7 +14841,7 @@ void Semantics::analyze() {
 				const LexemeOperator     &semicolon_operator0 = grammar.lexemes.at(next_constant_assignment->semicolon_operator0).get_operator(); (void) semicolon_operator0;
 
 				// Calculate the constant value.
-				ConstantValue constant_value = is_expression_constant(expression, top_level_constant_scope);
+				ConstantValue constant_value = is_expression_constant(expression, top_level_constant_scope, {});
 
 				// Fail if this is not a static value.
 				if (!constant_value.is_static()) {
