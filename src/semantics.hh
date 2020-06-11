@@ -3,6 +3,7 @@
 
 #include <cstdint>    // int32_t, uint32_t, uint64_t
 #include <map>        // std::map
+#include <memory>     // std::shared_ptr
 #include <optional>   // std::optional
 #include <set>        // std::set
 #include <string>     // std::string
@@ -280,12 +281,10 @@ public:
 		class Record : public Base {
 		public:
 			Record();
-			Record(const std::string &identifier, const std::vector<std::pair<std::string, const Type *>> &fields, IdentifierScope &anonymous_storage);
-			Record(const std::string &identifier, std::vector<std::pair<std::string, const Type *>> &&fields, IdentifierScope &anonymous_storage);
+			Record(const std::string &identifier, const std::vector<std::pair<std::string, const Type *>> &fields);
+			Record(const std::string &identifier, std::vector<std::pair<std::string, const Type *>> &&fields);
 			// | Ordered list of identifier, type pairs.
 			std::vector<std::pair<std::string, const Type *>> fields;
-			// | Storage of anonymous types used by this record.
-			IdentifierScope *anonymous_storage;
 
 			// | Used for comparison and equality checking.
 			std::vector<std::pair<std::string, Type>> get_dereferenced_fields() const;
@@ -302,13 +301,11 @@ public:
 		class Array : public Base {
 		public:
 			Array();
-			Array(const std::string &identifier, const Type &base_type, int32_t min_index, int32_t max_index, IdentifierScope &anonymous_storage);
+			Array(const std::string &identifier, const Type &base_type, int32_t min_index, int32_t max_index);
 
 			const Type *base_type;  // ^ This is an array of values of what type?
 			int32_t min_index;
 			int32_t max_index;
-			// | Storage of anonymous types used by this array.
-			IdentifierScope *anonymous_storage;
 
 			int32_t get_min_index() const;
 			int32_t get_max_index() const;
@@ -651,15 +648,15 @@ public:
 			tag_t  tag;
 			data_t data;
 
-			explicit IdentifierBinding(const Static &static_);
-			explicit IdentifierBinding(const Type &type);
-			explicit IdentifierBinding(const Var &var);
-			explicit IdentifierBinding(const RoutineDeclaration &ref);
+			IdentifierBinding(const Static &static_);
+			IdentifierBinding(const Type &type);
+			IdentifierBinding(const Var &var);
+			IdentifierBinding(const RoutineDeclaration &ref);
 
-			explicit IdentifierBinding(Static &&static_);
-			explicit IdentifierBinding(Type &&type);
-			explicit IdentifierBinding(Var &&var);
-			explicit IdentifierBinding(RoutineDeclaration &&ref);
+			IdentifierBinding(Static &&static_);
+			IdentifierBinding(Type &&type);
+			IdentifierBinding(Var &&var);
+			IdentifierBinding(RoutineDeclaration &&ref);
 
 			bool is_static() const;
 			bool is_type() const;
@@ -683,21 +680,26 @@ public:
 		};
 
 		IdentifierScope();
-		IdentifierScope(const std::map<std::string, IdentifierBinding> &scope);
-		IdentifierScope(std::map<std::string, IdentifierBinding> &&scope);
+		IdentifierScope(const std::map<std::string, std::vector<IdentifierBinding>::size_type>  &scope, const std::shared_ptr<std::vector<IdentifierBinding>>  &binding_storage);
+		IdentifierScope(const std::map<std::string, std::vector<IdentifierBinding>::size_type>  &scope,       std::shared_ptr<std::vector<IdentifierBinding>> &&binding_storage);
+		IdentifierScope(      std::map<std::string, std::vector<IdentifierBinding>::size_type> &&scope, const std::shared_ptr<std::vector<IdentifierBinding>>  &binding_storage);
+		IdentifierScope(      std::map<std::string, std::vector<IdentifierBinding>::size_type> &&scope,       std::shared_ptr<std::vector<IdentifierBinding>> &&binding_storage);
 
 		// | Identifier bindings mapped by identifier strings.
-		std::map<std::string, IdentifierBinding> scope;
-		// | Anonymous identifier bindings mapped by index.
-		std::vector<IdentifierBinding> anonymous_bindings;
+		std::map<std::string, std::vector<IdentifierBinding>::size_type> scope;
+		// | Storage of identifier bindings mapped by index.
+		std::shared_ptr<std::vector<IdentifierBinding>> binding_storage;
+
+		const IdentifierBinding &insert(const std::pair<std::string, IdentifierBinding> &pair);
+		const IdentifierBinding &insert(const std::string &pair, const IdentifierBinding &identifier_binding);
 
 		bool has(std::string identifier) const;
 
 		const IdentifierBinding  &get(std::string identifier) const;
-		IdentifierBinding       &&get(std::string identifier);
+		//IdentifierBinding       &&get(std::string identifier);
 
 		const IdentifierBinding  &operator[](std::string identifier) const;
-		IdentifierBinding       &&operator[](std::string identifier);
+		//IdentifierBinding       &&operator[](std::string identifier);
 
 		std::optional<IdentifierBinding> lookup_copy(std::string identifier) const;
 	};
@@ -735,7 +737,7 @@ public:
 	// The lifetimes of types should not exceed the lifetime of their
 	// referents, which are normally stored inside of the type_type_scope
 	// IdentifierScope passed to this method.
-	Type analyze_type(const std::string &identifier, const ::Type &type, const IdentifierScope &type_constant_scope, const IdentifierScope &type_type_scope, IdentifierScope &anonymous_storage);
+	Type analyze_type(const std::string &identifier, const ::Type &type, const IdentifierScope &type_constant_scope, const IdentifierScope &type_type_scope, IdentifierScope &storage_scope);
 
 	// | An intermediate unit representation of MIPS instructions.
 	//
@@ -1556,7 +1558,7 @@ public:
 	// | Analyze a routine definition.
 	//
 	// "analyze_block" but look for additional types, constants, and variables.
-	std::vector<Output::Line> analyze_routine(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const Body &body, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope);
+	std::vector<Output::Line> analyze_routine(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const Body &body, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, IdentifierScope &storage_scope);
 
 	// | Get the symbol to a string literal, tracking it if this is the first time encountering it.
 	Symbol string_literal(const std::string &string);
@@ -1610,7 +1612,7 @@ protected:
 	// | Union of top_level_*_scope.  If !combine_identifier_namespaces, the last identifier overrides.
 	IdentifierScope top_level_scope;
 	// | The lifetime of anonymous_storage should not exceed that of *_scope, since they may contain raw pointers into this storage.
-	IdentifierScope anonymous_storage;
+	IdentifierScope storage_scope;
 	std::set<std::string> routine_definitions;
 
 	// | Ordered copy of the Var identifier bindings in top_level_var_scope.

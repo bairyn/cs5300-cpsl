@@ -5,6 +5,7 @@
 #include <iomanip>       // std::fill, std::left, std::right, std::setw
 #include <ios>           // std::hex
 #include <limits>        // std::numeric_limits
+#include <memory>        // std::shared_ptr
 #include <optional>      // std::optional
 #include <set>           // std::set
 #include <sstream>       // std::ostringstream
@@ -897,13 +898,12 @@ inline bool Semantics::Type::Simple::operator!=(const Simple &other) const { ret
 Semantics::Type::Record::Record()
 	{}
 
-Semantics::Type::Record::Record(const std::string &identifier, const std::vector<std::pair<std::string, const Type *>> &fields, IdentifierScope &anonymous_storage)
-	: Record(identifier, std::move(std::vector<std::pair<std::string, const Type *>>(fields)), anonymous_storage)
+Semantics::Type::Record::Record(const std::string &identifier, const std::vector<std::pair<std::string, const Type *>> &fields)
+	: Record(identifier, std::move(std::vector<std::pair<std::string, const Type *>>(fields)))
 	{}
 
-Semantics::Type::Record::Record(const std::string &identifier, std::vector<std::pair<std::string, const Type *>> &&fields, IdentifierScope &anonymous_storage)
+Semantics::Type::Record::Record(const std::string &identifier, std::vector<std::pair<std::string, const Type *>> &&fields)
 	: fields(fields)
-	, anonymous_storage(&anonymous_storage)
 {
 	this->identifier = identifier;
 	fixed_width = true;
@@ -974,11 +974,10 @@ inline bool Semantics::Type::Record::operator!=(const Record &other) const { ret
 Semantics::Type::Array::Array()
 	{}
 
-Semantics::Type::Array::Array(const std::string &identifier, const Type &base_type, int32_t min_index, int32_t max_index, IdentifierScope &anonymous_storage)
+Semantics::Type::Array::Array(const std::string &identifier, const Type &base_type, int32_t min_index, int32_t max_index)
 	: base_type(&base_type)
 	, min_index(min_index)
 	, max_index(max_index)
-	, anonymous_storage(&anonymous_storage)
 {
 	this->identifier = identifier;
 	fixed_width = base_type.get_fixed_width();
@@ -2694,18 +2693,31 @@ std::string Semantics::IdentifierScope::IdentifierBinding::get_tag_repr() const 
 }
 
 Semantics::IdentifierScope::IdentifierScope()
-	{}
+{
+	binding_storage.reset(new std::vector<IdentifierBinding>());
+}
 
-Semantics::IdentifierScope::IdentifierScope(const std::map<std::string, IdentifierBinding> &scope)
-	: scope(scope)
-	{}
+Semantics::IdentifierScope::IdentifierScope(const std::map<std::string, std::vector<IdentifierBinding>::size_type>  &scope, const std::shared_ptr<std::vector<IdentifierBinding>>  &binding_storage)
+	: scope(          scope ), binding_storage(          binding_storage ) {}
+Semantics::IdentifierScope::IdentifierScope(const std::map<std::string, std::vector<IdentifierBinding>::size_type>  &scope,       std::shared_ptr<std::vector<IdentifierBinding>> &&binding_storage)
+	: scope(          scope ), binding_storage(std::move(binding_storage)) {}
+Semantics::IdentifierScope::IdentifierScope(      std::map<std::string, std::vector<IdentifierBinding>::size_type> &&scope, const std::shared_ptr<std::vector<IdentifierBinding>>  &binding_storage)
+	: scope(std::move(scope)), binding_storage(          binding_storage ) {}
+Semantics::IdentifierScope::IdentifierScope(      std::map<std::string, std::vector<IdentifierBinding>::size_type> &&scope,       std::shared_ptr<std::vector<IdentifierBinding>> &&binding_storage)
+	: scope(std::move(scope)), binding_storage(std::move(binding_storage)) {}
 
-Semantics::IdentifierScope::IdentifierScope(std::map<std::string, IdentifierBinding> &&scope)
-	: scope(std::move(scope))
-	{}
+const Semantics::IdentifierScope::IdentifierBinding &Semantics::IdentifierScope::insert(const std::pair<std::string, IdentifierBinding> &pair) {
+	const std::string       &identifier         = pair.first;
+	const IdentifierBinding &identifier_binding = pair.second;
+	scope.insert({identifier, binding_storage->size()});
+	binding_storage->push_back(identifier_binding);
+	return binding_storage->back();
+}
+
+const Semantics::IdentifierScope::IdentifierBinding &Semantics::IdentifierScope::insert(const std::string &identifier, const IdentifierBinding &identifier_binding) { return insert({identifier, identifier_binding}); }
 
 bool Semantics::IdentifierScope::has(std::string identifier) const {
-	std::map<std::string, IdentifierBinding>::const_iterator identifier_binding_search = scope.find(identifier);
+	std::map<std::string, std::vector<IdentifierBinding>::size_type>::const_iterator identifier_binding_search = scope.find(identifier);
 	if (identifier_binding_search == scope.cend()) {
 		return false;
 	} else {
@@ -2714,41 +2726,45 @@ bool Semantics::IdentifierScope::has(std::string identifier) const {
 }
 
 const Semantics::IdentifierScope::IdentifierBinding &Semantics::IdentifierScope::get(std::string identifier) const {
-	std::map<std::string, IdentifierBinding>::const_iterator identifier_binding_search = scope.find(identifier);
+	std::map<std::string, std::vector<IdentifierBinding>::size_type>::const_iterator identifier_binding_search = scope.find(identifier);
 	if (identifier_binding_search == scope.cend()) {
 		std::ostringstream sstr;
 		sstr << "Semantics::IdentifierScope::get: the identifier is missing from scope: " << identifier;
 		throw SemanticsError(sstr.str());
 	} else {
-		return identifier_binding_search->second;
+		return binding_storage->at(identifier_binding_search->second);
 	}
 }
 
+/*
 Semantics::IdentifierScope::IdentifierBinding &&Semantics::IdentifierScope::get(std::string identifier) {
-	std::map<std::string, IdentifierBinding>::iterator identifier_binding_search = scope.find(identifier);
+	std::map<std::string, std::vector<IdentifierBinding>::size_type>::iterator identifier_binding_search = scope.find(identifier);
 	if (identifier_binding_search == scope.end()) {
 		std::ostringstream sstr;
 		sstr << "Semantics::IdentifierScope::get: the identifier is missing from scope: " << identifier;
 		throw SemanticsError(sstr.str());
 	} else {
-		return std::move(identifier_binding_search->second);
+		return std::move(binding_storage->at(identifier_binding_search->second));
 	}
 }
+*/
 
 const Semantics::IdentifierScope::IdentifierBinding &Semantics::IdentifierScope::operator[](std::string identifier) const {
 	return get(identifier);
 }
 
+/*
 Semantics::IdentifierScope::IdentifierBinding &&Semantics::IdentifierScope::operator[](std::string identifier) {
 	return std::move(get(identifier));
 }
+*/
 
 std::optional<Semantics::IdentifierScope::IdentifierBinding> Semantics::IdentifierScope::lookup_copy(std::string identifier) const {
-	std::map<std::string, IdentifierBinding>::const_iterator identifier_binding_search = scope.find(identifier);
+	std::map<std::string, std::vector<IdentifierBinding>::size_type>::const_iterator identifier_binding_search = scope.find(identifier);
 	if (identifier_binding_search == scope.cend()) {
 		return std::optional<IdentifierBinding>();
 	} else {
-		return std::optional<IdentifierBinding>(std::move(IdentifierBinding(std::as_const(identifier_binding_search->second))));
+		return std::optional<IdentifierBinding>(std::move(IdentifierBinding(std::as_const(binding_storage->at(identifier_binding_search->second)))));
 	}
 }
 
@@ -4050,7 +4066,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(const ::Expression &e
 }
 
 // | From the parse tree Type, construct a Semantics::Type that represents the type.
-Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::Type &type, const IdentifierScope &type_constant_scope, const IdentifierScope &type_type_scope, IdentifierScope &anonymous_storage) {
+Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::Type &type, const IdentifierScope &type_constant_scope, const IdentifierScope &type_type_scope, IdentifierScope &storage_scope) {
 	switch (type.branch) {
 		case ::Type::simple_branch: {
 			// Unpack the simple_type.
@@ -4083,7 +4099,7 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 				throw SemanticsError(sstr.str());
 			}
 			// type_type_scope should only have Type identifier bindings.
-			const IdentifierScope::IdentifierBinding::Type &referent_binding = type_type_scope.get(simple_identifier.text).get_type();
+			const IdentifierScope::IdentifierBinding::Type &referent_binding = std::as_const(type_type_scope.get(simple_identifier.text)).get_type();
 			// The pointer's lifetime should not exceed the lifetime of the referent, normally inside the identifier scope.
 			const Type &referent = referent_binding;
 
@@ -4164,7 +4180,7 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 				const ::Type         &next_type           = grammar.type_storage.at(next_typed_identifier_sequence->type);
 				const LexemeOperator &semicolon_operator0 = grammar.lexemes.at(next_typed_identifier_sequence->semicolon_operator0).get_operator(); (void) semicolon_operator0;
 
-				// Get a copy of the subtype or construct a new anonymous subtype using "anonymous_storage".
+				// Get a copy of the subtype or construct a new anonymous subtype using "storage_scope".
 				const Type *next_semantics_type;
 				// Branch on next_type.  If it's in the "simple" type alias
 				// format, it should refer to an existing type, although it's
@@ -4189,9 +4205,8 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 					next_semantics_type = &type_type_scope.get(simple_identifier.text).get_type();
 				} else {
 					// Create an anonymous type.
-					Type anonymous_type = analyze_type("", next_type, type_constant_scope, type_type_scope, anonymous_storage);
-					anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(std::move(anonymous_type)));
-					next_semantics_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
+					Type anonymous_type = analyze_type("", next_type, type_constant_scope, type_type_scope, storage_scope);
+					next_semantics_type = &storage_scope.insert("", anonymous_type).get_type();
 				}
 
 				// Unpack the ident_list.
@@ -4259,7 +4274,7 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 			}
 
 			// Construct the Record type.
-			Type::Record semantics_record(identifier, fields, anonymous_storage);
+			Type::Record semantics_record(identifier, fields);
 
 			// Return the constructed record type.
 			return Type(semantics_record);
@@ -4350,7 +4365,7 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 				throw SemanticsError(sstr.str());
 			}
 
-			// Get a copy of the subtype or construct a new anonymous subtype using "anonymous_storage".
+			// Get a copy of the subtype or construct a new anonymous subtype using "storage_scope".
 			const Type *base_semantics_type;
 			// Branch on base_type.  If it's in the "simple" type alias
 			// format, it should refer to an existing type, although it's
@@ -4375,13 +4390,12 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 				base_semantics_type = &type_type_scope.get(simple_identifier.text).get_type();
 			} else {
 				// Create an anonymous type.
-				Type anonymous_type = analyze_type("", base_type, type_constant_scope, type_type_scope, anonymous_storage);
-				anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(std::move(anonymous_type)));
-				base_semantics_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
+				Type anonymous_type = analyze_type("", base_type, type_constant_scope, type_type_scope, storage_scope);
+				base_semantics_type = &storage_scope.insert("", anonymous_type).get_type();
 			}
 
 			// Construct the Array type.
-			Type::Array semantics_array(identifier, *base_semantics_type, min_index, max_index, anonymous_storage);
+			Type::Array semantics_array(identifier, *base_semantics_type, min_index, max_index);
 
 			// Return the constructed array type.
 			return Type(semantics_array);
@@ -12954,8 +12968,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 		if (parameter_index < 4) {
 			Storage parameter_storage("$a" + std::to_string(parameter_index));
 
-			local_var_scope.scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
-			local_combined_scope.scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
+			local_var_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
+			local_combined_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
 		} else {
 			if        (!all_arrays_records_are_refs && !parameter_is_ref && !parameter_type.resolve_type().is_primitive()) {
 				// TODO: copy arrays and records.
@@ -12978,8 +12992,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 				// Note: "no_sp_adjust" is "false" here, and "stack_allocated" and the $ra push is removed.
 				Storage parameter_storage(is_word ? 4 : 1, false, Symbol(), "$sp", true, stack_argument_total_size, false, false);
 
-				local_var_scope.scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
-				local_combined_scope.scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
+				local_var_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
+				local_combined_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
 			}
 		}
 	}
@@ -13055,8 +13069,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			const bool is_word = !local_variable_type.is_primitive() || local_variable_type.get_primitive().is_word();
 			available_temporary_registers.erase(std::as_const(temporary_register));
 			Storage temporary_storage(is_word ? 4 : 1, false, Symbol(), std::as_const(temporary_register), false, 0, true, true);
-			local_var_scope.scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, temporary_storage))});
-			local_combined_scope.scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, temporary_storage))});
+			local_var_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, temporary_storage))});
+			local_combined_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, temporary_storage))});
 		} else {
 			const uint32_t size = local_variable_type.get_size();
 			Storage stack_storage;
@@ -13066,8 +13080,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 				stack_storage = Storage(4, false, Symbol(), "$sp", false, stack_allocated, false, false);
 			}
 			stack_allocated += Instruction::AddSp::round_to_align(size);
-			local_var_scope.scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
-			local_combined_scope.scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
+			local_var_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
+			local_combined_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
 		}
 	}
 
@@ -13184,8 +13198,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			const bool is_word = !local_variable_type.is_primitive() || local_variable_type.get_primitive().is_word();
 			available_temporary_registers.erase(std::as_const(temporary_register));
 			Storage temporary_storage(is_word ? 4 : 1, false, Symbol(), std::as_const(temporary_register), false, 0, true, true);
-			local_var_scope.scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, temporary_storage))});
-			local_combined_scope.scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, temporary_storage))});
+			local_var_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, temporary_storage))});
+			local_combined_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, temporary_storage))});
 		} else {
 			const uint32_t size = local_variable_type.get_size();
 			Storage stack_storage;
@@ -13195,8 +13209,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 				stack_storage = Storage(4, false, Symbol(), "$sp", false, stack_allocated, false, false);
 			}
 			stack_allocated += Instruction::AddSp::round_to_align(size);
-			local_var_scope.scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
-			local_combined_scope.scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
+			local_var_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
+			local_combined_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
 		}
 	}
 
@@ -13348,7 +13362,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 // | Analyze a routine definition.
 //
 // "analyze_block" but look for additional types, constants, and variables.
-std::vector<Semantics::Output::Line> Semantics::analyze_routine(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const Body &body, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope) {
+std::vector<Semantics::Output::Line> Semantics::analyze_routine(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const Body &body, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, IdentifierScope &storage_scope) {
 	IdentifierScope local_constant_scope(constant_scope);
 	IdentifierScope local_type_scope(type_scope);
 	//IdentifierScope local_var_scope(var_scope);
@@ -13465,8 +13479,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 						;
 					throw SemanticsError(sstr.str());
 				}
-				local_constant_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Static(constant_value))});
-				local_combined_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Static(constant_value))});
+				local_constant_scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Static(constant_value))});
+				local_combined_scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Static(constant_value))});
 			}
 
 			// Done handling constant part.
@@ -13575,11 +13589,11 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 				}
 
 				// Calculate the type.
-				Type semantics_type = analyze_type(identifier.text, type, local_constant_scope, local_type_scope, anonymous_storage);
+				Type semantics_type = analyze_type(identifier.text, type, local_constant_scope, local_type_scope, storage_scope);
 
 				// Add this type to the local scope.
-				local_type_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(std::move(IdentifierScope::IdentifierBinding::Type(semantics_type)))});
-				local_combined_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(std::move(IdentifierScope::IdentifierBinding::Type(semantics_type)))});
+				local_type_scope.insert({identifier.text, IdentifierScope::IdentifierBinding(std::move(IdentifierScope::IdentifierBinding::Type(semantics_type)))});
+				local_combined_scope.insert({identifier.text, IdentifierScope::IdentifierBinding(std::move(IdentifierScope::IdentifierBinding::Type(semantics_type)))});
 			}
 
 			// Done handling type part.
@@ -13657,7 +13671,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 				const ::Type         &next_type           = grammar.type_storage.at(next_typed_identifier_sequence->type);
 				const LexemeOperator &semicolon_operator0 = grammar.lexemes.at(next_typed_identifier_sequence->semicolon_operator0).get_operator(); (void) semicolon_operator0;
 
-				// Get a copy of the subtype or construct a new anonymous subtype using "anonymous_storage".
+				// Get a copy of the subtype or construct a new anonymous subtype using "storage_scope".
 				const Type *next_semantics_type;
 				// Branch on next_type.  If it's in the "simple" type alias
 				// format, it should refer to an existing type, although it's
@@ -13682,9 +13696,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 					next_semantics_type = &local_type_scope.get(simple_identifier.text).get_type();
 				} else {
 					// Create an anonymous type.
-					Type anonymous_type = analyze_type("", next_type, local_constant_scope, local_type_scope, anonymous_storage);
-					anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(std::move(anonymous_type)));
-					next_semantics_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
+					Type anonymous_type = analyze_type("", next_type, local_constant_scope, local_type_scope, storage_scope);
+					next_semantics_type = &storage_scope.insert("", anonymous_type).get_type();
 				}
 
 				// Unpack the ident_list.
@@ -13968,7 +13981,7 @@ void Semantics::reset_output() {
 	top_level_routine_scope  = IdentifierScope();
 	top_level_type_scope     = IdentifierScope();
 	top_level_constant_scope = IdentifierScope();
-	anonymous_storage        = IdentifierScope();
+	storage_scope            = IdentifierScope();
 	top_level_vars.clear();
 	string_constants.clear();
 	routine_definitions.clear();
@@ -13979,41 +13992,41 @@ void Semantics::reset_output() {
 	using C = ConstantValue;
 	using T = Type;
 
-	top_level_constant_scope.scope.insert({"true", S::IdentifierBinding(C::true_constant)});
-	top_level_scope.scope.insert({"true", S::IdentifierBinding(C::true_constant)});
+	top_level_constant_scope.insert({"true", S::IdentifierBinding(C::true_constant)});
+	top_level_scope.insert({"true", S::IdentifierBinding(C::true_constant)});
 
-	top_level_constant_scope.scope.insert({"false", S::IdentifierBinding(C::false_constant)});
-	top_level_scope.scope.insert({"false", S::IdentifierBinding(C::false_constant)});
+	top_level_constant_scope.insert({"false", S::IdentifierBinding(C::false_constant)});
+	top_level_scope.insert({"false", S::IdentifierBinding(C::false_constant)});
 
-	top_level_constant_scope.scope.insert({"TRUE", S::IdentifierBinding(C::true_constant)});
-	top_level_scope.scope.insert({"TRUE", S::IdentifierBinding(C::true_constant)});
+	top_level_constant_scope.insert({"TRUE", S::IdentifierBinding(C::true_constant)});
+	top_level_scope.insert({"TRUE", S::IdentifierBinding(C::true_constant)});
 
-	top_level_constant_scope.scope.insert({"FALSE", S::IdentifierBinding(C::false_constant)});
-	top_level_scope.scope.insert({"FALSE", S::IdentifierBinding(C::false_constant)});
+	top_level_constant_scope.insert({"FALSE", S::IdentifierBinding(C::false_constant)});
+	top_level_scope.insert({"FALSE", S::IdentifierBinding(C::false_constant)});
 
-	top_level_type_scope.scope.insert({"integer", S::IdentifierBinding(T::integer_type)});
-	top_level_scope.scope.insert({"integer", S::IdentifierBinding(T::integer_type)});
+	top_level_type_scope.insert({"integer", S::IdentifierBinding(T::integer_type)});
+	top_level_scope.insert({"integer", S::IdentifierBinding(T::integer_type)});
 
-	top_level_type_scope.scope.insert({"char", S::IdentifierBinding(T::char_type)});
-	top_level_scope.scope.insert({"char", S::IdentifierBinding(T::char_type)});
+	top_level_type_scope.insert({"char", S::IdentifierBinding(T::char_type)});
+	top_level_scope.insert({"char", S::IdentifierBinding(T::char_type)});
 
-	top_level_type_scope.scope.insert({"boolean", S::IdentifierBinding(T::boolean_type)});
-	top_level_scope.scope.insert({"boolean", S::IdentifierBinding(T::boolean_type)});
+	top_level_type_scope.insert({"boolean", S::IdentifierBinding(T::boolean_type)});
+	top_level_scope.insert({"boolean", S::IdentifierBinding(T::boolean_type)});
 
-	top_level_type_scope.scope.insert({"string", S::IdentifierBinding(T::string_type)});
-	top_level_scope.scope.insert({"string", S::IdentifierBinding(T::string_type)});
+	top_level_type_scope.insert({"string", S::IdentifierBinding(T::string_type)});
+	top_level_scope.insert({"string", S::IdentifierBinding(T::string_type)});
 
-	top_level_type_scope.scope.insert({"INTEGER", S::IdentifierBinding(T::integer_type)});
-	top_level_scope.scope.insert({"INTEGER", S::IdentifierBinding(T::integer_type)});
+	top_level_type_scope.insert({"INTEGER", S::IdentifierBinding(T::integer_type)});
+	top_level_scope.insert({"INTEGER", S::IdentifierBinding(T::integer_type)});
 
-	top_level_type_scope.scope.insert({"CHAR", S::IdentifierBinding(T::char_type)});
-	top_level_scope.scope.insert({"CHAR", S::IdentifierBinding(T::char_type)});
+	top_level_type_scope.insert({"CHAR", S::IdentifierBinding(T::char_type)});
+	top_level_scope.insert({"CHAR", S::IdentifierBinding(T::char_type)});
 
-	top_level_type_scope.scope.insert({"BOOLEAN", S::IdentifierBinding(T::boolean_type)});
-	top_level_scope.scope.insert({"BOOLEAN", S::IdentifierBinding(T::boolean_type)});
+	top_level_type_scope.insert({"BOOLEAN", S::IdentifierBinding(T::boolean_type)});
+	top_level_scope.insert({"BOOLEAN", S::IdentifierBinding(T::boolean_type)});
 
-	top_level_type_scope.scope.insert({"STRING", S::IdentifierBinding(T::string_type)});
-	top_level_scope.scope.insert({"STRING", S::IdentifierBinding(T::string_type)});
+	top_level_type_scope.insert({"STRING", S::IdentifierBinding(T::string_type)});
+	top_level_scope.insert({"STRING", S::IdentifierBinding(T::string_type)});
 
 	for (Output::section_t section = Output::null_section; section <= Output::num_sections; section = static_cast<Output::section_t>(static_cast<int>(section) + 1)) {
 		output.sections.push_back(std::vector<std::string>());
@@ -14137,8 +14150,8 @@ void Semantics::analyze() {
 						;
 					throw SemanticsError(sstr.str());
 				}
-				top_level_constant_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Static(constant_value))});
-				top_level_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Static(constant_value))});
+				top_level_constant_scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Static(constant_value))});
+				top_level_scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Static(constant_value))});
 			}
 
 			// Done handling constant part.
@@ -14238,11 +14251,11 @@ void Semantics::analyze() {
 				}
 
 				// Calculate the type.
-				Type semantics_type = analyze_type(identifier.text, type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
+				Type semantics_type = analyze_type(identifier.text, type, top_level_constant_scope, top_level_type_scope, storage_scope);
 
 				// Add this type to the top-level scope.
-				top_level_type_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Type(semantics_type))});
-				top_level_scope.scope.insert({identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Type(semantics_type))});
+				top_level_type_scope.insert(identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Type(semantics_type)));
+				top_level_scope.insert(identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Type(semantics_type)));
 			}
 
 			// Done handling type part.
@@ -14319,7 +14332,7 @@ void Semantics::analyze() {
 				const ::Type         &next_type           = grammar.type_storage.at(next_typed_identifier_sequence->type);
 				const LexemeOperator &semicolon_operator0 = grammar.lexemes.at(next_typed_identifier_sequence->semicolon_operator0).get_operator(); (void) semicolon_operator0;
 
-				// Get a copy of the subtype or construct a new anonymous subtype using "anonymous_storage".
+				// Get a copy of the subtype or construct a new anonymous subtype using "storage_scope".
 				const Type *next_semantics_type;
 				// Branch on next_type.  If it's in the "simple" type alias
 				// format, it should refer to an existing type, although it's
@@ -14344,9 +14357,8 @@ void Semantics::analyze() {
 					next_semantics_type = &top_level_type_scope.get(simple_identifier.text).get_type();
 				} else {
 					// Create an anonymous type.
-					Type anonymous_type = analyze_type("", next_type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
-					anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(std::move(anonymous_type)));
-					next_semantics_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
+					Type anonymous_type = analyze_type("", next_type, top_level_constant_scope, top_level_type_scope, storage_scope);
+					next_semantics_type = &storage_scope.insert("", anonymous_type).get_type();
 				}
 
 				// Unpack the ident_list.
@@ -14441,8 +14453,8 @@ void Semantics::analyze() {
 					}
 					const IdentifierScope::IdentifierBinding::Var var(*next_semantics_type, var_storage);
 					top_level_vars.push_back(var);
-					top_level_var_scope.scope.insert({next_identifier_text, IdentifierScope::IdentifierBinding(var)});
-					top_level_scope.scope.insert({next_identifier_text, IdentifierScope::IdentifierBinding(var)});
+					top_level_var_scope.insert({next_identifier_text, IdentifierScope::IdentifierBinding(var)});
+					top_level_scope.insert({next_identifier_text, IdentifierScope::IdentifierBinding(var)});
 
 					// Global variable-width variables are currently unsupported.
 					if (!var.type->get_fixed_width()) {
@@ -14692,10 +14704,9 @@ void Semantics::analyze() {
 
 							// Get the type.
 							// Get the parameter type.
-							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
+							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope);
 							// Store a copy of this type in our anonymous type storage.
-							anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(std::move(temporary_type)));
-							const Type *parameter_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
+							const Type *parameter_type = &storage_scope.insert("", temporary_type).get_type();
 
 							// Unpack the ident_list.
 							const LexemeIdentifier       &first_identifier         = grammar.lexemes.at(ident_list.identifier).get_identifier();
@@ -14763,8 +14774,8 @@ void Semantics::analyze() {
 						Symbol routine_symbol("routine_", identifier.text, forward.identifier);
 						IdentifierScope::IdentifierBinding::RoutineDeclaration routine_declaration(routine_symbol, parameters, std::optional<const Type *>());
 						IdentifierScope::IdentifierBinding binding {routine_declaration};
-						top_level_routine_scope.scope.insert({identifier.text, binding});
-						top_level_scope.scope.insert({identifier.text, binding});
+						top_level_routine_scope.insert({identifier.text, binding});
+						top_level_scope.insert({identifier.text, binding});
 
 						// parameter_names is unused here.
 						(void) parameter_names;
@@ -14919,10 +14930,9 @@ void Semantics::analyze() {
 
 							// Get the type.
 							// Get the parameter type.
-							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
+							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope);
 							// Store a copy of this type in our anonymous type storage.
-							anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(std::move(temporary_type)));
-							const Type *parameter_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
+							const Type *parameter_type = &storage_scope.insert("", temporary_type).get_type();
 
 							// Unpack the ident_list.
 							const LexemeIdentifier       &first_identifier         = grammar.lexemes.at(ident_list.identifier).get_identifier();
@@ -14996,8 +15006,8 @@ void Semantics::analyze() {
 
 							// Add the routine declaration to scope.
 							IdentifierScope::IdentifierBinding binding {routine_declaration};
-							top_level_routine_scope.scope.insert({identifier.text, binding});
-							top_level_scope.scope.insert({identifier.text, binding});
+							top_level_routine_scope.insert({identifier.text, binding});
+							top_level_scope.insert({identifier.text, binding});
 							routine_definitions.insert(identifier.text);
 						} else {
 							// Check to make sure the formal parameters in the
@@ -15022,7 +15032,7 @@ void Semantics::analyze() {
 
 						// Emit function definition.
 						std::vector<Output::Line> routine_definition_lines;
-						routine_definition_lines = analyze_routine(routine_declaration, parameter_names, body, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope);
+						routine_definition_lines = analyze_routine(routine_declaration, parameter_names, body, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope, storage_scope);
 						output.add_line(Output::text_section, ":", routine_symbol);
 						output.add_lines(Output::text_section, routine_definition_lines);
 						output.add_line(Output::text_section, "");
@@ -15091,10 +15101,9 @@ void Semantics::analyze() {
 						}
 
 						// Get the output type.
-						Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
+						Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope);
 						// Store a copy of this type in our anonymous type storage.
-						anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(std::move(temporary_type)));
-						const Type *output_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
+						const Type *output_type = &storage_scope.insert("", temporary_type).get_type();
 
 						// Collect the formal parameters in the list.
 						std::vector<const FormalParameter *> formal_parameter_collection;
@@ -15196,10 +15205,9 @@ void Semantics::analyze() {
 
 							// Get the type.
 							// Get the parameter type.
-							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
+							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope);
 							// Store a copy of this type in our anonymous type storage.
-							anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(std::move(temporary_type)));
-							const Type *parameter_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
+							const Type *parameter_type = &storage_scope.insert("", temporary_type).get_type();
 
 							// Unpack the ident_list.
 							const LexemeIdentifier       &first_identifier         = grammar.lexemes.at(ident_list.identifier).get_identifier();
@@ -15267,8 +15275,8 @@ void Semantics::analyze() {
 						Symbol routine_symbol("routine_", identifier.text, forward.identifier);
 						IdentifierScope::IdentifierBinding::RoutineDeclaration routine_declaration(routine_symbol, parameters, std::optional<const Type *>(output_type));
 						IdentifierScope::IdentifierBinding binding {routine_declaration};
-						top_level_routine_scope.scope.insert({identifier.text, binding});
-						top_level_scope.scope.insert({identifier.text, binding});
+						top_level_routine_scope.insert({identifier.text, binding});
+						top_level_scope.insert({identifier.text, binding});
 
 						// parameter_names is unused here.
 						(void) parameter_names;
@@ -15326,10 +15334,9 @@ void Semantics::analyze() {
 						}
 
 						// Get the output type.
-						Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
+						Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope);
 						// Store a copy of this type in our anonymous type storage.
-						anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(std::move(temporary_type)));
-						const Type *output_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
+						const Type *output_type = &storage_scope.insert("", temporary_type).get_type();
 
 						// Collect the formal parameters in the list.
 						std::vector<const FormalParameter *> formal_parameter_collection;
@@ -15431,10 +15438,9 @@ void Semantics::analyze() {
 
 							// Get the type.
 							// Get the parameter type.
-							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, anonymous_storage);
+							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope);
 							// Store a copy of this type in our anonymous type storage.
-							anonymous_storage.anonymous_bindings.push_back(IdentifierScope::IdentifierBinding(std::move(temporary_type)));
-							const Type *parameter_type = &anonymous_storage.anonymous_bindings[anonymous_storage.anonymous_bindings.size() - 1].get_type();
+							const Type *parameter_type = &storage_scope.insert("", temporary_type).get_type();
 
 							// Unpack the ident_list.
 							const LexemeIdentifier       &first_identifier         = grammar.lexemes.at(ident_list.identifier).get_identifier();
@@ -15508,8 +15514,8 @@ void Semantics::analyze() {
 
 							// Add the routine declaration to scope.
 							IdentifierScope::IdentifierBinding binding {routine_declaration};
-							top_level_routine_scope.scope.insert({identifier.text, binding});
-							top_level_scope.scope.insert({identifier.text, binding});
+							top_level_routine_scope.insert({identifier.text, binding});
+							top_level_scope.insert({identifier.text, binding});
 							routine_definitions.insert(identifier.text);
 						} else {
 							// Check to make sure the formal parameters in the
@@ -15534,7 +15540,7 @@ void Semantics::analyze() {
 
 						// Emit function definition.
 						std::vector<Output::Line> routine_definition_lines;
-						routine_definition_lines = analyze_routine(routine_declaration, parameter_names, body, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope);
+						routine_definition_lines = analyze_routine(routine_declaration, parameter_names, body, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope, storage_scope);
 						output.add_line(Output::text_section, ":", routine_symbol);
 						output.add_lines(Output::text_section, routine_definition_lines);
 						output.add_line(Output::text_section, "");
@@ -15568,9 +15574,8 @@ void Semantics::analyze() {
 	if (top_level_routine_scope.scope.size() != routine_definitions.size()) {
 		std::ostringstream sstr;
 		sstr << "Semantics::analyze: error: there are forward function or procedure declarations that are missing definitions:";
-		for (const std::map<std::string, IdentifierScope::IdentifierBinding>::value_type &binding_pair : std::as_const(top_level_routine_scope.scope)) {
+		for (const std::map<std::string, std::vector<IdentifierScope::IdentifierBinding>::size_type>::value_type &binding_pair : std::as_const(top_level_routine_scope.scope)) {
 			const std::string                        &identifier = binding_pair.first;
-			const IdentifierScope::IdentifierBinding &binding    = binding_pair.second; (void) binding;
 
 			if (routine_definitions.find(identifier) == routine_definitions.cend()) {
 				sstr << std::endl << "\t- " << identifier;
