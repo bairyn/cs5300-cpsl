@@ -13808,6 +13808,19 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 	IdentifierScope local_var_scope(var_scope);
 	IdentifierScope local_combined_scope(combined_scope);
 
+	// Ensure routine_declaration.parameters has the same length as parameter_identifiers.
+	if (routine_declaration.parameters.size() != parameter_identifiers.size()) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::analyze_block: internal error: routine_declaration.parameters with length "
+			<< routine_declaration.parameters.size()
+			<< " has a different length than parameter_identifiers with length "
+			<< parameter_identifiers.size()
+			<< "."
+			;
+		throw SemanticsError(sstr.str());
+	}
+
 	// Get cleanup symbol.
 	const Symbol cleanup_symbol(routine_declaration.location.prefix, routine_declaration.location.requested_suffix + "_cleanup", routine_declaration.location.unique_identifier);
 
@@ -14050,7 +14063,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 
 	// Allocate space on the stack.  Bypass AddSp's Storage adjustments since we're manually setting $sp so that our Storages are correct, by using a Custom instruction.
 	if (stack_allocated > 0) {
-		last_intro_index     = block_semantics.instructions.add_instruction({I::Custom(B(), {"\taddiu $sp, $sp, " + std::to_string(-stack_allocated)})}, {}, last_intro_index);
+		last_intro_index     = block_semantics.instructions.add_instruction({I::Custom(B(), {"\taddiu $sp, $sp, -" + std::to_string(stack_allocated)})}, {}, last_intro_index);
 	}
 
 	// Reverse what intro did.
