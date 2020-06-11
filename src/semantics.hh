@@ -392,6 +392,7 @@ public:
 		// | Return "primitive", "simple", "record", or "array".
 		static std::string get_tag_repr(tag_t tag);
 		std::string get_tag_repr() const;
+		std::string get_repr() const;
 
 		// | If this is a type alias, resolve the type to get the base type;
 		// otherwise, just return this type.

@@ -1451,13 +1451,55 @@ std::string Semantics::Type::get_tag_repr(tag_t tag) {
 		case null_tag:
 		default:
 			std::ostringstream sstr;
-			sstr << "Semantics::ConstantValue::get_tag_repr: invalid tag: " << tag;
+			sstr << "Semantics::Type::get_tag_repr: invalid tag: " << tag;
 			throw SemanticsError(sstr.str());
 	}
 }
 
 std::string Semantics::Type::get_tag_repr() const {
 	return get_tag_repr(tag);
+}
+
+std::string Semantics::Type::get_repr() const {
+	std::ostringstream sstr;
+	const Type::Base &base = get_base();
+	if (base.identifier.size() > 0) {
+		sstr << "(" << base.identifier << ") ";
+	}
+	if (!base.fixed_width) {
+		sstr << "variable-width ";
+	} else {
+		sstr << base.size << "-byte ";
+	}
+	if        (is_primitive()) {
+		sstr << "primitive ";
+		const Type::Primitive &primitive_type = get_primitive();
+		if        (primitive_type.is_integer()) {
+			sstr << "integer";
+		} else if (primitive_type.is_char()) {
+			sstr << "char";
+		} else if (primitive_type.is_boolean()) {
+			sstr << "boolean";
+		} else if (primitive_type.is_string()) {
+			sstr << "string";
+		} else {
+			sstr << "unknown";
+		}
+	} else if (is_simple()) {
+		sstr << "alias ultimately resolving to ";
+		const Type &resolved_type = resolve_type();
+		sstr << resolved_type.get_repr();
+	} else if (is_record()) {
+		sstr << "record";
+	} else if (is_array()) {
+		sstr << "array of [";
+		const Type &base_type = *get_array().base_type;
+		sstr << base_type.get_repr();
+		sstr << "]";
+	} else {
+	}
+	std::string repr = sstr.str();
+	return repr;
 }
 
 // | If this is a type alias, resolve the type to get the base type;
@@ -13631,7 +13673,8 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 					sstr
 						<< "Semantics::analyze_statements: error (line "
 						<< lvalue_source_analysis.lvalue_identifier->line << " col " << lvalue_source_analysis.lvalue_identifier->column
-						<< "): assignment from an expression of one type into a variable of a different type."
+						<< "): assignment from an expression of one type into a variable of a different type, for "
+						<< "<" << lvalue_source_analysis.lvalue_type->get_repr() << "> := <" << value.output_type.get_repr() << ">"
 						;
 					throw SemanticsError(sstr.str());
 				}
