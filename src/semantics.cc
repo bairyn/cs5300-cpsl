@@ -5912,7 +5912,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::MultFrom::emit(cons
 	const Storage &left_source_storage       = storages[0];
 	const Storage &right_source_storage      = storages[1];
 	const Storage &left_destination_storage  = storages[2];
-	const Storage &right_destination_storage = storages[2];
+	const Storage &right_destination_storage = storages[3];
 
 	// Prepare output vector.
 	std::vector<Output::Line> lines;
@@ -6071,7 +6071,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::DivFrom::emit(const
 	const Storage &left_source_storage       = storages[0];
 	const Storage &right_source_storage      = storages[1];
 	const Storage &left_destination_storage  = storages[2];
-	const Storage &right_destination_storage = storages[2];
+	const Storage &right_destination_storage = storages[3];
 
 	// Prepare output vector.
 	std::vector<Output::Line> lines;
