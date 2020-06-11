@@ -5998,7 +5998,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::MultFrom::emit(cons
 	} else {
 		right_source_register = "$t9";
 	}
-	lines.push_back("\tmult " + left_source_register + ", " + right_source_register);
+	lines.push_back("\tmult  " + left_source_register + ", " + right_source_register);
 
 	// Part 6: get left destination address.
 	if           (left_destination_storage.is_global_address()) {
@@ -11072,8 +11072,12 @@ void Semantics::MIPSIO::add_connection(IO output, IO input) {
 }
 
 // | Right after "before" is emitted, emit "after"'s unemitted children and then "after".
-void Semantics::MIPSIO::add_sequence_connection(Index before, Index after) {
+void Semantics::MIPSIO::add_sequence_connection(Index before, Index after, bool recursive) {
 	if (sequences.find(before) != sequences.cend()) {
+		if (recursive) {
+			return add_sequence_connection(sequences.at(before), after, recursive);
+		}
+
 		std::ostringstream sstr;
 		sstr
 			<< "Semantics::MIPSIO::add_sequence_connection: error: attempt to add a sequence connection to a \"before\" instruction that already has a connection to an \"after\" instruction that should be emitted (after \"after\"'s unemitted children if any) right after \"before\" is emitted." << std::endl
@@ -11083,9 +11087,11 @@ void Semantics::MIPSIO::add_sequence_connection(Index before, Index after) {
 		throw SemanticsError(sstr.str());
 	}
 
-	sequences.insert({before, after});
-
 	if (reversed_sequences.find(after) != reversed_sequences.cend()) {
+		if (recursive) {
+			return add_sequence_connection(before, reversed_sequences.at(after), recursive);
+		}
+
 		std::ostringstream sstr;
 		sstr
 			<< "Semantics::MIPSIO::add_sequence_connection: error: attempt to add a sequence connection to an \"after\" instruction that already has a connection to a \"before\" instruction connected to it." << std::endl
@@ -11095,20 +11101,21 @@ void Semantics::MIPSIO::add_sequence_connection(Index before, Index after) {
 		throw SemanticsError(sstr.str());
 	}
 
+	sequences.insert({before, after});
 	reversed_sequences.insert({after, before});
 }
 
-void Semantics::MIPSIO::add_sequence_connection(std::pair<Index, Index> before_after) {
-	return add_sequence_connection(before_after.first, before_after.second);
+void Semantics::MIPSIO::add_sequence_connection(std::pair<Index, Index> before_after, bool recursive) {
+	return add_sequence_connection(before_after.first, before_after.second, recursive);
 }
 
-void Semantics::MIPSIO::add_sequence_connections(const std::vector<std::pair<Index, Index>> before_afters) {
+void Semantics::MIPSIO::add_sequence_connections(const std::vector<std::pair<Index, Index>> before_afters, bool recursive) {
 	for (const std::pair<Index, Index> &before_after : std::as_const(before_afters)) {
-		add_sequence_connection(before_after);
+		add_sequence_connection(before_after, recursive);
 	}
 }
 
-void Semantics::MIPSIO::add_sequence_connections(const std::vector<Index> befores, const std::vector<Index> afters) {
+void Semantics::MIPSIO::add_sequence_connections(const std::vector<Index> befores, const std::vector<Index> afters, bool recursive) {
 	if (befores.size() != afters.size()) {
 		std::ostringstream sstr;
 		sstr
@@ -11122,7 +11129,7 @@ void Semantics::MIPSIO::add_sequence_connections(const std::vector<Index> before
 	for (std::vector<Index>::size_type befores_afters_index = 0; befores_afters_index < befores.size(); ++befores_afters_index) {
 		const Index &before = befores[befores_afters_index];
 		const Index &after  = afters[befores_afters_index];
-		add_sequence_connection(before, after);
+		add_sequence_connection(before, after, recursive);
 	}
 }
 

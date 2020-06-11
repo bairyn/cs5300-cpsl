@@ -796,9 +796,9 @@ public:
 		public:
 			Ignore();
 			Ignore(const Base &base, bool has_input = true, bool is_word = true);
-			bool has_input;
+			bool has_input = true;
 			// | Are we loading a byte or a word?
-			bool is_word;
+			bool is_word = true;
 
 			std::vector<uint32_t> get_input_sizes() const;
 			std::vector<uint32_t> get_working_sizes() const;
@@ -1381,10 +1381,10 @@ public:
 		// | Set "output"'s given output as "input"'s given input.
 		void add_connection(IO output, IO input);
 		// | Right after "before" is emitted, emit "after"'s unemitted children and then "after".
-		void add_sequence_connection(Index before, Index after);
-		void add_sequence_connection(std::pair<Index, Index> before_after);
-		void add_sequence_connections(const std::vector<std::pair<Index, Index>> before_afters);
-		void add_sequence_connections(const std::vector<Index> befores, const std::vector<Index> afters);
+		void add_sequence_connection(Index before, Index after, bool recursive = true);
+		void add_sequence_connection(std::pair<Index, Index> before_after, bool recursive = true);
+		void add_sequence_connections(const std::vector<std::pair<Index, Index>> before_afters, bool recursive = true);
+		void add_sequence_connections(const std::vector<Index> befores, const std::vector<Index> afters, bool recursive = true);
 		// | Add "other"'s instructions to this; any indices returned from
 		// "add_instruction" into "other" (but not "this") must be added by the
 		// returned value to remain correct.
