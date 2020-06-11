@@ -13820,6 +13820,12 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 		throw SemanticsError(sstr.str());
 	}
 
+	// Put parameter_identifiers in a set for lookup.
+	std::set<std::string> in_parameter_identifiers;
+	for (const std::string &parameter_identifier : std::as_const(parameter_identifiers)) {
+		in_parameter_identifiers.insert(parameter_identifier);
+	}
+
 	// Get cleanup symbol.
 	const Symbol cleanup_symbol(routine_declaration.location.prefix, routine_declaration.location.requested_suffix + "_cleanup", routine_declaration.location.unique_identifier);
 
@@ -13839,23 +13845,103 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 	};
 	std::set<std::string> available_temporary_registers(temporary_registers);
 
-	// Analyze the statements in the block.
-	Block block_semantics = analyze_statements(routine_declaration, statement_sequence, constant_scope, type_scope, routine_scope, local_var_scope, local_combined_scope, cleanup_symbol);
-
-	// Make sure front and back are valid by making sure there is at least one instruction.
-	if (block_semantics.instructions.instructions.size() <= 0) {
-		block_semantics.front = block_semantics.back = block_semantics.instructions.add_instruction({I::Ignore(B(), false, false)});
-	}
-
-	// Get working storage requirements.
-	std::pair<std::vector<uint32_t>, std::vector<uint64_t>> prepare_permutation = block_semantics.instructions.prepare_permutation(std::set<IO>(), {block_semantics.back});
-	const std::vector<uint32_t> &working_storage_requirements = prepare_permutation.first;
-	const std::vector<uint64_t> &permutation                  = prepare_permutation.second;
-
 	// Assign variables and working storage units to Storages and allocate
 	// sufficient space on the stack.
 	uint32_t stack_allocated = 0;
-	for (const std::pair<std::string, const Type *> &local_variable : std::as_const(block_semantics.local_variables)) {
+
+	// Commented out: these are already copied on a call!  Instead, just add a binding to the appropriate storage.  We do that here.
+#if 0
+	// Normally, we'd handle parameters here, but calculate other sizes first.
+#endif /* #if 0 */
+	// Handle parameters.
+	uint32_t stack_argument_total_size = 0;
+	for (const std::pair<bool, const Type *> &parameter : std::as_const(routine_declaration.parameters)) {
+		const std::vector<std::pair<bool, const Type *>>::size_type   parameter_index      = &parameter - &routine_declaration.parameters[0];
+		const std::string                                            &parameter_identifier = parameter_identifiers[parameter_index];
+
+		const bool  parameter_is_ref = parameter.first;
+		const Type &parameter_type   = *parameter.second;
+
+		// Fail if the parameter type is not fixed width.
+		if (!parameter_type.get_fixed_width()) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::analyze_block: error: parameter ``"
+				<< parameter_identifier
+				<< "\" has a non-fixed-width size in function or procedure with requested symbol suffix ``"
+				<< routine_declaration.location.requested_suffix
+				<< "\"; non-fixed-width size parameters are currently unsupported."
+				;
+			throw SemanticsError(sstr.str());
+		}
+
+		// Make sure this variable doesn't shadow any top-level variables.
+		//
+		// (This check can safely be disabled if enabling shadowing.)
+		if (!permit_shadowing && var_scope.has(parameter_identifier)) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::analyze_block: error: parameter ``"
+				<< parameter_identifier
+				<< "\" would shadow a top-level variable in function or procedure with requested symbol suffix ``"
+				<< routine_declaration.location.requested_suffix
+				<< "\"."
+				;
+			throw SemanticsError(sstr.str());
+		}
+
+		// Make sure this variable doesn't shadow any top-level variables.
+		//
+		// (This check can safely be disabled if enabling shadowing.)
+		if (!permit_shadowing && combine_identifier_namespaces && combined_scope.has(parameter_identifier)) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::analyze_block: error: parameter ``"
+				<< parameter_identifier
+				<< "\" has an identifier that is already assigned in another namespace in function or procedure with requested symbol suffix ``"
+				<< routine_declaration.location.requested_suffix
+				<< "\"."
+				<< "  Set combine_identifier_namespaces to false to isolate identifier namespaces"
+				<< " from each other and disable this check."
+				;
+			throw SemanticsError(sstr.str());
+		}
+
+		if (parameter_index < 4) {
+			Storage parameter_storage("$a" + std::to_string(parameter_index));
+
+			local_var_scope.scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
+			local_combined_scope.scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
+		} else {
+			if        (!all_arrays_records_are_refs && !parameter_is_ref && !parameter_type.resolve_type().is_primitive()) {
+				// TODO: copy arrays and records.
+				std::ostringstream sstr;
+				sstr << "Semantics::analyze_block: error: copying of arrays and records for non-Ref vars in arguments is currently not supported.";
+				throw SemanticsError(sstr.str());
+			} else if (!parameter_is_ref && !parameter_type.get_fixed_width()) {
+				std::ostringstream sstr;
+				sstr << "Semantics::analyze_block: error: loading non-fixed-width arguments is not supported.";
+				throw SemanticsError(sstr.str());
+			} else if (!parameter_is_ref && parameter_type.get_size() != 4 && parameter_type.get_size() != 1) {
+				std::ostringstream sstr;
+				sstr << "Semantics::analyze_block: error: loading fixed-width variable non-array/non-record arguments of size neither 4 nor 1 is currently not supported.";
+				throw SemanticsError(sstr.str());
+			} else {
+				const bool is_word = !parameter_type.is_primitive() || parameter_type.get_primitive().is_word();
+
+				stack_argument_total_size += Instruction::AddSp::round_to_align(is_word ? 4 : 1);
+
+				// Note: "no_sp_adjust" is "false" here, and "stack_allocated" and the $ra push is removed.
+				Storage parameter_storage(is_word ? 4 : 1, false, Symbol(), "$sp", true, stack_argument_total_size, false, false);
+
+				local_var_scope.scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
+				local_combined_scope.scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
+			}
+		}
+	}
+
+	// Handle local variables.
+	for (const std::pair<std::string, const Type *> &local_variable : std::as_const(local_variables)) {
 		const std::string &local_variable_identifier = local_variable.first;
 		const Type        &local_variable_type       = *local_variable.second;
 
@@ -13867,32 +13953,23 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 				<< local_variable_identifier
 				<< "\" has a non-fixed-width size in function or procedure with requested symbol suffix ``"
 				<< routine_declaration.location.requested_suffix
-				<< "\"; non-fixed-width size variable are currently unsupported."
+				<< "\"; non-fixed-width size variables are currently unsupported."
 				;
 			throw SemanticsError(sstr.str());
 		}
 
-		// This is a Semantics::Block variable.  Make sure this doesn't shadow any Body variables.
+		// Make sure this variable doesn't shadow any parameters.
 		//
-		// Note: if enabling shadowing, the conflict here would need an
-		// alternative implementation to be handled correctly, or else both
-		// variables would refer to the same storage, not to different
-		// storages.
-		//
-		// (Actually, semantic block variables won't arise because they aren't
-		// introduced in statements.)
-		if (local_variables.find(local_variable_identifier) != local_variables.cend()) {
+		// (This check can safely be disabled if enabling shadowing.)
+		if (!permit_shadowing && in_parameter_identifiers.find(local_variable_identifier) != in_parameter_identifiers.cend()) {
 			std::ostringstream sstr;
 			sstr
 				<< "Semantics::analyze_block: error: local variable ``"
 				<< local_variable_identifier
-				<< "\" would shadow an outer-level variable in function or procedure with requested symbol suffix ``"
+				<< "\" would shadow a parameter in function or procedure with requested symbol suffix ``"
 				<< routine_declaration.location.requested_suffix
 				<< "\"."
 				;
-			if (permit_shadowing) {
-				sstr << std::endl << "TODO: implement shadowing of semantic block variables by variables in outer scopes.";
-			}
 			throw SemanticsError(sstr.str());
 		}
 
@@ -13950,7 +14027,21 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 		}
 	}
 
-	for (const std::pair<std::string, const Type *> &local_variable : std::as_const(local_variables)) {
+	// Analyze the statements in the block.
+	Block block_semantics = analyze_statements(routine_declaration, statement_sequence, constant_scope, type_scope, routine_scope, local_var_scope, local_combined_scope, cleanup_symbol);
+
+	// Make sure front and back are valid by making sure there is at least one instruction.
+	if (block_semantics.instructions.instructions.size() <= 0) {
+		block_semantics.front = block_semantics.back = block_semantics.instructions.add_instruction({I::Ignore(B(), false, false)});
+	}
+
+	// Get working storage requirements.
+	std::pair<std::vector<uint32_t>, std::vector<uint64_t>> prepare_permutation = block_semantics.instructions.prepare_permutation(std::set<IO>(), {block_semantics.back});
+	const std::vector<uint32_t> &working_storage_requirements = prepare_permutation.first;
+	const std::vector<uint64_t> &permutation                  = prepare_permutation.second;
+
+	// Handle Semantics::Block-local variables (there are none currently).
+	for (const std::pair<std::string, const Type *> &local_variable : std::as_const(block_semantics.local_variables)) {
 		const std::string &local_variable_identifier = local_variable.first;
 		const Type        &local_variable_type       = *local_variable.second;
 
@@ -13962,7 +14053,46 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 				<< local_variable_identifier
 				<< "\" has a non-fixed-width size in function or procedure with requested symbol suffix ``"
 				<< routine_declaration.location.requested_suffix
-				<< "\"; non-fixed-width size variable are currently unsupported."
+				<< "\"; non-fixed-width size variables are currently unsupported."
+				;
+			throw SemanticsError(sstr.str());
+		}
+
+		// This is a Semantics::Block variable.  Make sure this doesn't shadow any Body variables.
+		//
+		// Note: if enabling shadowing, the conflict here would need an
+		// alternative implementation to be handled correctly, or else both
+		// variables would refer to the same storage, not to different
+		// storages.
+		//
+		// (Actually, semantic block variables won't arise because they aren't
+		// introduced in statements.)
+		if (local_variables.find(local_variable_identifier) != local_variables.cend()) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::analyze_block: error: local variable ``"
+				<< local_variable_identifier
+				<< "\" would shadow an outer-level variable in function or procedure with requested symbol suffix ``"
+				<< routine_declaration.location.requested_suffix
+				<< "\"."
+				;
+			if (permit_shadowing) {
+				sstr << std::endl << "TODO: implement shadowing of semantic block variables by variables in outer scopes.";
+			}
+			throw SemanticsError(sstr.str());
+		}
+
+		// Make sure this variable doesn't shadow any parameters.
+		//
+		// (This check can safely be disabled if enabling shadowing.)
+		if (!permit_shadowing && in_parameter_identifiers.find(local_variable_identifier) != in_parameter_identifiers.cend()) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::analyze_block: error: local variable ``"
+				<< local_variable_identifier
+				<< "\" would shadow a parameter in function or procedure with requested symbol suffix ``"
+				<< routine_declaration.location.requested_suffix
+				<< "\"."
 				;
 			throw SemanticsError(sstr.str());
 		}
@@ -14067,6 +14197,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 		last_intro_index     = block_semantics.instructions.add_instruction({I::Custom(B(), {"\taddiu $sp, $sp, -" + std::to_string(stack_allocated)})}, {}, last_intro_index);
 	}
 
+	// Commented out: these are already copied on a call!  Instead, just add a binding to the appropriate storage.  We do that above.
+#if 0
 	// Now load all arguments as copies.  This does not need to be reversed; callers push and pop arguments when calling.
 	uint32_t stack_argument_total_size = 0;
 	for (const std::pair<bool, const Type *> &parameter : std::as_const(routine_declaration.parameters)) {
@@ -14105,9 +14237,13 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 				stack_argument_total_size += Instruction::AddSp::round_to_align(source_storage.max_size);
 
 				last_intro_index = block_semantics.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, true, var.storage, source_storage, false, false)}, {}, {last_intro_index});
+
+				// Note: "no_sp_adjust" is "false" here, and "stack_allocated" and the $ra push is removed.
+				Storage var_storage(is_word ? 4 : 1, false, Symbol(), "$sp", true, stack_argument_total_size, false, false);
 			}
 		}
 	}
+#endif /* #if 0 */
 
 	// Reverse what intro did.
 	if (stack_allocated > 0) {
