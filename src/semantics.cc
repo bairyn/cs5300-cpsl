@@ -852,7 +852,9 @@ Semantics::Type::Simple::Simple(const std::string &identifier, const Type &refer
 const Semantics::Type &Semantics::Type::Simple::resolve_type(bool check_cycles) const {
 	if (!check_cycles) {
 		const Type *type = referent;
+		assert(!!type);
 		while (type->is_simple()) {
+			assert(!!type);
 			type = type->get_simple().referent;
 		}
 		return *type;
@@ -13976,12 +13978,12 @@ void Semantics::reset_output() {
 	// Clear.
 
 	output                   = Output();
-	top_level_scope          = IdentifierScope();
-	top_level_var_scope      = IdentifierScope();
-	top_level_routine_scope  = IdentifierScope();
-	top_level_type_scope     = IdentifierScope();
-	top_level_constant_scope = IdentifierScope();
 	storage_scope            = IdentifierScope();
+	top_level_scope          = IdentifierScope(std::as_const(storage_scope));
+	top_level_var_scope      = IdentifierScope(std::as_const(storage_scope));
+	top_level_routine_scope  = IdentifierScope(std::as_const(storage_scope));
+	top_level_type_scope     = IdentifierScope(std::as_const(storage_scope));
+	top_level_constant_scope = IdentifierScope(std::as_const(storage_scope));
 	top_level_vars.clear();
 	string_constants.clear();
 	routine_definitions.clear();
