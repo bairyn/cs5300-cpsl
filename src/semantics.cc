@@ -2711,23 +2711,16 @@ std::optional<Semantics::IdentifierScope::IdentifierBinding> Semantics::Identifi
 }
 
 Semantics::Semantics()
-	: auto_analyze(true)
+	: optimize(true)
+	, auto_analyze(true)
 {
 	if (auto_analyze) {
 		analyze();
 	}
 }
 
-Semantics::Semantics(bool auto_analyze)
-	: auto_analyze(auto_analyze)
-{
-	if (auto_analyze) {
-		analyze();
-	}
-}
-
-Semantics::Semantics(const Grammar &grammar, bool auto_analyze)
-	: grammar(grammar)
+Semantics::Semantics(bool optimize, bool auto_analyze)
+	: optimize(optimize)
 	, auto_analyze(auto_analyze)
 {
 	if (auto_analyze) {
@@ -2735,8 +2728,19 @@ Semantics::Semantics(const Grammar &grammar, bool auto_analyze)
 	}
 }
 
-Semantics::Semantics(Grammar &&grammar, bool auto_analyze)
+Semantics::Semantics(const Grammar &grammar, bool optimize, bool auto_analyze)
+	: grammar(grammar)
+	, optimize(optimize)
+	, auto_analyze(auto_analyze)
+{
+	if (auto_analyze) {
+		analyze();
+	}
+}
+
+Semantics::Semantics(Grammar &&grammar, bool optimize, bool auto_analyze)
 	: grammar(std::move(grammar))
+	, optimize(optimize)
 	, auto_analyze(auto_analyze)
 {
 	if (auto_analyze) {
@@ -10467,7 +10471,7 @@ std::pair<std::vector<uint32_t>, std::vector<uint64_t>> Semantics::MIPSIO::prepa
 	}
 
 	// Make sure there were no unvisited nodes.
-	if (visited_instructions.size() < instructions.size()) {
+	if (visited_instructions.size() < instructions.size() - num_deleted) {
 		std::ostringstream sstr;
 		sstr
 			<< "Semantics::MIPSIO::prepare: error: this algorithm requires all nodes to be reached at least once." << std::endl
@@ -10891,13 +10895,13 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 				instruction_output.push_back("\taddiu $sp, $sp, " + std::to_string(addition));
 				for (const Storage &saved_storage : std::as_const(pushed_registers)) {
 					const int32_t saved_storage_index = static_cast<int32_t>(&saved_storage - &pushed_registers[0]);
-					instruction_output.push_back("\tsw   " + saved_storage.register_ + ", " + std::to_string(4*saved_storage_index) + "($sp)");
+					instruction_output.push_back("\tsw    " + saved_storage.register_ + ", " + std::to_string(4*saved_storage_index) + "($sp)");
 				}
 			} else {
 				// Emit code to pop the saved registers.
 				for (const Storage &saved_storage : std::as_const(pushed_registers)) {
 					const int32_t saved_storage_index = static_cast<int32_t>(&saved_storage - &pushed_registers[0]);
-					instruction_output.push_back("\tlw   " + saved_storage.register_ + ", " + std::to_string(4*saved_storage_index) + "($sp)");
+					instruction_output.push_back("\tlw    " + saved_storage.register_ + ", " + std::to_string(4*saved_storage_index) + "($sp)");
 				}
 				const int32_t addition = 4*(pushed_registers.size() % 2 == 0 ? pushed_registers.size() : pushed_registers.size() + 1);
 				add_sp_total += addition;
@@ -10987,7 +10991,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 	}
 
 	// Make sure there were no unvisited nodes.
-	if (visited_instructions.size() < instructions.size()) {
+	if (visited_instructions.size() < instructions.size() - num_deleted) {
 		std::ostringstream sstr;
 		sstr
 			<< "Semantics::MIPSIO::emit: error: this algorithm requires all nodes to be reached at least once." << std::endl
@@ -10999,6 +11003,44 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 
 	// Return the emitted output.
 	return output_lines;
+}
+
+void Semantics::MIPSIO::optimize() {
+	// TODO
+
+#if 0
+	// TODO
+	// Compose non-fixed-storage LoadFroms.
+	for (const Instruction &instruction : std::as_const(instructions)) {
+		const std::vector<Instruction>::size_type instruction_index = &instruciton - &instructions[0];
+
+		if (instruction.is_load_from()) {
+			const &Instruction::LoadFrom load_from = instruction.get_load_from();
+
+			if (!load_from.fixed_save_storage && !load_from.fixed_load_storage) {
+				std::map<IO, IO>::const_iterator           in_search  = connections.find({instruction_index, 0});
+				std::map<IO, std::set<IO>>::const_iterator out_search = reversed_connections.find({instruction_index, 0});
+
+				if (in_search != connections.cend() && out_search != reversed_connections.cend() && out_search->second.size() == 1) {
+					// We're in the middle of a linear chain, ignoring sequences.
+
+					// Replace this instruction with Ignore.  If there are no sequence connections
+				}
+			}
+
+
+		std::map<IO, IO>           connections;           // connections[input]   == output that provides the input.
+		std::map<IO, std::set<IO>> reversed_connections;  // connections[output]  == {all inputs that this output supplies}.
+		std::map<Index, Index>     sequences;             // sequences[this_node] == the node that should be emitted (after its unemitted children (inputs) are emitted) right after this_node is emitted, i.e.
+		                                                  // sequences[before]    == after
+		std::map<Index, Index>     reversed_sequences;    // sequences reversed.  We have a bimap now.
+			// TODO
+		}
+	}
+#endif /* #if 0 */
+
+	// Compose saved-fixed load-dynamic LoadFrom with LoadImmediate.
+	// TODO
 }
 
 // | Straightforwardly add an instruction, optionally connecting its
@@ -12896,7 +12938,9 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// - pushed arguments
 
 				// Push these refs storages onto the stack.  (AddSp automatically rounds to 8-byte aligns.)
-				last_call_index = expression_semantics.instructions.add_instruction({I::AddSp(B(), -4*register_refs.size())}, {}, last_call_index);
+				if (register_refs.size() > 0) {
+					last_call_index = expression_semantics.instructions.add_instruction({I::AddSp(B(), -4*register_refs.size())}, {}, last_call_index);
+				}
 				for (const Storage &register_ref : std::as_const(register_refs)) {
 					const std::vector<Storage>::size_type register_ref_index  = &register_ref - &register_refs[0];
 					const uint32_t                        register_ref_offset = 4 * register_ref_index;
@@ -12940,7 +12984,9 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 					const uint32_t                        register_ref_offset = 4 * register_ref_index;
 					last_call_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, register_ref, Storage("$sp", 4, register_ref_offset, true))}, {}, last_call_index);
 				}
-				last_call_index = expression_semantics.instructions.add_instruction({I::AddSp(B(), -4*register_refs.size())}, {}, last_call_index);
+				if (register_refs.size() > 4) {
+					last_call_index = expression_semantics.instructions.add_instruction({I::AddSp(B(), -4*register_refs.size())}, {}, last_call_index);
+				}
 
 				// Retrieve the output from $v0.
 				const bool output_word = !(*routine_declaration.output)->is_primitive() || (*routine_declaration.output)->get_primitive().is_word();
@@ -14033,6 +14079,11 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 	// Make sure front and back are valid by making sure there is at least one instruction.
 	if (block_semantics.instructions.instructions.size() <= 0) {
 		block_semantics.front = block_semantics.back = block_semantics.instructions.add_instruction({I::Ignore(B(), false, false)});
+	}
+
+	// Optimize.
+	if (optimize) {
+		block_semantics.instructions.optimize();
 	}
 
 	// Get working storage requirements.

@@ -192,6 +192,7 @@ const cli::ArgsSpec cli::ArgsSpec::default_args_spec {
 		{"lexer",        {true}},
 		{"parser",       {true}},
 		{"parser-trace", {true}},
+		{"no-optimize",  {true}},
 	},
 
 	// std::map<std::string, std::string> option_aliases
@@ -464,6 +465,7 @@ std::string cli::get_usage(const std::optional<std::string> &prog) {
 		<< "      --grammar        indicate if parsing the grammar of the input succeeded and stop after the parsing stage." << std::endl
 		<< "      --parser-trace," << std::endl
 		<< "      --grammar-trace  print bison tracing information while parsing." << std::endl
+		<< "      --no-optimize    don't apply optimizations." << std::endl
 		;
 	return sstr.str();
 }
@@ -909,7 +911,7 @@ std::vector<std::string> cli::assemble(const ParsedArgs &parsed_args, const std:
 	Grammar grammar = parse_lexemes(lexemes, parsed_args.is("parser-trace"));
 
 	// Analyze the semantics and assemble the code.
-	Semantics semantics(std::move(Grammar(grammar)));
+	Semantics semantics(std::move(Grammar(grammar)), !parsed_args.is("no-optimize"));
 
 	// Obtain the assembly output.
 	output_lines = semantics.get_normalized_output_lines_copy();

@@ -700,9 +700,9 @@ public:
 	};
 
 	Semantics();
-	Semantics(bool auto_analyze);
-	Semantics(const Grammar &grammar, bool auto_analyze = true);
-	Semantics(Grammar &&grammar, bool auto_analyze = true);
+	Semantics(bool optimize, bool auto_analyze);
+	Semantics(const Grammar &grammar, bool optimize = true, bool auto_analyze = true);
+	Semantics(Grammar &&grammar, bool optimize = true, bool auto_analyze = true);
 
 	// | Get a copy of the normalized output lines.
 	std::vector<std::string> get_normalized_output_lines_copy() const;
@@ -1334,6 +1334,11 @@ public:
 		// this restriction, pass permit_uncaptured_outputs = true.
 		std::vector<Output::Line> emit(const std::map<IO, Storage> &input_storages, const std::vector<Storage> &working_storages, const std::map<IO, Storage> &capture_outputs, bool permit_uncaptured_outputs = false, std::optional<Index> back = std::optional<Index>()) const;
 
+		// | Apply a selection of optimizations, e.g. a linear chain of
+		// LoadFrom(a, b) and LoadFrom(b, c), where a, b, and c are dynamic,
+		// can be reduced to LoadFrom(a, c).
+		void optimize();
+
 		template<typename A, typename B, typename C>
 		static std::map<A, std::map<B, C>> expand_map(const std::map<std::pair<A, B>, C> &map) {
 			std::map<A, std::map<B, C>> map_expanded;
@@ -1389,6 +1394,9 @@ public:
 		Index merge(const MIPSIO &other);
 
 		static const bool permit_sequence_connection_delays;
+
+		// | Used by optimize for emit.
+		uint64_t num_deleted = 0;
 	};
 
 // TODO: inline support.
@@ -1568,7 +1576,9 @@ protected:
 	// | The grammar tree used for the semantics data.
 	Grammar grammar;
 	// | Whether to automatically construct the semantics analysis after loading the grammar.
-	bool auto_analyze;
+	bool auto_analyze = true;
+	// | Whether to apply optimizations.
+	bool optimize = true;
 
 	// | Collection of string constants we collect as we analyze the parse tree.
 	//
