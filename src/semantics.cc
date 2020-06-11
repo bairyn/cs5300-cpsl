@@ -13910,9 +13910,9 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			const uint32_t size = local_variable_type.get_size();
 			Storage stack_storage;
 			if (!local_variable_type.resolve_type().is_record() && !local_variable_type.resolve_type().is_array()) {
-				Storage stack_storage(size, false, Symbol(), "$sp", true, stack_allocated, false, false);
+				stack_storage = Storage(size, false, Symbol(), "$sp", true, stack_allocated, false, false);
 			} else {
-				Storage stack_storage(4, false, Symbol(), "$sp", false, stack_allocated, false, false);
+				stack_storage = Storage(4, false, Symbol(), "$sp", false, stack_allocated, false, false);
 			}
 			stack_allocated += Instruction::AddSp::round_to_align(size);
 			local_var_scope.scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
@@ -13981,9 +13981,9 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			const uint32_t size = local_variable_type.get_size();
 			Storage stack_storage;
 			if (!local_variable_type.resolve_type().is_record() && !local_variable_type.resolve_type().is_array()) {
-				Storage stack_storage(size, false, Symbol(), "$sp", true, stack_allocated, false, false);
+				stack_storage = Storage(size, false, Symbol(), "$sp", true, stack_allocated, false, false);
 			} else {
-				Storage stack_storage(4, false, Symbol(), "$sp", false, stack_allocated, false, false);
+				stack_storage = Storage(4, false, Symbol(), "$sp", false, stack_allocated, false, false);
 			}
 			stack_allocated += Instruction::AddSp::round_to_align(size);
 			local_var_scope.scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
@@ -14007,9 +14007,9 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			const uint32_t size = working_storage_requirement;
 			Storage stack_storage;
 			if (true) {
-				Storage stack_storage(size, false, Symbol(), "$sp", true, stack_allocated, false, false);
+				stack_storage = Storage(size, false, Symbol(), "$sp", true, stack_allocated, false, false);
 			} else {
-				Storage stack_storage(4, false, Symbol(), "$sp", false, stack_allocated, false, false);
+				stack_storage = Storage(4, false, Symbol(), "$sp", false, stack_allocated, false, false);
 			}
 			stack_allocated += Instruction::AddSp::round_to_align(size);
 			working_storages.push_back(stack_storage);
