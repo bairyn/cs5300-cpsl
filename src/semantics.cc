@@ -4758,7 +4758,6 @@ std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_output_sizes() const
 std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(const std::vector<Storage> &storages) const {
-	// TODO: handle dereference_{load,save}!!!
 	// Check sizes.
 	if (Storage::get_sizes(storages) != get_all_sizes()) {
 		std::ostringstream sstr;
@@ -4809,177 +4808,120 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 		lines.push_back({":", symbol});
 	}
 
-	if (!dereference_save && !dereference_load) {
-		// If !this->is_word, replace sw with sb and lw with lb.
-		//
-		// 4 storage types for destination:
-		// 	1: global_address + x  (Store into this address.)
-		// 	2: x(global_address)   (Store into this dereferenced address.)
-		// 	3: $reg                (Store into this register.)
-		// 	4: x($reg)             (Store into this dereferenced register.)
-		//
-		// 4 storage types for source:
-		// 	1: global_address + x  (Read from this address.)
-		// 	2: x(global_address)   (Read from this dereferenced address.)
-		// 	3: $reg                (Read from this register.)
-		// 	4: x($reg)             (Read from this dereferenced register.)
-		//
-		// 16 cases:
-		//
-		// 1:  global_address + x <- global_address + x
-		// 2:  global_address + x <- x(global_address)
-		// 3:  global_address + x <- $reg
-		// 4:  global_address + x <- x($reg)
-		//
-		// 5:  x(global_address) <- global_address + x
-		// 6:  x(global_address) <- x(global_address)
-		// 7:  x(global_address) <- $reg
-		// 8:  x(global_address) <- x($reg)
-		//
-		// 9:  $reg <- global_address + x
-		// 10: $reg <- x(global_address)
-		// 11: $reg <- $reg
-		// 12: $reg <- x($reg)
-		//
-		// 13: x($reg) <- global_address + x
-		// 14: x($reg) <- x(global_address)
-		// 15: x($reg) <- $reg
-		// 16: x($reg) <- x($reg)
-		//
-		// Equivalent:
-		//
-		// 1: global_address + x <- global_address + x:
-		// 	# Part 1: get destination address.
-		// 	la   $t9, destination_storage.global_address
-		// 	la   $t9, destination_storage.offset($t9)     if != 0
-		//
-		// 	# Part 2: get source address.
-		// 	la   $t8, source_storage.global_address
-		// 	la   $t8, source_storage.offset($t8)          if != 0
-		//
-		// 	# Part 3: load source.
-		// 	lw   $t8, ($t8)
-		// 	la   $t8, addition($t8)                       if != 0
-		//
-		// 	# Part 4: write destination.
-		// 	sw   $t8, ($t9)
-		// 2: global_address + x <- x(global_address):
-		// 	...
-		//
-		// 5-8:
-		// 	Copy #1-4.  3{s/la/lw/; s/if.*$//}
-		//
-		// ...
+	// Get sizes load and save operations.
+	Output::Line sized_load;
+	Output::Line sized_save;
 
-		Output::Line sized_load;
-		Output::Line sized_save;
-
-		if (is_word_load) {
-			sized_load = "\tlw    ";
-		} else {
-			sized_load = "\tlb    ";
-		}
-
-		if (is_word_save) {
-			sized_save = "\tsw    ";
-		} else {
-			sized_save = "\tsb    ";
-		}
-
-		// Part 1: get destination address.
-		if           ( destination_storage.is_global && !destination_storage.dereference) {
-			lines.push_back("\tla    $t9, " + destination_storage.global_address);
-			if (destination_storage.offset != 0) {
-				lines.push_back("\tla    $t9, " + std::to_string(destination_storage.offset) + "($t9)");
-			}
-		} else if    ( destination_storage.is_global &&  destination_storage.dereference) {
-			lines.push_back("\tla    $t9, " + destination_storage.global_address);
-			lines.push_back("\tlw    $t9, " + std::to_string(destination_storage.offset) + "($t9)");
-		} else if    (!destination_storage.is_global && !destination_storage.dereference) {
-		} else {  // (!destination_storage.is_global &&  destination_storage.dereference) {
-			lines.push_back("\tla    $t9, " + std::to_string(destination_storage.offset) + "(" + destination_storage.register_ + ")");
-		}
-
-		// Part 2: get source address.
-		if           ( source_storage.is_global && !source_storage.dereference) {
-			lines.push_back("\tla    $t8, " + source_storage.global_address);
-			if (source_storage.offset != 0) {
-				lines.push_back("\tla    $t8, " + std::to_string(source_storage.offset) + "($t8)");
-			}
-		} else if    ( source_storage.is_global &&  source_storage.dereference) {
-			lines.push_back("\tla    $t8, " + source_storage.global_address);
-			lines.push_back("\tlw    $t8, " + std::to_string(source_storage.offset) + "($t8)");
-		} else if    (!source_storage.is_global && !source_storage.dereference) {
-		} else {  // (!source_storage.is_global &&  source_storage.dereference) {
-			lines.push_back("\tla    $t8, " + std::to_string(source_storage.offset) + "(" + source_storage.register_ + ")");
-		}
-
-		// Part 3: load source.  (Don't apply addition yet.)
-		if           ( source_storage.is_global && !source_storage.dereference) {
-			lines.push_back(sized_load + "$t8, ($t8)");
-		} else if    ( source_storage.is_global &&  source_storage.dereference) {
-			lines.push_back(sized_load + "$t8, ($t8)");
-		} else if    (!source_storage.is_global && !source_storage.dereference) {
-		} else {  // (!source_storage.is_global &&  source_storage.dereference) {
-			lines.push_back(sized_load + "$t8, ($t8)");
-		}
-
-		// Part 4: write destination.
-		if           ( destination_storage.is_global && !destination_storage.dereference) {
-			if (!source_storage.is_global && !source_storage.dereference) {
-				if (addition != 0) {
-					lines.push_back("\tla    $t8, " + std::to_string(addition) + "(" + source_storage.register_ + ")");
-					lines.push_back(sized_save + "$t8, ($t9)");
-				} else {
-					lines.push_back(sized_save + source_storage.register_ + ", ($t9)");
-				}
-			} else {
-				lines.push_back("\tla    $t8, " + std::to_string(addition) + "($t8)");
-				lines.push_back(sized_save + "$t8, ($t9)");
-			}
-		} else if    ( destination_storage.is_global &&  destination_storage.dereference) {
-			if (!source_storage.is_global && !source_storage.dereference) {
-				if (addition != 0) {
-					lines.push_back("\tla    $t8, " + std::to_string(addition) + "(" + source_storage.register_ + ")");
-					lines.push_back(sized_save + "$t8, ($t9)");
-				} else {
-					lines.push_back(sized_save + source_storage.register_ + ", ($t9)");
-				}
-			} else {
-				lines.push_back("\tla    $t8, " + std::to_string(addition) + "($t8)");
-				lines.push_back(sized_save + "$t8, ($t9)");
-			}
-		} else if    (!destination_storage.is_global && !destination_storage.dereference) {
-			if (!source_storage.is_global && !source_storage.dereference) {
-				if (addition != 0) {
-					lines.push_back("\tla    " + destination_storage.register_ + ", " + std::to_string(addition) + "(" + source_storage.register_ + ")");
-				} else {
-					lines.push_back("\tla    " + destination_storage.register_ + ", " + std::to_string(addition) + "(" + source_storage.register_ + ")");
-				}
-			} else {
-				lines.push_back("\tla    " + destination_storage.register_ + ", " + std::to_string(addition) + "($t8)");
-			}
-		} else {  // (!destination_storage.is_global &&  destination_storage.dereference) {
-			if (!source_storage.is_global && !source_storage.dereference) {
-				if (addition != 0) {
-					lines.push_back("\tla    $t8, " + std::to_string(addition) + "(" + source_storage.register_ + ")");
-					lines.push_back(sized_save + "$t8, ($t9)");
-				} else {
-					lines.push_back(sized_save + source_storage.register_ + ", ($t9)");
-				}
-			} else {
-				lines.push_back("\tla    $t8, " + std::to_string(addition) + "($t8)");
-				lines.push_back(sized_save + "$t8, ($t9)");
-			}
-		}
+	if (is_word_load) {
+		sized_load = "\tlw    ";
 	} else {
-		// TODO
-		std::ostringstream sstr;
-		sstr
-			<< "Semantics::Instruction::LoadFrom::emit: error: TODO: implement dereferencing!"
-			;
-		throw SemanticsError(sstr.str());
+		sized_load = "\tlb    ";
 	}
+
+	if (is_word_save) {
+		sized_save = "\tsw    ";
+	} else {
+		sized_save = "\tsb    ";
+	}
+
+	// Part 1: load/read into $t9 unless it's a non-dereferenced direct register.
+	std::string source_register = "$t9";
+	bool is_t9_free = false;
+	bool addition_pending = false;
+	if        (source_storage.is_register_direct()) {
+		if (!dereference_load && (addition == 0 || (destination_storage.is_register_direct() && !dereference_save))) {
+			is_t9_free = true;
+			source_register = source_storage.register_;
+			if (addition != 0) {
+				addition_pending = true;
+			}
+		} else {
+			if (dereference_load) {
+				lines.push_back(sized_load + "$t9, (" + source_storage.register_ + ")");
+				if (addition != 0) {
+					lines.push_back("\tla    $t9, " + std::to_string(addition) + "($t9)");
+				}
+			} else {
+				// addition != 0 && !dereference_load
+				lines.push_back("\tla    $t9, " + std::to_string(addition) + "(" + source_storage.register_ + ")");
+			}
+		}
+	} else if (source_storage.is_register_dereference()) {
+		std::string offset_string = source_storage.offset == 0 ? "" : std::to_string(source_storage.offset);
+		if (!dereference_load) {
+			lines.push_back(sized_load + "$t9, " + offset_string + "(" + source_storage.register_ + ")");
+		} else {
+			lines.push_back("\tlw    $t9, " + offset_string + "(" + source_storage.register_ + ")");
+			lines.push_back(sized_load + "$t9, ($t9)");
+		}
+		if (addition != 0) {
+			lines.push_back("\tla    $t9, " + std::to_string(addition) + "($t9)");
+		}
+	} else if (source_storage.is_global_address()) {
+		lines.push_back("\tla    $t9, " + source_storage.global_address);
+		if (dereference_load) {
+			lines.push_back(sized_load + "$t9, ($t9)");
+		}
+		if (addition != 0) {
+			lines.push_back("\tla    $t9, " + std::to_string(addition) + "($t9)");
+		}
+	} else { //source_storage.is_global_dereference()
+		lines.push_back("\tla    $t9, " + source_storage.global_address);
+		if (source_storage.offset != 0) {
+			lines.push_back("\tla    $t9, " + std::to_string(source_storage.offset) + "($t9)");
+		}
+		std::string offset_string = source_storage.offset == 0 ? "" : std::to_string(source_storage.offset);
+		if (!dereference_load) {
+			lines.push_back(sized_load + "$t9, " + offset_string + "($t9)");
+		} else {
+			lines.push_back("\tlw    $t9, " + offset_string + "($t9)");
+			lines.push_back(sized_load + "$t9, ($t9)");
+		}
+		if (addition != 0) {
+			lines.push_back("\tla    $t9, " + std::to_string(addition) + "($t9)");
+		}
+	}
+
+	// Part 2: write/save.
+	std::string free_register = is_t9_free ? "$t9" : "$t8";
+	if        (destination_storage.is_register_direct()) {
+		if (!dereference_save) {
+			if (source_register != destination_storage.register_) {
+				if (!addition_pending) {
+					lines.push_back("\tla    " + destination_storage.register_ + ", (" + source_register + ")");
+				} else {
+					addition_pending = false;
+					lines.push_back("\tla    " + destination_storage.register_ + ", " + std::to_string(addition) + "(" + source_register + ")");
+				}
+			}
+		} else {
+			lines.push_back(sized_save + source_register + ", (" + destination_storage.register_ + ")");
+		}
+	} else if (destination_storage.is_register_dereference()) {
+		std::string offset_string = destination_storage.offset == 0 ? "" : std::to_string(destination_storage.offset);
+		if (!dereference_save) {
+			lines.push_back(sized_save + source_register + ", " + offset_string + "(" + destination_storage.register_ + ")");
+		} else {
+			lines.push_back("\tlw    " + free_register + ", " + offset_string + "(" + destination_storage.register_ + ")");
+			lines.push_back(sized_save + source_register + ", (" + free_register + ")");
+		}
+	} else if (destination_storage.is_global_address()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::LoadFrom::emit: error: cannot save to a global address without dereferencing it.";
+		throw SemanticsError(sstr.str());
+	} else { //destination_storage.is_global_dereference()
+		lines.push_back("\tla    " + free_register + ", " + destination_storage.global_address);
+		std::string offset_string = destination_storage.offset == 0 ? "" : std::to_string(destination_storage.offset);
+		if (!dereference_save) {
+			lines.push_back(sized_save + source_register + ", " + offset_string + "(" + free_register + ")");
+		} else {
+			lines.push_back("\tlw    " + free_register + ", " + offset_string + "(" +  free_register+ ")");
+			lines.push_back(sized_save + source_register + ", (" + free_register + ")");
+		}
+	}
+
+	// Make sure addition wasn't omitted.
+	assert(!addition_pending);
 
 	// Return the output.
 	return lines;
@@ -13289,280 +13231,32 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 
 				// An lvalue in an expression corresponds a read / a LoadFrom.
 
-				// Collect the lvalue accessor clauses in the list.
-				std::vector<const LvalueAccessorClause *> lvalue_accessor_clauses;
-				bool reached_end = false;
-				for (const LvalueAccessorClauseList *last_list = &lvalue_accessor_clause_list; !reached_end; ) {
-					// Unpack the last list encountered.
-					switch(last_list->branch) {
-						case LvalueAccessorClauseList::empty_branch: {
-							// We're done.
-							// (No need to unpack the empty branch.)
-							reached_end = true;
-							break;
-						}
-
-						case LvalueAccessorClauseList::cons_branch: {
-							// Unpack the list.
-							const LvalueAccessorClauseList::Cons &last_lvalue_accessor_clause_list_cons = grammar.lvalue_accessor_clause_list_cons_storage.at(last_list->data);
-							const LvalueAccessorClauseList       &last_lvalue_accessor_clause_list      = grammar.lvalue_accessor_clause_list_storage.at(last_lvalue_accessor_clause_list_cons.lvalue_accessor_clause_list);
-							const LvalueAccessorClause           &last_lvalue_accessor_clause           = grammar.lvalue_accessor_clause_storage.at(last_lvalue_accessor_clause_list_cons.lvalue_accessor_clause);
-
-							// Add the constant assignment.
-							lvalue_accessor_clauses.push_back(&last_lvalue_accessor_clause);
-							last_list = &last_lvalue_accessor_clause_list;
-
-							// Loop.
-							break;
-						}
-
-						// Unrecognized branch.
-						default: {
-							std::ostringstream sstr;
-							sstr << "Semantics::analyze_expression: internal error: invalid lvalue_accessor_clause_list branch at index " << last_list - &grammar.lvalue_accessor_clause_list_storage[0] << ": " << last_list->branch;
-							throw SemanticsError(sstr.str());
-						}
-					}
-				}
-
-				// Correct the order of the list.
-				std::reverse(lvalue_accessor_clauses.begin(), lvalue_accessor_clauses.end());
-
-				// Lookup the lvalue.
-				if (!combined_scope.has(lexeme_identifier.text)) {
-					std::ostringstream sstr;
-					sstr
-						<< "Semantics::analyze_expression: error (line "
-						<< lexeme_identifier.line << " col " << lexeme_identifier.column
-						<< "): identifier not found; it is out of scope: "
-						<< lexeme_identifier.text
-						<< "."
-						;
-					throw SemanticsError(sstr.str());
-				}
-
-				// Is it a variable?
-				if        (var_scope.has(lexeme_identifier.text)) {
-					const Var  &var  = var_scope.get(lexeme_identifier.text).get_var();
-					const Type &type = *var.type;
-
-					// What Type is it?
-					const Type &resolved_type = type.resolve_type();
-					if        (resolved_type.is_primitive()) {
-						const Type::Primitive &resolved_primitive_type = resolved_type.get_primitive();
-
-						if (lvalue_accessor_clause_list.branch != LvalueAccessorClauseList::empty_branch) {
-							std::ostringstream sstr;
-							sstr
-								<< "Semantics::analyze_expression: error (line "
-								<< lexeme_identifier.line << " col " << lexeme_identifier.column
-								<< "): identifier refers to a primitive type, ``"
-								<< resolved_type.get_tag_repr()
-								<< "\", but record (``.\") or array (``[]\") accessors are invalid on this type."
-								;
-							throw SemanticsError(sstr.str());
-						}
-
-						// Load the variable.
-						expression_semantics.output_type = type;
-						const Index load_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), resolved_primitive_type.is_word(), resolved_primitive_type.is_word(), 0, false, true, Storage(), var.storage)});
-						expression_semantics.output_index = load_index;
-					} else if (resolved_type.is_record() || resolved_type.is_array()) {
-						// Load the base address of the array or record.  Apply any provided accessors.
-						const Type *last_output_type = &type;
-						Index last_output_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), var.storage)});
-
-						for (const LvalueAccessorClause *lvalue_accessor_clause_ : std::as_const(lvalue_accessor_clauses)) {
-							const LvalueAccessorClause &lvalue_accessor_clause = *lvalue_accessor_clause_;
-							switch (lvalue_accessor_clause.branch) {
-								case LvalueAccessorClause::index_branch: {
-									const LvalueAccessorClause::Index &lvalue_accessor_clause_index = grammar.lvalue_accessor_clause_index_storage.at(lvalue_accessor_clause.data);
-									const LexemeKeyword               &dot_operator0                = grammar.lexemes.at(lvalue_accessor_clause_index.dot_operator0).get_keyword();
-									const LexemeIdentifier            &identifier                   = grammar.lexemes.at(lvalue_accessor_clause_index.identifier).get_identifier();
-
-									expression_semantics.lexeme_end = lvalue_accessor_clause_index.identifier + 1;
-
-									if (!last_output_type->resolve_type().is_record()) {
-										std::ostringstream sstr;
-										sstr
-											<< "Semantics::analyze_expression: error (line "
-											<< dot_operator0.line << " col " << dot_operator0.column
-											<< "): ``.\" is used to access a record, but the value being accessed is not a record: "
-											<< resolved_type.get_tag_repr()
-											;
-										throw SemanticsError(sstr.str());
-									}
-
-									// Find the field.
-									bool     found  = false;
-									uint32_t offset = 0;
-									for (const std::pair<std::string, const Type *> &field : std::as_const(last_output_type->resolve_type().get_record().fields)) {
-										const std::string &field_name = field.first;
-										const Type        &field_type = *field.second;
-
-										if (identifier.text == field_name) {
-											found = true;
-											last_output_type = &field_type;
-											break;
-										}
-
-										offset += field_type.get_size();
-									}
-									if (!found) {
-										std::ostringstream sstr;
-										sstr
-											<< "Semantics::analyze_expression: error (line "
-											<< dot_operator0.line << " col " << dot_operator0.column
-											<< "): ``.\" is used to access a record, but the record has no field with the name: "
-											<< identifier.text
-											;
-										throw SemanticsError(sstr.str());
-									}
-
-									// Get the address of the field.
-									const Index record_offset_index          = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(offset), 0, 0))});
-									const Index record_element_address_index = expression_semantics.instructions.add_instruction({I::AddFrom(B(), true)}, {last_output_index, record_offset_index});
-									// Dereference if the field type is primitive.  If the field type is another record or array, leave the address as is.
-									const Type &last_output_resolved_type = last_output_type->resolve_type();
-									if (no_dereference_record_array || !last_output_resolved_type.is_primitive()) {
-										last_output_index = record_element_address_index;
-									} else {
-										// Dereference.
-										const Type::Primitive &last_output_resolved_primitive_type = last_output_resolved_type.get_primitive();
-										const Index record_dereference_index = expression_semantics.instructions.add_instruction(
-											{I::LoadFrom(
-												B(),                                            // base
-												last_output_resolved_primitive_type.is_word(),  // is_word_save
-												last_output_resolved_primitive_type.is_word(),  // is_word_load
-												0,                                              // addition
-												false,                                          // is_save_fixed
-												false,                                          // is_load_fixed
-												{},                                             // fixed_save_storage
-												{},                                             // fixed_load_storage
-												false,                                          // dereference_save
-												true                                            // dereference_load
-											)},
-											{record_element_address_index}
-										);
-										last_output_index = record_dereference_index;
-									}
-
-									break;
-								}
-
-								case LvalueAccessorClause::array_branch: {
-									const LvalueAccessorClause::Array &lvalue_accessor_clause_array = grammar.lvalue_accessor_clause_array_storage.at(lvalue_accessor_clause.data);
-									const LexemeOperator              &leftbracket_operator0        = grammar.lexemes.at(lvalue_accessor_clause_array.leftbracket_operator0).get_operator();
-									const ::Expression                &expression0                  = grammar.expression_storage.at(lvalue_accessor_clause_array.expression);
-									const LexemeOperator              &rightbracket_operator0       = grammar.lexemes.at(lvalue_accessor_clause_array.rightbracket_operator0).get_operator(); (void) rightbracket_operator0;
-
-									expression_semantics.lexeme_end = lvalue_accessor_clause_array.rightbracket_operator0 + 1;
-
-									if (!last_output_type->resolve_type().is_array()) {
-										std::ostringstream sstr;
-										sstr
-											<< "Semantics::analyze_expression: error (line "
-											<< leftbracket_operator0.line << " col " << leftbracket_operator0.column
-											<< "): ``[]\" is used to access an array, but the value being accessed is not an array: "
-											<< resolved_type.get_tag_repr()
-											;
-										throw SemanticsError(sstr.str());
-									}
-
-									// Get the index expression, which should be an integer.
-									const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
-									const Type &value_resolved_type = value.output_type.resolve_type();
-									if (!value_resolved_type.is_primitive() || !value_resolved_type.get_primitive().is_integer()) {
-										std::ostringstream sstr;
-										sstr
-											<< "Semantics::analyze_expression: error (line "
-											<< leftbracket_operator0.line << " col " << leftbracket_operator0.column
-											<< "): accessing an array with ``[]\" requires an integer index type, but the index is of a different type: "
-											<< value.output_type.get_tag_repr()
-											;
-										throw SemanticsError(sstr.str());
-									}
-
-									// | The last output type is now the base type.
-									last_output_type = last_output_type->get_array().base_type;
-									// | Get the integer's index.
-									const Index value_index                 = expression_semantics.instructions.merge(value.instructions) + value.output_index;
-									// | Now dereference the array.
-									const Index load_element_size_index     = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(last_output_type->get_size()), 0, 0))});
-									const Index array_element_offset_index  = expression_semantics.instructions.add_instruction({I::MultFrom(B(), true)}, {load_element_size_index, value_index});
-									const Index ignore_index                = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{array_element_offset_index, 1}}, array_element_offset_index); (void) ignore_index;
-									const Index array_element_address_index = expression_semantics.instructions.add_instruction({I::AddFrom(B(), true)}, {last_output_index, array_element_offset_index});
-									// Actually dereference if the base type is primitive.  Just leave it at the address if the base type is a record or array.
-									const Type &last_output_resolved_type = last_output_type->resolve_type();
-									if (no_dereference_record_array || !last_output_resolved_type.is_primitive()) {
-										last_output_index = array_element_address_index;
-									} else {
-										// Dereference.
-										const Type::Primitive &last_output_resolved_primitive_type = last_output_resolved_type.get_primitive();
-										const Index array_dereference_index = expression_semantics.instructions.add_instruction(
-											{I::LoadFrom(
-												B(),                                            // base
-												last_output_resolved_primitive_type.is_word(),  // is_word_save
-												last_output_resolved_primitive_type.is_word(),  // is_word_load
-												0,                                              // addition
-												false,                                          // is_save_fixed
-												false,                                          // is_load_fixed
-												{},                                             // fixed_save_storage
-												{},                                             // fixed_load_storage
-												false,                                          // dereference_save
-												true                                            // dereference_load
-											)},
-											{array_element_address_index}
-										);
-										last_output_index = array_dereference_index;
-									}
-
-									break;
-								}
-
-								default: {
-									std::ostringstream sstr;
-									sstr << "Semantics::analyze_expression: internal error: invalid lvalue_accessor_clause branch at index " << &lvalue_accessor_clause - &grammar.lvalue_accessor_clause_storage[0] << ": " << lvalue_accessor_clause.branch;
-									throw SemanticsError(sstr.str());
-								}
-							}
-						}
-
-						expression_semantics.output_type = *last_output_type;
-						expression_semantics.output_index = last_output_index;
-					} else {
-						std::ostringstream sstr;
-						sstr
-							<< "Semantics::analyze_expression: internal error (line "
-							<< lexeme_identifier.line << " col " << lexeme_identifier.column
-							<< "): identifier refers to a variable with a resolved type with an unhandled type tag: "
-							<< resolved_type.tag
-							<< "."
-							;
-						throw SemanticsError(sstr.str());
-					}
-				} else if (constant_scope.has(lexeme_identifier.text)) {
-					std::ostringstream sstr;
-					sstr
-						<< "Semantics::analyze_expression: internal error (line "
-						<< lexeme_identifier.line << " col " << lexeme_identifier.column
-						<< "): identifier refers to a constant and should have been detected as such but wasn't: "
-						<< lexeme_identifier.text
-						<< "."
-						;
-					throw SemanticsError(sstr.str());
+				LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue_symbol, constant_scope, type_scope, routine_scope, var_scope, combined_scope);
+				expression_semantics.output_type = *lvalue_source_analysis.lvalue_type;
+				expression_semantics.lexeme_begin = lvalue_source_analysis.lexeme_begin;
+				expression_semantics.lexeme_end   = lvalue_source_analysis.lexeme_end;
+				if (lvalue_source_analysis.is_lvalue_fixed_storage) {
+					// No accessors or instructions; just load from the storage.
+					const bool is_word = lvalue_source_analysis.lvalue_type->resolve_type().get_primitive().is_word();
+					const Index load_lvalue_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, false, true, Storage(), lvalue_source_analysis.lvalue_fixed_storage)});
+					expression_semantics.output_index = load_lvalue_index;
 				} else {
-					std::ostringstream sstr;
-					sstr
-						<< "Semantics::analyze_expression: error (line "
-						<< lexeme_identifier.line << " col " << lexeme_identifier.column
-						<< "): identifier does not refer to a variable or constant that is in scope: "
-						<< lexeme_identifier.text
-						<< "."
-						;
-					throw SemanticsError(sstr.str());
+					// Merge the instructions that get us the address of an array or record.
+					const Index load_address_index = expression_semantics.instructions.merge(lvalue_source_analysis.instructions) + lvalue_source_analysis.lvalue_index;
+
+					// Dereference the address if it's primitive.
+					if (!lvalue_source_analysis.lvalue_type->resolve_type().is_primitive()) {
+						// It's an array or record; output the address.
+						expression_semantics.output_index = load_address_index;
+					} else {
+						// It's a primitive.  Dereference.
+						const bool is_word = lvalue_source_analysis.lvalue_type->resolve_type().get_primitive().is_word();
+						const Index dereference_address_index = expression_semantics.instructions.add_instruction(I::LoadFrom({B(), is_word, false, 0, false, false, Storage(), Storage(), false, true}), {load_address_index});
+						expression_semantics.output_index = dereference_address_index;
+					}
 				}
 
+				// We're done.
 				break;
 			}
 
@@ -15479,7 +15173,12 @@ void Semantics::analyze() {
 					// Use the Var index as its symbol unique identifier.
 					const std::string next_identifier_text = std::as_const(next_identifier->text);
 					const Symbol var_symbol("global_var_", next_identifier_text, top_level_vars.size());
-					const Storage var_storage(var_symbol, true, next_semantics_type->get_size(), 0);
+					Storage var_storage;
+					if (!next_semantics_type->resolve_type().is_array() && !next_semantics_type->resolve_type().is_record()) {
+						var_storage = Storage(var_symbol, true, next_semantics_type->get_size(), 0);
+					} else {
+						var_storage = Storage(var_symbol, false, 4, 0);
+					}
 					const IdentifierScope::IdentifierBinding::Var var(*next_semantics_type, var_storage);
 					top_level_vars.push_back(var);
 					top_level_var_scope.scope.insert({next_identifier_text, IdentifierScope::IdentifierBinding(var)});

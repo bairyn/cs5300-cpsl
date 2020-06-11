@@ -509,13 +509,15 @@ public:
 	// a working storage unit is 2.
 	//
 	// There are 4 storage types:
-	// 	1: global_address + x
-	// 	2: x(global_address)
-	// 	3: $reg
-	// 	4: x($reg)
+	// 	1: global_address + x      (read-only; max_size is 4) (0 levels of virtual dereference.)
+	// 	2: x(global_address)       (max_size is 4 or 1)       (1 level  of virtual dereference.)
+	// 	3: $reg                    (max_size is 4 or 1)       (1 level  of virtual dereference.)
+	// 	4: x($reg)                 (max_size is 4 or 1)       (2 levels of virtual dereference.)
 	//
 	// Pointers are 4-byte MIPS words, so if dereferencing, max_size refers to
 	// the pointed-to data, not the 4-byte MIPS word pointer.
+	//
+	// Arrays and records are pointers to data.
 	class Storage {
 	public:
 		Storage();
@@ -1429,7 +1431,7 @@ public:
 		const Type             *lvalue_type;
 		MIPSIO::Index           lvalue_index = 0;
 		Storage                 lvalue_fixed_storage;
-		bool                    is_lvalue_fixed_storage = false;
+		bool                    is_lvalue_fixed_storage = false;  // If it's fixed storage, the type resolves to a primitive.  If it's not fixed storage, the type may or may not resolve to a primitive.  It's fixed storage only if there are no accessors.  If there are accessors, this is not a fixed storage.
 		uint64_t                lexeme_begin = 0;
 		uint64_t                lexeme_end   = 0;
 	};
