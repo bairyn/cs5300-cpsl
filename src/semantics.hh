@@ -488,8 +488,8 @@ public:
 		// | Get the primitive type of the constant value, which must be static.
 		//
 		// Raise an error if it's not static.
-		Type::Primitive get_static_primitive_type() const;
-		Type            get_static_type() const;
+		const Type::Primitive &get_static_primitive_type() const;
+		const Type            &get_static_type()           const;
 
 		// | Get a string representation of the static value.
 		std::string get_static_repr() const;
@@ -1453,15 +1453,15 @@ public:
 
 	class Expression {
 	public:
-		MIPSIO            instructions;
+		MIPSIO         instructions;
 // TODO: inline support.
 #if 0
 		std::vector<Call> calls;
 #endif /* #if 0 */
-		Type              output_type;
-		MIPSIO::Index     output_index;
-		uint64_t          lexeme_begin = 0;
-		uint64_t          lexeme_end   = 0;
+		const Type     *output_type;
+		MIPSIO::Index  output_index;
+		uint64_t       lexeme_begin = 0;
+		uint64_t       lexeme_end   = 0;
 
 		Expression();  // (No instructions; null type.)
 		Expression(const MIPSIO  &instructions, const Type  &output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);

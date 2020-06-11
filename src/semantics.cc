@@ -2061,7 +2061,7 @@ std::string Semantics::ConstantValue::get_tag_repr() const {
 	return get_tag_repr(tag);
 }
 
-Semantics::Type::Primitive Semantics::ConstantValue::get_static_primitive_type() const {
+const Semantics::Type::Primitive &Semantics::ConstantValue::get_static_primitive_type() const {
 	switch(tag) {
 		case dynamic_tag: {
 			std::ostringstream sstr;
@@ -2086,7 +2086,7 @@ Semantics::Type::Primitive Semantics::ConstantValue::get_static_primitive_type()
 	}
 }
 
-Semantics::Type Semantics::ConstantValue::get_static_type() const {
+const Semantics::Type &Semantics::ConstantValue::get_static_type() const {
 	switch(tag) {
 		case dynamic_tag: {
 			std::ostringstream sstr;
@@ -10704,14 +10704,14 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 
 						// Get the index expression, which should be an integer.
 						const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
-						const Type &value_resolved_type = value.output_type.resolve_type();
+						const Type &value_resolved_type = value.output_type->resolve_type();
 						if (!value_resolved_type.is_primitive() || !value_resolved_type.get_primitive().is_integer()) {
 							std::ostringstream sstr;
 							sstr
 								<< "Semantics::analyze_lvalue_source: error (line "
 								<< leftbracket_operator0.line << " col " << leftbracket_operator0.column
 								<< "): accessing an array with ``[]\" requires an integer index type, but the index is of a different type: "
-								<< value.output_type.get_tag_repr()
+								<< value.output_type->get_tag_repr()
 								;
 							throw SemanticsError(sstr.str());
 						}
@@ -10804,10 +10804,10 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 
 Semantics::Expression::Expression() {}
 
-Semantics::Expression::Expression(const MIPSIO  &instructions, const Type  &output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(          instructions ), output_type(          output_type ), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
-Semantics::Expression::Expression(const MIPSIO  &instructions,       Type &&output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(          instructions ), output_type(std::move(output_type)), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
-Semantics::Expression::Expression(      MIPSIO &&instructions, const Type  &output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(std::move(instructions)), output_type(          output_type ), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
-Semantics::Expression::Expression(      MIPSIO &&instructions,       Type &&output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(std::move(instructions)), output_type(std::move(output_type)), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
+Semantics::Expression::Expression(const MIPSIO  &instructions, const Type  &output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(          instructions ), output_type(          &output_type ), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
+Semantics::Expression::Expression(const MIPSIO  &instructions,       Type &&output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(          instructions ), output_type(std::move(&output_type)), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
+Semantics::Expression::Expression(      MIPSIO &&instructions, const Type  &output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(std::move(instructions)), output_type(          &output_type ), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
+Semantics::Expression::Expression(      MIPSIO &&instructions,       Type &&output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(std::move(instructions)), output_type(std::move(&output_type)), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
 
 Semantics::Expression Semantics::analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, bool no_dereference_record_array) {
 	return analyze_expression(grammar.expression_storage.at(expression), constant_scope, type_scope, routine_scope, var_scope, combined_scope, no_dereference_record_array);
@@ -10837,7 +10837,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 	if (constant_value.is_static()) {
 		expression_semantics.lexeme_begin = constant_value.lexeme_begin;
 		expression_semantics.lexeme_end   = constant_value.lexeme_end;
-		expression_semantics.output_type  = constant_value.get_static_type();
+		expression_semantics.output_type  = &constant_value.get_static_type();
 		expression_semantics.output_index = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), constant_value.get_static_primitive_type().is_word(), constant_value)});
 	} else {
 		// Branch according to the expression type.
@@ -10854,28 +10854,28 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, false);
 
 				// Make sure left and right are of primitive types.
-				if (!left.output_type.resolve_type().is_primitive() || !right.output_type.resolve_type().is_primitive()) {
+				if (!left.output_type->resolve_type().is_primitive() || !right.output_type->resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< pipe_operator0.line << " col " << pipe_operator0.column
 						<< "): cannot apply bitwise OR on a non-primitive-typed expression, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &left_type  = left.output_type.resolve_type().get_primitive();
-				const Type::Primitive &right_type = left.output_type.resolve_type().get_primitive();
+				const Type::Primitive &left_type  = left.output_type->resolve_type().get_primitive();
+				const Type::Primitive &right_type = left.output_type->resolve_type().get_primitive();
 
 				// Are the expressions of the same type?
-				if (left.output_type.tag != right.output_type.tag) {
+				if (left.output_type->tag != right.output_type->tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< pipe_operator0.line << " col " << pipe_operator0.column
 						<< "): refusing to OR values of different types, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -10914,28 +10914,28 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Make sure left and right are of primitive types.
-				if (!left.output_type.resolve_type().is_primitive() || !right.output_type.resolve_type().is_primitive()) {
+				if (!left.output_type->resolve_type().is_primitive() || !right.output_type->resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< ampersand_operator0.line << " col " << ampersand_operator0.column
 						<< "): cannot apply bitwise AND on a non-primitive-typed expression, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &left_type  = left.output_type.resolve_type().get_primitive();
-				const Type::Primitive &right_type = left.output_type.resolve_type().get_primitive();
+				const Type::Primitive &left_type  = left.output_type->resolve_type().get_primitive();
+				const Type::Primitive &right_type = left.output_type->resolve_type().get_primitive();
 
 				// Are the expressions of the same type?
-				if (left.output_type.tag != right.output_type.tag) {
+				if (left.output_type->tag != right.output_type->tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< ampersand_operator0.line << " col " << ampersand_operator0.column
 						<< "): refusing to AND values of different types, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -10974,23 +10974,23 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (left.output_type.tag != right.output_type.tag) {
+				if (left.output_type->tag != right.output_type->tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< equals_operator0.line << " col " << equals_operator0.column
 						<< "): refusing to compare values of different types for =, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply = comparison depending on the type.
-				if        (left.output_type.resolve_type().is_primitive()) {
-					const Type::Primitive &left_type = left.output_type.resolve_type().get_primitive();
+				if        (left.output_type->resolve_type().is_primitive()) {
+					const Type::Primitive &left_type = left.output_type->resolve_type().get_primitive();
 					if (!left_type.is_string()) {
-						expression_semantics.output_type  = Type::boolean_type;
+						expression_semantics.output_type  = &Type::boolean_type;
 						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
 						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
 						const Index sub_index             = expression_semantics.instructions.add_instruction({I::SubFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
@@ -11003,18 +11003,18 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 							<< "Semantics::analyze_expression: error (line "
 							<< equals_operator0.line << " col " << equals_operator0.column
 							<< "): comparison of string types is not yet supported, for "
-							<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+							<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 							<< "."
 							;
 						throw SemanticsError(sstr.str());
 					}
-				} else if (left.output_type.resolve_type().is_record() || left.output_type.resolve_type().is_array()) {
+				} else if (left.output_type->resolve_type().is_record() || left.output_type->resolve_type().is_array()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< equals_operator0.line << " col " << equals_operator0.column
 						<< "): comparison of record or array types is not yet supported, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11024,7 +11024,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: internal error (line "
 						<< equals_operator0.line << " col " << equals_operator0.column
 						<< "): unhandled expression type for = comparison: "
-						<< left.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr()
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -11042,23 +11042,23 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (left.output_type.tag != right.output_type.tag) {
+				if (left.output_type->tag != right.output_type->tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< lt_or_gt_operator0.line << " col " << lt_or_gt_operator0.column
 						<< "): refusing to compare values of different types for <>, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply <> comparison depending on the type.
-				if        (left.output_type.resolve_type().is_primitive()) {
-					const Type::Primitive &left_type = left.output_type.resolve_type().get_primitive();
+				if        (left.output_type->resolve_type().is_primitive()) {
+					const Type::Primitive &left_type = left.output_type->resolve_type().get_primitive();
 					if (!left_type.is_string()) {
-						expression_semantics.output_type  = Type::boolean_type;
+						expression_semantics.output_type  = &Type::boolean_type;
 						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
 						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
 						const Index sub_index             = expression_semantics.instructions.add_instruction({I::SubFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
@@ -11072,18 +11072,18 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 							<< "Semantics::analyze_expression: error (line "
 							<< lt_or_gt_operator0.line << " col " << lt_or_gt_operator0.column
 							<< "): comparison of string types is not yet supported, for "
-							<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+							<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 							<< "."
 							;
 						throw SemanticsError(sstr.str());
 					}
-				} else if (left.output_type.resolve_type().is_record() || left.output_type.resolve_type().is_array()) {
+				} else if (left.output_type->resolve_type().is_record() || left.output_type->resolve_type().is_array()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< lt_or_gt_operator0.line << " col " << lt_or_gt_operator0.column
 						<< "): comparison of record or array types is not yet supported, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11093,7 +11093,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: internal error (line "
 						<< lt_or_gt_operator0.line << " col " << lt_or_gt_operator0.column
 						<< "): unhandled expression type for <> comparison: "
-						<< left.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr()
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -11111,23 +11111,23 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (left.output_type.tag != right.output_type.tag) {
+				if (left.output_type->tag != right.output_type->tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< le_operator0.line << " col " << le_operator0.column
 						<< "): refusing to compare values of different types for <=, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply <= comparison depending on the type.
-				if        (left.output_type.resolve_type().is_primitive()) {
-					const Type::Primitive &left_type = left.output_type.resolve_type().get_primitive();
+				if        (left.output_type->resolve_type().is_primitive()) {
+					const Type::Primitive &left_type = left.output_type->resolve_type().get_primitive();
 					if (!left_type.is_string()) {
-						expression_semantics.output_type  = Type::boolean_type;
+						expression_semantics.output_type  = &Type::boolean_type;
 						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
 						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
 						const Index lt_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word(), true)}, {left.output_index + left_index, right.output_index + right_index});
@@ -11142,18 +11142,18 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 							<< "Semantics::analyze_expression: error (line "
 							<< le_operator0.line << " col " << le_operator0.column
 							<< "): comparison of string types is not yet supported, for "
-							<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+							<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 							<< "."
 							;
 						throw SemanticsError(sstr.str());
 					}
-				} else if (left.output_type.resolve_type().is_record() || left.output_type.resolve_type().is_array()) {
+				} else if (left.output_type->resolve_type().is_record() || left.output_type->resolve_type().is_array()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< le_operator0.line << " col " << le_operator0.column
 						<< "): comparison of record or array types is not yet supported, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11163,7 +11163,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: internal error (line "
 						<< le_operator0.line << " col " << le_operator0.column
 						<< "): unhandled expression type for <= comparison: "
-						<< left.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr()
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -11181,23 +11181,23 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (left.output_type.tag != right.output_type.tag) {
+				if (left.output_type->tag != right.output_type->tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< ge_operator0.line << " col " << ge_operator0.column
 						<< "): refusing to compare values of different types for >=, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply >= comparison depending on the type.
-				if        (left.output_type.resolve_type().is_primitive()) {
-					const Type::Primitive &left_type = left.output_type.resolve_type().get_primitive();
+				if        (left.output_type->resolve_type().is_primitive()) {
+					const Type::Primitive &left_type = left.output_type->resolve_type().get_primitive();
 					if (!left_type.is_string()) {
-						expression_semantics.output_type  = Type::boolean_type;
+						expression_semantics.output_type  = &Type::boolean_type;
 						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
 						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
 						const Index gt_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word(), true)}, {right.output_index + right_index, left.output_index + left_index});
@@ -11212,18 +11212,18 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 							<< "Semantics::analyze_expression: error (line "
 							<< ge_operator0.line << " col " << ge_operator0.column
 							<< "): comparison of string types is not yet supported, for "
-							<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+							<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 							<< "."
 							;
 						throw SemanticsError(sstr.str());
 					}
-				} else if (left.output_type.resolve_type().is_record() || left.output_type.resolve_type().is_array()) {
+				} else if (left.output_type->resolve_type().is_record() || left.output_type->resolve_type().is_array()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< ge_operator0.line << " col " << ge_operator0.column
 						<< "): comparison of record or array types is not yet supported, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11233,7 +11233,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: internal error (line "
 						<< ge_operator0.line << " col " << ge_operator0.column
 						<< "): unhandled expression type for >= comparison: "
-						<< left.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr()
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -11251,23 +11251,23 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (left.output_type.tag != right.output_type.tag) {
+				if (left.output_type->tag != right.output_type->tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< lt_operator0.line << " col " << lt_operator0.column
 						<< "): refusing to compare values of different types for <, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply < comparison depending on the type.
-				if        (left.output_type.resolve_type().is_primitive()) {
-					const Type::Primitive &left_type = left.output_type.resolve_type().get_primitive();
+				if        (left.output_type->resolve_type().is_primitive()) {
+					const Type::Primitive &left_type = left.output_type->resolve_type().get_primitive();
 					if (!left_type.is_string()) {
-						expression_semantics.output_type  = Type::boolean_type;
+						expression_semantics.output_type  = &Type::boolean_type;
 						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
 						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
 						const Index lt_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word(), true)}, {left.output_index + left_index, right.output_index + right_index});
@@ -11278,18 +11278,18 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 							<< "Semantics::analyze_expression: error (line "
 							<< lt_operator0.line << " col " << lt_operator0.column
 							<< "): comparison of string types is not yet supported, for "
-							<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+							<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 							<< "."
 							;
 						throw SemanticsError(sstr.str());
 					}
-				} else if (left.output_type.resolve_type().is_record() || left.output_type.resolve_type().is_array()) {
+				} else if (left.output_type->resolve_type().is_record() || left.output_type->resolve_type().is_array()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< lt_operator0.line << " col " << lt_operator0.column
 						<< "): comparison of record or array types is not yet supported, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11299,7 +11299,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: internal error (line "
 						<< lt_operator0.line << " col " << lt_operator0.column
 						<< "): unhandled expression type for < comparison: "
-						<< left.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr()
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -11317,23 +11317,23 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (left.output_type.tag != right.output_type.tag) {
+				if (left.output_type->tag != right.output_type->tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< gt_operator0.line << " col " << gt_operator0.column
 						<< "): refusing to compare values of different types for >, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Apply > comparison depending on the type.
-				if        (left.output_type.resolve_type().is_primitive()) {
-					const Type::Primitive &left_type = left.output_type.resolve_type().get_primitive();
+				if        (left.output_type->resolve_type().is_primitive()) {
+					const Type::Primitive &left_type = left.output_type->resolve_type().get_primitive();
 					if (!left_type.is_string()) {
-						expression_semantics.output_type  = Type::boolean_type;
+						expression_semantics.output_type  = &Type::boolean_type;
 						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
 						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
 						const Index gt_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word(), true)}, {right.output_index + right_index, left.output_index + left_index});
@@ -11344,18 +11344,18 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 							<< "Semantics::analyze_expression: error (line "
 							<< gt_operator0.line << " col " << gt_operator0.column
 							<< "): comparison of string types is not yet supported, for "
-							<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+							<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 							<< "."
 							;
 						throw SemanticsError(sstr.str());
 					}
-				} else if (left.output_type.resolve_type().is_record() || left.output_type.resolve_type().is_array()) {
+				} else if (left.output_type->resolve_type().is_record() || left.output_type->resolve_type().is_array()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< gt_operator0.line << " col " << gt_operator0.column
 						<< "): comparison of record or array types is not yet supported, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11365,7 +11365,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: internal error (line "
 						<< gt_operator0.line << " col " << gt_operator0.column
 						<< "): unhandled expression type for > comparison: "
-						<< left.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr()
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -11383,19 +11383,19 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Make sure left and right are of primitive types.
-				if (!left.output_type.resolve_type().is_primitive() || !right.output_type.resolve_type().is_primitive()) {
+				if (!left.output_type->resolve_type().is_primitive() || !right.output_type->resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< plus_operator0.line << " col " << plus_operator0.column
 						<< "): cannot apply addition on a non-primitive-typed expression, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &left_type  = left.output_type.resolve_type().get_primitive();
-				const Type::Primitive &right_type = left.output_type.resolve_type().get_primitive();
+				const Type::Primitive &left_type  = left.output_type->resolve_type().get_primitive();
+				const Type::Primitive &right_type = left.output_type->resolve_type().get_primitive();
 
 				// Are we attempting to operate on a non-integer?
 				if (left_type.is_char() || left_type.is_boolean() || right_type.is_char() || right_type.is_boolean()) {
@@ -11404,20 +11404,20 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: error (line "
 						<< plus_operator0.line << " col " << plus_operator0.column
 						<< "): refusing to apply addition on a non-integer, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Are the expressions of the same type?
-				if (left.output_type.tag != right.output_type.tag) {
+				if (left.output_type->tag != right.output_type->tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< plus_operator0.line << " col " << plus_operator0.column
 						<< "): refusing to add values of different types, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11456,19 +11456,19 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Make sure left and right are of primitive types.
-				if (!left.output_type.resolve_type().is_primitive() || !right.output_type.resolve_type().is_primitive()) {
+				if (!left.output_type->resolve_type().is_primitive() || !right.output_type->resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< minus_operator0.line << " col " << minus_operator0.column
 						<< "): cannot apply subtraction on a non-primitive-typed expression, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &left_type  = left.output_type.resolve_type().get_primitive();
-				const Type::Primitive &right_type = left.output_type.resolve_type().get_primitive();
+				const Type::Primitive &left_type  = left.output_type->resolve_type().get_primitive();
+				const Type::Primitive &right_type = left.output_type->resolve_type().get_primitive();
 
 				// Are we attempting to operate on a non-integer?
 				if (left_type.is_char() || left_type.is_boolean() || right_type.is_char() || right_type.is_boolean()) {
@@ -11477,20 +11477,20 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: error (line "
 						<< minus_operator0.line << " col " << minus_operator0.column
 						<< "): refusing to apply subtraction a non-integer, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Are the expressions of the same type?
-				if (left.output_type.tag != right.output_type.tag) {
+				if (left.output_type->tag != right.output_type->tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< minus_operator0.line << " col " << minus_operator0.column
 						<< "): refusing to subtract values of different types, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11529,19 +11529,19 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Make sure left and right are of primitive types.
-				if (!left.output_type.resolve_type().is_primitive() || !right.output_type.resolve_type().is_primitive()) {
+				if (!left.output_type->resolve_type().is_primitive() || !right.output_type->resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< times_operator0.line << " col " << times_operator0.column
 						<< "): cannot apply multiplication on a non-primitive-typed expression, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &left_type  = left.output_type.resolve_type().get_primitive();
-				const Type::Primitive &right_type = left.output_type.resolve_type().get_primitive();
+				const Type::Primitive &left_type  = left.output_type->resolve_type().get_primitive();
+				const Type::Primitive &right_type = left.output_type->resolve_type().get_primitive();
 
 				// Are we attempting to operate on a non-integer?
 				if (left_type.is_char() || left_type.is_boolean() || right_type.is_char() || right_type.is_boolean()) {
@@ -11550,20 +11550,20 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: error (line "
 						<< times_operator0.line << " col " << times_operator0.column
 						<< "): refusing to apply multiplication on a non-integer, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Are the expressions of the same type?
-				if (left.output_type.tag != right.output_type.tag) {
+				if (left.output_type->tag != right.output_type->tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< times_operator0.line << " col " << times_operator0.column
 						<< "): refusing to multiply values of different types, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11604,19 +11604,19 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Make sure left and right are of primitive types.
-				if (!left.output_type.resolve_type().is_primitive() || !right.output_type.resolve_type().is_primitive()) {
+				if (!left.output_type->resolve_type().is_primitive() || !right.output_type->resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< slash_operator0.line << " col " << slash_operator0.column
 						<< "): cannot apply division on a non-primitive-typed expression, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &left_type  = left.output_type.resolve_type().get_primitive();
-				const Type::Primitive &right_type = left.output_type.resolve_type().get_primitive();
+				const Type::Primitive &left_type  = left.output_type->resolve_type().get_primitive();
+				const Type::Primitive &right_type = left.output_type->resolve_type().get_primitive();
 
 				// Are we attempting to operate on a non-integer?
 				if (left_type.is_char() || left_type.is_boolean() || right_type.is_char() || right_type.is_boolean()) {
@@ -11625,20 +11625,20 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: error (line "
 						<< slash_operator0.line << " col " << slash_operator0.column
 						<< "): refusing to apply division on a non-integer, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Are the expressions of the same type?
-				if (left.output_type.tag != right.output_type.tag) {
+				if (left.output_type->tag != right.output_type->tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< slash_operator0.line << " col " << slash_operator0.column
 						<< "): refusing to divide values of different types, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11679,19 +11679,19 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Make sure left and right are of primitive types.
-				if (!left.output_type.resolve_type().is_primitive() || !right.output_type.resolve_type().is_primitive()) {
+				if (!left.output_type->resolve_type().is_primitive() || !right.output_type->resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< percent_operator0.line << " col " << percent_operator0.column
 						<< "): cannot apply mod on a non-primitive-typed expression, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &left_type  = left.output_type.resolve_type().get_primitive();
-				const Type::Primitive &right_type = left.output_type.resolve_type().get_primitive();
+				const Type::Primitive &left_type  = left.output_type->resolve_type().get_primitive();
+				const Type::Primitive &right_type = left.output_type->resolve_type().get_primitive();
 
 				// Are we attempting to operate on a non-integer?
 				if (left_type.is_char() || left_type.is_boolean() || right_type.is_char() || right_type.is_boolean()) {
@@ -11700,20 +11700,20 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: error (line "
 						<< percent_operator0.line << " col " << percent_operator0.column
 						<< "): refusing to apply mod on a non-integer, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
 
 				// Are the expressions of the same type?
-				if (left.output_type.tag != right.output_type.tag) {
+				if (left.output_type->tag != right.output_type->tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< percent_operator0.line << " col " << percent_operator0.column
 						<< "): refusing to mod values of different types, for "
-						<< left.output_type.get_tag_repr() << " with " << right.output_type.get_tag_repr()
+						<< left.output_type->get_tag_repr() << " with " << right.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11754,18 +11754,18 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = value.lexeme_end;
 
 				// Make sure value is of primitive type.
-				if (!value.output_type.resolve_type().is_primitive()) {
+				if (!value.output_type->resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< tilde_operator0.line << " col " << tilde_operator0.column
 						<< "): cannot apply bitwise NOT on a non-primitive-typed expression, for "
-						<< value.output_type.get_tag_repr()
+						<< value.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &value_type  = value.output_type.resolve_type().get_primitive();
+				const Type::Primitive &value_type  = value.output_type->resolve_type().get_primitive();
 
 				// Are we attempting to operate on a string?
 				if (value_type.is_string()) {
@@ -11797,18 +11797,18 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = value.lexeme_end;
 
 				// Make sure value is of primitive type.
-				if (!value.output_type.resolve_type().is_primitive()) {
+				if (!value.output_type->resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< minus_operator0.line << " col " << minus_operator0.column
 						<< "): cannot apply unary minus on a non-primitive-typed expression, for "
-						<< value.output_type.get_tag_repr()
+						<< value.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &value_type = value.output_type.resolve_type().get_primitive();
+				const Type::Primitive &value_type = value.output_type->resolve_type().get_primitive();
 
 				// Are we attempting to operate on a non-integer?
 				if (value_type.is_char() || value_type.is_boolean()) {
@@ -11817,7 +11817,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: error (line "
 						<< minus_operator0.line << " col " << minus_operator0.column
 						<< "): refusing to apply unary minus on a non-integer, for "
-						<< value.output_type.get_tag_repr()
+						<< value.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -11913,7 +11913,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						;
 					throw SemanticsError(sstr.str());
 				}
-				expression_semantics.output_type = **routine_declaration.output;
+				expression_semantics.output_type = *routine_declaration.output;
 
 				// Output types of arrays or records are currently unsupported.
 				if (!(*routine_declaration.output)->resolve_type().is_primitive()) {
@@ -12155,7 +12155,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 
 						argument_outputs.push_back(argument_expression_index);
 
-						if (argument_expression.output_type.resolve_type() != parameter_type.resolve_type()) {
+						if (argument_expression.output_type->resolve_type() != parameter_type.resolve_type()) {
 							std::ostringstream sstr;
 							sstr
 								<< "Semantics::analyze_expression: error (line "
@@ -12255,18 +12255,18 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = chr.rightparenthesis_operator0 + 1;
 
 				// Make sure value is of primitive type.
-				if (!value.output_type.resolve_type().is_primitive()) {
+				if (!value.output_type->resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< chr_keyword0.line << " col " << chr_keyword0.column
 						<< "): cannot apply chr() on a non-primitive-typed expression, for "
-						<< value.output_type.get_tag_repr()
+						<< value.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &value_type = value.output_type.resolve_type().get_primitive();
+				const Type::Primitive &value_type = value.output_type->resolve_type().get_primitive();
 
 				// Are we attempting to operate on a non-integer?
 				if (value_type.is_char() || value_type.is_boolean()) {
@@ -12275,7 +12275,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: error (line "
 						<< chr_keyword0.line << " col " << chr_keyword0.column
 						<< "): refusing to apply chr() on a non-integer, for "
-						<< value.output_type.get_tag_repr()
+						<< value.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -12296,7 +12296,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 
 				// Apply chr() depending on the integer type.
 				// Truncate all but the lowest bits.  We may be storing e.g. to a byte in an array.
-				expression_semantics.output_type = Type::char_type;
+				expression_semantics.output_type = &Type::char_type;
 				const Index value_index  = expression_semantics.instructions.merge(value.instructions);
 				const Index resize_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), Type::Primitive::char_type.is_word(), Type::Primitive::integer_type.is_word())}, {value.output_index + value_index});
 				expression_semantics.output_index = resize_index;
@@ -12316,18 +12316,18 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = ord.rightparenthesis_operator0 + 1;
 
 				// Make sure value is of primitive type.
-				if (!value.output_type.resolve_type().is_primitive()) {
+				if (!value.output_type->resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< ord_keyword0.line << " col " << ord_keyword0.column
 						<< "): cannot apply ord() on a non-primitive-typed expression, for "
-						<< value.output_type.get_tag_repr()
+						<< value.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &value_type = value.output_type.resolve_type().get_primitive();
+				const Type::Primitive &value_type = value.output_type->resolve_type().get_primitive();
 
 				// Are we attempting to operate on a non-char?
 				if (value_type.is_integer() || value_type.is_boolean()) {
@@ -12336,7 +12336,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						<< "Semantics::analyze_expression: error (line "
 						<< ord_keyword0.line << " col " << ord_keyword0.column
 						<< "): refusing to apply ord() on a non-char, for "
-						<< value.output_type.get_tag_repr()
+						<< value.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
@@ -12359,7 +12359,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// MIPS's "lb" should load a 1-byte value to the lowest bits
 				// and fill the rest with 0s if loading from a memory address.
 				// (We could always reset it to 0 before loading if not.)
-				expression_semantics.output_type = Type::integer_type;
+				expression_semantics.output_type = &Type::integer_type;
 				const Index value_index  = expression_semantics.instructions.merge(value.instructions);
 				const Index resize_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), Type::Primitive::integer_type.is_word(), Type::Primitive::char_type.is_word())}, {value.output_index + value_index});
 				expression_semantics.output_index = resize_index;
@@ -12379,18 +12379,18 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = pred.rightparenthesis_operator0 + 1;
 
 				// Make sure value is of primitive type.
-				if (!value.output_type.resolve_type().is_primitive()) {
+				if (!value.output_type->resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< pred_keyword0.line << " col " << pred_keyword0.column
 						<< "): cannot apply pred() on a non-primitive-typed expression, for "
-						<< value.output_type.get_tag_repr()
+						<< value.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &value_type = value.output_type.resolve_type().get_primitive();
+				const Type::Primitive &value_type = value.output_type->resolve_type().get_primitive();
 
 				// Are we attempting to operate on a string?
 				if (value_type.is_string()) {
@@ -12434,18 +12434,18 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = succ.rightparenthesis_operator0 + 1;
 
 				// Make sure value is of primitive type.
-				if (!value.output_type.resolve_type().is_primitive()) {
+				if (!value.output_type->resolve_type().is_primitive()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
 						<< succ_keyword0.line << " col " << succ_keyword0.column
 						<< "): cannot apply succ() on a non-primitive-typed expression, for "
-						<< value.output_type.get_tag_repr()
+						<< value.output_type->get_tag_repr()
 						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Type::Primitive &value_type = value.output_type.resolve_type().get_primitive();
+				const Type::Primitive &value_type = value.output_type->resolve_type().get_primitive();
 
 				// Are we attempting to operate on a string?
 				if (value_type.is_string()) {
@@ -12492,7 +12492,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// An lvalue in an expression corresponds a read / a LoadFrom.
 
 				LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue_symbol, constant_scope, type_scope, routine_scope, var_scope, combined_scope);
-				expression_semantics.output_type = *lvalue_source_analysis.lvalue_type;
+				expression_semantics.output_type  = lvalue_source_analysis.lvalue_type;
 				expression_semantics.lexeme_begin = lvalue_source_analysis.lexeme_begin;
 				expression_semantics.lexeme_end   = lvalue_source_analysis.lexeme_end;
 				if (lvalue_source_analysis.is_lvalue_fixed_storage) {
@@ -12622,13 +12622,13 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				block.lexeme_end = value.lexeme_end;
 
 				// Make sure the expression is of the expected type.
-				if (value.output_type.resolve_type() != lvalue_source_analysis.lvalue_type->resolve_type()) {
+				if (value.output_type->resolve_type() != lvalue_source_analysis.lvalue_type->resolve_type()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_statements: error (line "
 						<< lvalue_source_analysis.lvalue_identifier->line << " col " << lvalue_source_analysis.lvalue_identifier->column
 						<< "): assignment from an expression of one type into a variable of a different type, for "
-						<< "<" << lvalue_source_analysis.lvalue_type->get_repr() << "> := <" << value.output_type.get_repr() << ">"
+						<< "<" << lvalue_source_analysis.lvalue_type->get_repr() << "> := <" << value.output_type->get_repr() << ">"
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -12639,7 +12639,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				block.back = value_index;
 
 				// Writing arrays and records (copying them) is currently unimplemented.
-				if (value.output_type.resolve_type().is_record() || value.output_type.resolve_type().is_array()) {
+				if (value.output_type->resolve_type().is_record() || value.output_type->resolve_type().is_array()) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_statements: error (line "
@@ -12651,9 +12651,9 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 
 				// Write to the lvalue.
 				if (!lvalue_source_analysis.is_lvalue_fixed_storage) {
-					block.back = block.instructions.add_instruction({I::LoadFrom(B(), value.output_type.resolve_type().get_primitive().is_word())}, {lvalue_index, value_index}, {block.back});
+					block.back = block.instructions.add_instruction({I::LoadFrom(B(), value.output_type->resolve_type().get_primitive().is_word())}, {lvalue_index, value_index}, {block.back});
 				} else {
-					block.back = block.instructions.add_instruction({I::LoadFrom(B(), lvalue_source_analysis.lvalue_fixed_storage.max_size == 4, value.output_type.resolve_type().get_primitive().is_word(), 0, true, false, lvalue_source_analysis.lvalue_fixed_storage, Storage(), false, false)}, {value_index}, {block.back});
+					block.back = block.instructions.add_instruction({I::LoadFrom(B(), lvalue_source_analysis.lvalue_fixed_storage.max_size == 4, value.output_type->resolve_type().get_primitive().is_word(), 0, true, false, lvalue_source_analysis.lvalue_fixed_storage, Storage(), false, false)}, {value_index}, {block.back});
 				}
 
 				// We're done.
