@@ -799,9 +799,9 @@ bool Semantics::Type::Primitive::is_word(bool permit_in_between_size) const {
 	} else {
 		if (size > 1) {
 			// size <= 4.
-			return false;
-		} else {
 			return true;
+		} else {
+			return false;
 		}
 	}
 }
@@ -13585,7 +13585,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				if (!lvalue_source_analysis.is_lvalue_fixed_storage) {
 					block.back = block.instructions.add_instruction({I::LoadFrom(B(), value.output_type.resolve_type().get_primitive().is_word())}, {lvalue_index, value_index}, {block.back});
 				} else {
-					block.back = block.instructions.add_instruction({I::LoadFrom(B(), lvalue_source_analysis.lvalue_fixed_storage.max_size, value.output_type.resolve_type().get_primitive().is_word(), 0, true, false, lvalue_source_analysis.lvalue_fixed_storage, Storage(), false, false)}, {value_index}, {block.back});
+					block.back = block.instructions.add_instruction({I::LoadFrom(B(), lvalue_source_analysis.lvalue_fixed_storage.max_size == 4, value.output_type.resolve_type().get_primitive().is_word(), 0, true, false, lvalue_source_analysis.lvalue_fixed_storage, Storage(), false, false)}, {value_index}, {block.back});
 				}
 
 				// We're done.
