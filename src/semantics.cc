@@ -11040,6 +11040,7 @@ void Semantics::MIPSIO::optimize() {
 #endif /* #if 0 */
 
 	// Compose saved-fixed load-dynamic LoadFrom with LoadImmediate.
+	// TODO: how to handle sequence connections?
 	// TODO
 }
 
