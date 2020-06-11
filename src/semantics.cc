@@ -10096,7 +10096,6 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 					throw SemanticsError(sstr.str());
 				}
 
-				// TODO: don't save storages that are no longer needed.
 				// Get storages we need to save.
 				for (const std::map<IO, Storage>::value_type &input_storage_pair : std::as_const(input_storages)) {
 					const Storage &input_storage_unit = input_storage_pair.second;
