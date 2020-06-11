@@ -10092,11 +10092,11 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 	std::vector<Index> children_stack;
 	std::set<Index>    in_children_stack;
 	std::set<Index>    ancestors;  // Detect cycles: DFS can detect already visited notes (e.g. diamond) but not ancestors.
-	if (back.has_value()) {
-		root_stack.push_back(*back);
-	}
 	for (const std::map<Index, std::map<IOIndex, Storage>>::value_type &output_pair : std::as_const(expanded_capture_outputs)) {
 		root_stack.push_back(output_pair.first);
+	}
+	if (back.has_value()) {
+		root_stack.push_back(*back);
 	}
 	while (children_stack.size() > 0 || root_stack.size() > 0) {
 		if (children_stack.size() <= 0 && root_stack.size() > 0) {
@@ -10120,26 +10120,6 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 		// and marking it as visited.
 		bool has_unvisited_children = false;
 
-		// Search for a sequence connection for a node that should be emitted before this one.
-		std::map<Index, Index>::const_iterator reversed_sequences_search = reversed_sequences.find(this_node);
-		if (reversed_sequences_search != reversed_sequences.cend()) {
-			Index before_node = reversed_sequences_search->second;
-
-			// Detect cycles.
-			if (ancestors.find(before_node) != ancestors.cend()) {
-				std::ostringstream sstr;
-				sstr << "Semantics::MIPSIO::prepare: error: a cycle was detected in the instruction graph at index " << before_node << " (sequenced after " << this_node << ").";
-				throw SemanticsError(sstr.str());
-			}
-
-			// Add the child.
-			if (visited_instructions.find(before_node) == visited_instructions.cend()) {
-				has_unvisited_children = true;
-				in_children_stack.insert(before_node);
-				children_stack.push_back(before_node);
-			}
-		}
-
 		// Search connections.
 		for (IOIndex input_index_ = 0; input_index_ < instruction.get_input_sizes().size(); ++input_index_) {
 			const IOIndex input_index = instruction.get_input_sizes().size() - 1 - input_index_;
@@ -10160,6 +10140,26 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 					in_children_stack.insert(child_node);
 					children_stack.push_back(child_node);
 				}
+			}
+		}
+
+		// Search for a sequence connection for a node that should be emitted before this one.
+		std::map<Index, Index>::const_iterator reversed_sequences_search = reversed_sequences.find(this_node);
+		if (reversed_sequences_search != reversed_sequences.cend()) {
+			Index before_node = reversed_sequences_search->second;
+
+			// Detect cycles.
+			if (ancestors.find(before_node) != ancestors.cend()) {
+				std::ostringstream sstr;
+				sstr << "Semantics::MIPSIO::prepare: error: a cycle was detected in the instruction graph at index " << before_node << " (sequenced after " << this_node << ").";
+				throw SemanticsError(sstr.str());
+			}
+
+			// Add the child.
+			if (visited_instructions.find(before_node) == visited_instructions.cend()) {
+				has_unvisited_children = true;
+				in_children_stack.insert(before_node);
+				children_stack.push_back(before_node);
 			}
 		}
 
@@ -10503,11 +10503,11 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 	std::vector<Index> children_stack;
 	std::set<Index>    in_children_stack;
 	std::set<Index>    ancestors;  // Detect cycles: DFS can detect already visited notes (e.g. diamond) but not ancestors.
-	if (back.has_value()) {
-		root_stack.push_back(*back);
-	}
 	for (const std::map<Index, std::map<IOIndex, Storage>>::value_type &output_pair : std::as_const(expanded_capture_outputs)) {
 		root_stack.push_back(output_pair.first);
+	}
+	if (back.has_value()) {
+		root_stack.push_back(*back);
 	}
 	while (children_stack.size() > 0 || root_stack.size() > 0) {
 		if (children_stack.size() <= 0 && root_stack.size() > 0) {
@@ -10531,26 +10531,6 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 		// and marking it as visited.
 		bool has_unvisited_children = false;
 
-		// Search for a sequence connection for a node that should be emitted before this one.
-		std::map<Index, Index>::const_iterator reversed_sequences_search = reversed_sequences.find(this_node);
-		if (reversed_sequences_search != reversed_sequences.cend()) {
-			Index before_node = reversed_sequences_search->second;
-
-			// Detect cycles.
-			if (ancestors.find(before_node) != ancestors.cend()) {
-				std::ostringstream sstr;
-				sstr << "Semantics::MIPSIO::emit: error: a cycle was detected in the instruction graph at index " << before_node << " (sequenced after " << this_node << ").";
-				throw SemanticsError(sstr.str());
-			}
-
-			// Add the child.
-			if (visited_instructions.find(before_node) == visited_instructions.cend()) {
-				has_unvisited_children = true;
-				in_children_stack.insert(before_node);
-				children_stack.push_back(before_node);
-			}
-		}
-
 		// Search connections.
 		for (IOIndex input_index_ = 0; input_index_ < instruction.get_input_sizes().size(); ++input_index_) {
 			const IOIndex input_index = instruction.get_input_sizes().size() - 1 - input_index_;
@@ -10571,6 +10551,26 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 					in_children_stack.insert(child_node);
 					children_stack.push_back(child_node);
 				}
+			}
+		}
+
+		// Search for a sequence connection for a node that should be emitted before this one.
+		std::map<Index, Index>::const_iterator reversed_sequences_search = reversed_sequences.find(this_node);
+		if (reversed_sequences_search != reversed_sequences.cend()) {
+			Index before_node = reversed_sequences_search->second;
+
+			// Detect cycles.
+			if (ancestors.find(before_node) != ancestors.cend()) {
+				std::ostringstream sstr;
+				sstr << "Semantics::MIPSIO::emit: error: a cycle was detected in the instruction graph at index " << before_node << " (sequenced after " << this_node << ").";
+				throw SemanticsError(sstr.str());
+			}
+
+			// Add the child.
+			if (visited_instructions.find(before_node) == visited_instructions.cend()) {
+				has_unvisited_children = true;
+				in_children_stack.insert(before_node);
+				children_stack.push_back(before_node);
 			}
 		}
 
