@@ -13789,7 +13789,6 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 }
 
 // | Analyze a BEGIN [statement]... END block.
-// TODO: don't forget to load the arguments > 4!
 std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const std::map<std::string, const Type *> &local_variables, bool is_main) {
 	// Some type aliases to improve readability.
 	using M = Semantics::MIPSIO;
@@ -14056,6 +14055,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 
 	// Set up intro and cleanup sections.
 
+	// $sp now points to the first argument.
+
 	// TODO: possible optimization: this is unnecessary if there are no calls or jumps.
 	// Push the return address.
 	last_intro_index     = block_semantics.instructions.add_instruction({I::AddSp(B(), -4)}, {}, last_intro_index);
@@ -14064,6 +14065,48 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 	// Allocate space on the stack.  Bypass AddSp's Storage adjustments since we're manually setting $sp so that our Storages are correct, by using a Custom instruction.
 	if (stack_allocated > 0) {
 		last_intro_index     = block_semantics.instructions.add_instruction({I::Custom(B(), {"\taddiu $sp, $sp, -" + std::to_string(stack_allocated)})}, {}, last_intro_index);
+	}
+
+	// Now load all arguments as copies.  This does not need to be reversed; callers push and pop arguments when calling.
+	uint32_t stack_argument_total_size = 0;
+	for (const std::pair<bool, const Type *> &parameter : std::as_const(routine_declaration.parameters)) {
+		const std::vector<std::pair<bool, const Type *>>::size_type   parameter_index      = &parameter - &routine_declaration.parameters[0];
+		const std::string                                            &parameter_identifier = parameter_identifiers[parameter_index];
+
+		const bool  parameter_is_ref = parameter.first;
+		const Type &parameter_type   = *parameter.second;
+
+		if (parameter_index >= 4) {
+			if        (!all_arrays_records_are_refs && !parameter_is_ref && !parameter_type.resolve_type().is_primitive()) {
+				// TODO: copy arrays and records.
+				std::ostringstream sstr;
+				sstr << "Semantics::analyze_block: error: copying of arrays and records for non-Ref vars in arguments is currently not supported.";
+				throw SemanticsError(sstr.str());
+			} else if (!parameter_is_ref && !parameter_type.get_fixed_width()) {
+				std::ostringstream sstr;
+				sstr << "Semantics::analyze_block: error: loading non-fixed-width arguments is not supported.";
+				throw SemanticsError(sstr.str());
+			} else if (!parameter_is_ref && parameter_type.get_size() != 4 && parameter_type.get_size() != 1) {
+				std::ostringstream sstr;
+				sstr << "Semantics::analyze_block: error: loading fixed-width variable non-array/non-record arguments of size neither 4 nor 1 is currently not supported.";
+				throw SemanticsError(sstr.str());
+			} else {
+				const bool is_word = !parameter_type.is_primitive() || parameter_type.get_primitive().is_word();
+
+				// Lookup the identifier binding in var_scope for the argument.
+				if (!var_scope.has(parameter_identifier)) {
+					std::ostringstream sstr;
+					sstr << "Semantics::analyze_block: error: parameter identifier ``" << parameter_identifier << "\" was provided but the var scope that was provided does not contain it.";
+					throw SemanticsError(sstr.str());
+				}
+				const IdentifierScope::IdentifierBinding::Var &var = var_scope.get(parameter_identifier).get_var();
+
+				Storage source_storage(is_word ? 4 : 1, false, Symbol(), "$sp", true, stack_allocated + Instruction::AddSp::round_to_align(4) + stack_argument_total_size, true, false);
+				stack_argument_total_size += Instruction::AddSp::round_to_align(source_storage.max_size);
+
+				last_intro_index = block_semantics.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, true, var.storage, source_storage, false, false)}, {}, {last_intro_index});
+			}
+		}
 	}
 
 	// Reverse what intro did.
