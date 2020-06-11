@@ -1319,12 +1319,10 @@ public:
 		std::map<Index, Index>     reversed_sequences;    // sequences reversed.  We have a bimap now.
 
 		// | In order to emit these MIPSIO instructions that write these outputs, how many working storages are needed?
-		// TODO: optimization: count which storages are used most so the caller
-		// knows which to prioritize as registers.  Storages that are used more
-		// often should appear first, but this is currently unimplemented.
-		// (Count number of locks / claims, and then stable sort the output before returning.)
-		std::vector<uint32_t> prepare(const std::set<IO> &capture_outputs, std::optional<Index> back = std::optional<Index>()) const;
+		std::vector<uint32_t> prepare(const std::set<IO>          &capture_outputs, std::optional<Index> back = std::optional<Index>()) const;
 		std::vector<uint32_t> prepare(const std::map<IO, Storage> &capture_outputs, std::optional<Index> back = std::optional<Index>()) const;
+		std::pair<std::vector<uint32_t>, std::vector<uint64_t>> prepare_permutation(const std::set<IO>          &capture_outputs, std::optional<Index> back = std::optional<Index>()) const;
+		std::pair<std::vector<uint32_t>, std::vector<uint64_t>> prepare_permutation(const std::map<IO, Storage> &capture_outputs, std::optional<Index> back = std::optional<Index>()) const;
 		// | Emit the collections of instructions using the provided storages.
 		//
 		// There must be a path between every node and capture_outputs, or an

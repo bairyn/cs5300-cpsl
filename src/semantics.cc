@@ -10051,17 +10051,21 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::emit(const std::vec
 	}
 }
 
-std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::map<IO, Storage> &capture_outputs, std::optional<Index> back) const {
+std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO>          &capture_outputs, std::optional<Index> back) const { return prepare_permutation(capture_outputs, back).first; }
+std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::map<IO, Storage> &capture_outputs, std::optional<Index> back) const { return prepare_permutation(capture_outputs, back).first; }
+
+std::pair<std::vector<uint32_t>, std::vector<uint64_t>> Semantics::MIPSIO::prepare_permutation(const std::map<IO, Storage> &capture_outputs, std::optional<Index> back) const {
 	std::set<IO> capture_outputs_;
 	for (const std::map<IO, Storage>::value_type &capture_output_pair : std::as_const(capture_outputs)) {
 		capture_outputs_.insert(capture_output_pair.first);
 	}
-	return prepare(capture_outputs_, back);
+	return prepare_permutation(capture_outputs_, back);
 }
 
-std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_outputs_, std::optional<Index> back) const {
+std::pair<std::vector<uint32_t>, std::vector<uint64_t>> Semantics::MIPSIO::prepare_permutation(const std::set<IO> &capture_outputs_, std::optional<Index> back) const {
 	// Emulate emit(), except don't emit, and add working storage unit requirements when more are needed.
-	std::vector<Storage> working_storages;
+	std::vector<Storage>  working_storages;
+	std::vector<uint64_t> working_storages_num_claims;
 
 	std::map<IO, Storage> capture_outputs;
 	for (const IO &capture_output : std::as_const(capture_outputs_)) {
@@ -10320,6 +10324,7 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 							// Claim the working storage.
 							reverse_claimed_working_storages.insert({output_io, working_storage_index});
 							claimed_working_storages.insert({working_storage_index, output_io});
+							++working_storages_num_claims[working_storage_index];
 
 							// Add the working storage.
 							//output_storage.push_back(working_storage);
@@ -10336,6 +10341,7 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 					reverse_claimed_working_storages.insert({output_io, working_storages.size()});
 					claimed_working_storages.insert({working_storages.size(), output_io});
 					working_storages.push_back(Storage(instruction.get_output_sizes().at(output_index), false, Symbol(), "", false, 0));
+					working_storages_num_claims.push_back(1);
 				}
 			}
 		}
@@ -10354,6 +10360,7 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 					if (instruction.get_working_sizes().at(working_index) == working_storage.max_size) {
 						// Claim the working storage.
 						instruction_claimed_working_storages.insert(working_storage_index);
+						++working_storages_num_claims[working_storage_index];
 
 						// Add the working storage.
 						//instruction_working_storage.push_back(working_storage);
@@ -10369,6 +10376,7 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 				// Add and claim a new working storage.
 				instruction_claimed_working_storages.insert(working_storages.size());
 				working_storages.push_back(Storage(instruction.get_working_sizes().at(working_index), false, Symbol(), "", false, 0));
+				working_storages_num_claims.push_back(1);
 			}
 		}
 
@@ -10472,8 +10480,17 @@ std::vector<uint32_t> Semantics::MIPSIO::prepare(const std::set<IO> &capture_out
 	// Return the emitted output.
 	//return output_lines;
 
+	// Sort the working storages by number of claims, descending.
+	std::vector<uint64_t> permutation;
+	for (const Storage &working_storage : std::as_const(working_storages)) {
+		const std::vector<Storage>::size_type working_storage_index = &working_storage - &working_storages[0];
+		permutation.push_back(working_storage_index);
+	}
+	// Reverse sort for descending.
+	std::stable_sort(permutation.begin(), permutation.end(), [&working_storages_num_claims](const uint64_t &a, const uint64_t &b) -> bool { return working_storages_num_claims[b] < working_storages_num_claims[a]; });
+
 	// Return the working storages we found we needed.
-	return Storage::get_sizes(working_storages);
+	return std::pair<std::vector<uint32_t>, std::vector<uint64_t>>(Storage::get_sizes(working_storages), permutation);
 }
 
 std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, Storage> &input_storages, const std::vector<Storage> &working_storages, const std::map<IO, Storage> &capture_outputs, bool permit_uncaptured_outputs, std::optional<Index> back) const {
@@ -13819,8 +13836,9 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 	}
 
 	// Get working storage requirements.
-	std::vector<uint32_t> working_storage_requirements;
-	working_storage_requirements = block_semantics.instructions.prepare(std::set<IO>(), {block_semantics.back});
+	std::pair<std::vector<uint32_t>, std::vector<uint64_t>> prepare_permutation = block_semantics.instructions.prepare_permutation(std::set<IO>(), {block_semantics.back});
+	const std::vector<uint32_t> &working_storage_requirements = prepare_permutation.first;
+	const std::vector<uint64_t> &permutation                  = prepare_permutation.second;
 
 	// Assign variables and working storage units to Storages and allocate
 	// sufficient space on the stack.
@@ -14072,8 +14090,15 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 		throw SemanticsError(sstr.str());
 	}
 
+	// Sort the working storage units.
+	std::vector<Storage> sorted_working_storages;
+	for (const Storage &working_storage : std::as_const(working_storages)) {
+		const std::vector<Storage>::size_type working_storage_index = &working_storage - &working_storages[0];
+		sorted_working_storages.push_back(working_storages[permutation[working_storage_index]]);
+	}
+
 	// Emit the block.
-	output_lines = block_semantics.instructions.emit({}, working_storages, {}, false, block_semantics.back);
+	output_lines = block_semantics.instructions.emit({}, sorted_working_storages, {}, false, block_semantics.back);
 
 	// Return the output.
 	return output_lines;
