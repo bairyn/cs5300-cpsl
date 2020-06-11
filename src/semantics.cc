@@ -4658,8 +4658,8 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadImmediate::emit
 	// If the constant value is a string, replace "li" with "la", and use the symbol rather than the constant value.
 	//
 	// 4 storage types for destination:
-	// 	1: global_address + x  (Store into this address.)
-	// 	2: x(global_address)   (Store into this dereferenced address.)
+	// 	1: global_address + x  (Error.)
+	// 	2: x(global_address)   (Store into this address.)
 	// 	3: $reg                (Store into this register.)
 	// 	4: x($reg)             (Store into this dereferenced register.)
 	//
@@ -4679,12 +4679,13 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadImmediate::emit
 	// 	4: li   $t9, constant_non_string
 	// 	   sw   $t9, destination_storage.offset(REG)
 
-	// Get the final store operation.
-	Output::Line store_op;
+	// Get sizes save operations.
+	Output::Line sized_save;
+
 	if (is_word) {
-		store_op = "\tsw    ";
+		sized_save = "\tsw    ";
 	} else {
-		store_op = "\tsb    ";
+		sized_save = "\tsb    ";
 	}
 
 	// Get the li operation.  Are we loading a label or a number?
@@ -4698,24 +4699,21 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadImmediate::emit
 		value = destination_storage.global_address;
 	}
 
-	// Emit the output depending on the destination storage type.
-	if           ( destination_storage.is_global && !destination_storage.dereference) {
-		lines.push_back("\tla    $t9, " + destination_storage.global_address);
-		if (destination_storage.offset != 0) {
-			lines.push_back("\tla    $t9, " + std::to_string(destination_storage.offset) + "($t9)");
-		}
-		lines.push_back(constant_load_op + "$t8, " + value);
-		lines.push_back("\tsw    $t8, ($t9)");
-	} else if    ( destination_storage.is_global &&  destination_storage.dereference) {
-		lines.push_back("\tla    $t9, " + destination_storage.global_address);
-		lines.push_back("\tlw    $t9, " + std::to_string(destination_storage.offset) + "($t9)");
-		lines.push_back(constant_load_op + "$t8, " + value);
-		lines.push_back("\tsw    $t8, ($t9)");
-	} else if    (!destination_storage.is_global && !destination_storage.dereference) {
+	// Part 1: emit the output depending on the destination storage type.
+	if        (destination_storage.is_register_direct()) {
 		lines.push_back(constant_load_op + destination_storage.register_ + ", " + value);
-	} else {  // (!destination_storage.is_global &&  destination_storage.dereference) {
+	} else if (destination_storage.is_register_dereference()) {
 		lines.push_back(constant_load_op + "$t9, " + value);
-		lines.push_back("\tsw    $t9, " + std::to_string(destination_storage.offset) + "(" + destination_storage.register_ + ")");
+		lines.push_back(sized_save + "$t9, " + std::to_string(destination_storage.offset) + "(" + destination_storage.register_ + ")");
+	} else if (destination_storage.is_global_address()) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::LoadImmediate::emit: error: cannot save to a global address without dereferencing it.";
+		throw SemanticsError(sstr.str());
+	} else { //destination_storage.is_global_dereference)
+		lines.push_back(constant_load_op + "$t9, " + value);
+		std::string offset_string = destination_storage.offset == 0 ? "" : std::to_string(destination_storage.offset);
+		lines.push_back("\tla    $t8, " + destination_storage.global_address);
+		lines.push_back(sized_save + "$t9, " + offset_string + "($t8)");
 	}
 
 	// Return the output.
@@ -4963,14 +4961,14 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LessThanFrom::emit(
 	// If !this->is_word, replace sw with sb and lw with lb.
 	//
 	// 4 storage types for destination:
-	// 	1: global_address + x  (Store into this address.)
-	// 	2: x(global_address)   (Store into this dereferenced address.)
+	// 	1: global_address + x  (Error.)
+	// 	2: x(global_address)   (Store into this address.)
 	// 	3: $reg                (Store into this register.)
 	// 	4: x($reg)             (Store into this dereferenced register.)
 	//
 	// 4 storage types for a source:
-	// 	1: global_address + x  (Read from this address.)
-	// 	2: x(global_address)   (Read from this dereferenced address.)
+	// 	1: global_address + x  (Read this address.)
+	// 	2: x(global_address)   (Read from this address.)
 	// 	3: $reg                (Read from this register.)
 	// 	4: x($reg)             (Read from this dereferenced register.)
 
@@ -5127,14 +5125,14 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::NorFrom::emit(const
 	// If !this->is_word, replace sw with sb and lw with lb.
 	//
 	// 4 storage types for destination:
-	// 	1: global_address + x  (Store into this address.)
-	// 	2: x(global_address)   (Store into this dereferenced address.)
+	// 	1: global_address + x  (Error.)
+	// 	2: x(global_address)   (Store into this address.)
 	// 	3: $reg                (Store into this register.)
 	// 	4: x($reg)             (Store into this dereferenced register.)
 	//
 	// 4 storage types for a source:
-	// 	1: global_address + x  (Read from this address.)
-	// 	2: x(global_address)   (Read from this dereferenced address.)
+	// 	1: global_address + x  (Read this address.)
+	// 	2: x(global_address)   (Read from this address.)
 	// 	3: $reg                (Read from this register.)
 	// 	4: x($reg)             (Read from this dereferenced register.)
 
@@ -5284,14 +5282,14 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::AndFrom::emit(const
 	// If !this->is_word, replace sw with sb and lw with lb.
 	//
 	// 4 storage types for destination:
-	// 	1: global_address + x  (Store into this address.)
-	// 	2: x(global_address)   (Store into this dereferenced address.)
+	// 	1: global_address + x  (Error.)
+	// 	2: x(global_address)   (Store into this address.)
 	// 	3: $reg                (Store into this register.)
 	// 	4: x($reg)             (Store into this dereferenced register.)
 	//
 	// 4 storage types for a source:
-	// 	1: global_address + x  (Read from this address.)
-	// 	2: x(global_address)   (Read from this dereferenced address.)
+	// 	1: global_address + x  (Read this address.)
+	// 	2: x(global_address)   (Read from this address.)
 	// 	3: $reg                (Read from this register.)
 	// 	4: x($reg)             (Read from this dereferenced register.)
 
@@ -5441,14 +5439,14 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::OrFrom::emit(const 
 	// If !this->is_word, replace sw with sb and lw with lb.
 	//
 	// 4 storage types for destination:
-	// 	1: global_address + x  (Store into this address.)
-	// 	2: x(global_address)   (Store into this dereferenced address.)
+	// 	1: global_address + x  (Error.)
+	// 	2: x(global_address)   (Store into this address.)
 	// 	3: $reg                (Store into this register.)
 	// 	4: x($reg)             (Store into this dereferenced register.)
 	//
 	// 4 storage types for a source:
-	// 	1: global_address + x  (Read from this address.)
-	// 	2: x(global_address)   (Read from this dereferenced address.)
+	// 	1: global_address + x  (Read this address.)
+	// 	2: x(global_address)   (Read from this address.)
 	// 	3: $reg                (Read from this register.)
 	// 	4: x($reg)             (Read from this dereferenced register.)
 
@@ -5598,14 +5596,14 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::AddFrom::emit(const
 	// If !this->is_word, replace sw with sb and lw with lb.
 	//
 	// 4 storage types for destination:
-	// 	1: global_address + x  (Store into this address.)
-	// 	2: x(global_address)   (Store into this dereferenced address.)
+	// 	1: global_address + x  (Error.)
+	// 	2: x(global_address)   (Store into this address.)
 	// 	3: $reg                (Store into this register.)
 	// 	4: x($reg)             (Store into this dereferenced register.)
 	//
 	// 4 storage types for a source:
-	// 	1: global_address + x  (Read from this address.)
-	// 	2: x(global_address)   (Read from this dereferenced address.)
+	// 	1: global_address + x  (Read this address.)
+	// 	2: x(global_address)   (Read from this address.)
 	// 	3: $reg                (Read from this register.)
 	// 	4: x($reg)             (Read from this dereferenced register.)
 
@@ -5755,14 +5753,14 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::SubFrom::emit(const
 	// If !this->is_word, replace sw with sb and lw with lb.
 	//
 	// 4 storage types for destination:
-	// 	1: global_address + x  (Store into this address.)
-	// 	2: x(global_address)   (Store into this dereferenced address.)
+	// 	1: global_address + x  (Error.)
+	// 	2: x(global_address)   (Store into this address.)
 	// 	3: $reg                (Store into this register.)
 	// 	4: x($reg)             (Store into this dereferenced register.)
 	//
 	// 4 storage types for a source:
-	// 	1: global_address + x  (Read from this address.)
-	// 	2: x(global_address)   (Read from this dereferenced address.)
+	// 	1: global_address + x  (Read this address.)
+	// 	2: x(global_address)   (Read from this address.)
 	// 	3: $reg                (Read from this register.)
 	// 	4: x($reg)             (Read from this dereferenced register.)
 
@@ -5913,14 +5911,14 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::MultFrom::emit(cons
 	// If !this->is_word, replace sw with sb and lw with lb.
 	//
 	// 4 storage types for destination:
-	// 	1: global_address + x  (Store into this address.)
-	// 	2: x(global_address)   (Store into this dereferenced address.)
+	// 	1: global_address + x  (Error.)
+	// 	2: x(global_address)   (Store into this address.)
 	// 	3: $reg                (Store into this register.)
 	// 	4: x($reg)             (Store into this dereferenced register.)
 	//
 	// 4 storage types for a source:
-	// 	1: global_address + x  (Read from this address.)
-	// 	2: x(global_address)   (Read from this dereferenced address.)
+	// 	1: global_address + x  (Read this address.)
+	// 	2: x(global_address)   (Read from this address.)
 	// 	3: $reg                (Read from this register.)
 	// 	4: x($reg)             (Read from this dereferenced register.)
 
@@ -6072,14 +6070,14 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::DivFrom::emit(const
 	// If !this->is_word, replace sw with sb and lw with lb.
 	//
 	// 4 storage types for destination:
-	// 	1: global_address + x  (Store into this address.)
-	// 	2: x(global_address)   (Store into this dereferenced address.)
+	// 	1: global_address + x  (Error.)
+	// 	2: x(global_address)   (Store into this address.)
 	// 	3: $reg                (Store into this register.)
 	// 	4: x($reg)             (Store into this dereferenced register.)
 	//
 	// 4 storage types for a source:
-	// 	1: global_address + x  (Read from this address.)
-	// 	2: x(global_address)   (Read from this dereferenced address.)
+	// 	1: global_address + x  (Read this address.)
+	// 	2: x(global_address)   (Read from this address.)
 	// 	3: $reg                (Read from this register.)
 	// 	4: x($reg)             (Read from this dereferenced register.)
 
