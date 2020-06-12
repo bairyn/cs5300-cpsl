@@ -4433,6 +4433,10 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::emit_binary_operati
 	// Part 1: load right_storage.
 	std::string right_register = "$t9";
 	bool is_t9_free            = false;
+	if (destination_storage.is_register_direct() && destination_storage.register_ != right_source_storage.register_) {
+		right_register = destination_storage.register_;
+		is_t9_free = true;
+	}
 	if        (right_source_storage.is_register_direct()) {
 		right_register = right_source_storage.register_;
 		is_t9_free     = true;
@@ -4453,6 +4457,11 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::emit_binary_operati
 	// Part 2: load left_storage.
 	std::string left_register = is_t9_free ? "$t9" : "$t8";
 	bool is_t8_free           = is_t9_free;
+	// is_t9_free is no longer used.
+	if (right_source_storage.is_register_direct() && destination_storage.is_register_direct() && destination_storage.register_ != left_source_storage.register_) {
+		left_register = destination_storage.register_;
+		is_t8_free = true;
+	}
 	if        (left_source_storage.is_register_direct()) {
 		left_register = left_source_storage.register_;
 		is_t8_free    = true;
