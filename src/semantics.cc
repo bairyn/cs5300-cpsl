@@ -4923,6 +4923,10 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 	// Part 1: load/read into $t9 unless it's a non-dereferenced direct register.
 	std::string source_register = "$t9";
 	bool is_t9_free = false;
+	if (destination_storage.is_register_direct() && !dereference_save && destination_storage.register_ != source_storage.register_) {
+		source_register = destination_storage.register_;
+		is_t9_free = true;
+	}
 	bool addition_pending = false;
 	if        (source_storage.is_register_direct()) {
 		if (!dereference_load && (addition == 0 || (destination_storage.is_register_direct() && !dereference_save))) {
@@ -4933,48 +4937,48 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 			}
 		} else {
 			if (dereference_load) {
-				lines.push_back(sized_load + "$t9, (" + source_storage.register_ + ")");
+				lines.push_back(sized_load + source_register + ", (" + source_storage.register_ + ")");
 				if (addition != 0) {
-					lines.push_back("\tla    $t9, " + std::to_string(addition) + "($t9)");
+					lines.push_back("\tla    " + source_register + ", " + std::to_string(addition) + "(" + source_register + ")");
 				}
 			} else {
 				// addition != 0 && !dereference_load
-				lines.push_back("\tla    $t9, " + std::to_string(addition) + "(" + source_storage.register_ + ")");
+				lines.push_back("\tla    " + source_register + ", " + std::to_string(addition) + "(" + source_storage.register_ + ")");
 			}
 		}
 	} else if (source_storage.is_register_dereference()) {
 		std::string offset_string = source_storage.offset == 0 ? "" : std::to_string(source_storage.offset);
 		if (!dereference_load) {
-			lines.push_back(sized_load + "$t9, " + offset_string + "(" + source_storage.register_ + ")");
+			lines.push_back(sized_load + source_register + ", " + offset_string + "(" + source_storage.register_ + ")");
 		} else {
-			lines.push_back("\tlw    $t9, " + offset_string + "(" + source_storage.register_ + ")");
-			lines.push_back(sized_load + "$t9, ($t9)");
+			lines.push_back("\tlw    " + source_register + ", " + offset_string + "(" + source_storage.register_ + ")");
+			lines.push_back(sized_load + source_register + ", ($t9)");
 		}
 		if (addition != 0) {
-			lines.push_back("\tla    $t9, " + std::to_string(addition) + "($t9)");
+			lines.push_back("\tla    " + source_register + ", " + std::to_string(addition) + "(" + source_register + ")");
 		}
 	} else if (source_storage.is_global_address()) {
-		lines.push_back("\tla    $t9, " + source_storage.global_address);
+		lines.push_back("\tla    " + source_register + ", " + source_storage.global_address);
 		if (dereference_load) {
-			lines.push_back(sized_load + "$t9, ($t9)");
+			lines.push_back(sized_load + source_register + ", (" + source_register + ")");
 		}
 		if (addition != 0) {
-			lines.push_back("\tla    $t9, " + std::to_string(addition) + "($t9)");
+			lines.push_back("\tla    " + source_register + ", " + std::to_string(addition) + "(" + source_register + ")");
 		}
 	} else { //source_storage.is_global_dereference()
-		lines.push_back("\tla    $t9, " + source_storage.global_address);
+		lines.push_back("\tla    " + source_register + ", " + source_storage.global_address);
 		if (source_storage.offset != 0) {
-			lines.push_back("\tla    $t9, " + std::to_string(source_storage.offset) + "($t9)");
+			lines.push_back("\tla    " + source_register + ", " + std::to_string(source_storage.offset) + "(" + source_register + ")");
 		}
 		std::string offset_string = source_storage.offset == 0 ? "" : std::to_string(source_storage.offset);
 		if (!dereference_load) {
-			lines.push_back(sized_load + "$t9, " + offset_string + "($t9)");
+			lines.push_back(sized_load + source_register + ", " + offset_string + "(" + source_register + ")");
 		} else {
-			lines.push_back("\tlw    $t9, " + offset_string + "($t9)");
-			lines.push_back(sized_load + "$t9, ($t9)");
+			lines.push_back("\tlw    " + source_register + ", " + offset_string + "(" + source_register + ")");
+			lines.push_back(sized_load + source_register + ", (" + source_register + ")");
 		}
 		if (addition != 0) {
-			lines.push_back("\tla    $t9, " + std::to_string(addition) + "($t9)");
+			lines.push_back("\tla    " + source_register + ", " + std::to_string(addition) + "(" + source_register + ")");
 		}
 	}
 
