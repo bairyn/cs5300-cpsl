@@ -10200,7 +10200,9 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 				// Emit code to push these registers.
 				const int32_t addition = -4*(pushed_registers.size() % 2 == 0 ? pushed_registers.size() : pushed_registers.size() + 1);
 				add_sp_total += addition;
-				instruction_output.push_back("\taddiu $sp, $sp, " + std::to_string(addition));
+				if (addition != 0) {
+					instruction_output.push_back("\taddiu $sp, $sp, " + std::to_string(addition));
+				}
 				for (const Storage &saved_storage : std::as_const(pushed_registers)) {
 					const int32_t saved_storage_index = static_cast<int32_t>(&saved_storage - &pushed_registers[0]);
 					instruction_output.push_back("\tsw    " + saved_storage.register_ + ", " + std::to_string(4*saved_storage_index) + "($sp)");
@@ -10213,7 +10215,9 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 				}
 				const int32_t addition = 4*(pushed_registers.size() % 2 == 0 ? pushed_registers.size() : pushed_registers.size() + 1);
 				add_sp_total += addition;
-				instruction_output.push_back("\taddiu $sp, $sp, " + std::to_string(addition));
+				if (addition != 0) {
+					instruction_output.push_back("\taddiu $sp, $sp, " + std::to_string(addition));
+				}
 
 				// Clear the pushed register containers.
 				pushed_registers.clear();
