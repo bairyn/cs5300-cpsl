@@ -13038,13 +13038,48 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				const Statement::Repeat &statement_repeat = grammar.statement_repeat_storage.at(statement.data);
 				const RepeatStatement   &repeat_statement = grammar.repeat_statement_storage.at(statement_repeat.repeat_statement);
 
-				const LexemeKeyword     &repeat_keyword0    = grammar.lexemes.at(repeat_statement.repeat_keyword0).get_keyword(); (void) repeat_keyword0;
-				const StatementSequence &statement_sequence = grammar.statement_sequence_storage.at(repeat_statement.statement_sequence);
-				const LexemeKeyword     &until_keyword0     = grammar.lexemes.at(repeat_statement.until_keyword0).get_keyword(); (void) until_keyword0;
-				const ::Expression      &expression0        = grammar.expression_storage.at(repeat_statement.expression);
+				const LexemeKeyword     &repeat_repeat_keyword0    = grammar.lexemes.at(repeat_statement.repeat_keyword0).get_keyword(); (void) repeat_repeat_keyword0;
+				const StatementSequence &repeat_statement_sequence = grammar.statement_sequence_storage.at(repeat_statement.statement_sequence);
+				const LexemeKeyword     &repeat_until_keyword0     = grammar.lexemes.at(repeat_statement.until_keyword0).get_keyword(); (void) repeat_until_keyword0;
+				const ::Expression      &repeat_expression0        = grammar.expression_storage.at(repeat_statement.expression);
 
 				// At the end of the block, branch to the beginning of the block if the condition is not met.
 
+				// Analyze the "repeat" block condition.  Don't merge it yet.
+				const Expression repeat_condition   = analyze_expression(repeat_expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Symbol     repeat_symbol      = Symbol(labelify(grammar.lexemes_text(repeat_condition.lexeme_begin, repeat_condition.lexeme_end), "repeat"), "", repeat_statement.repeat_keyword0);
+				const Symbol     endrepeat_symbol   = Symbol(labelify(grammar.lexemes_text(repeat_condition.lexeme_begin, repeat_condition.lexeme_end), "endrepeat"), "", repeat_statement.repeat_keyword0);
+
+				// Require the "repeat" block condition type to be a boolean.
+				if (!storage_scope.resolve_type(repeat_condition.output_type).matches(type_scope.type("boolean"), storage_scope)) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_statements: error (line "
+						<< grammar.lexemes.at(repeat_condition.lexeme_begin).get_line() << " col " << grammar.lexemes.at(repeat_condition.lexeme_begin).get_column()
+						<< "): an ``repeat\" condition must be of boolean type, not of type ``"
+						<< storage_scope.type(repeat_condition.output_type).get_repr(storage_scope)
+						<< "\"."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Analyze the "repeat" block.
+				const Block repeat_block = analyze_statements(routine_declaration, repeat_statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol);
+
+				// "repeat" label.
+				block.back = block.instructions.add_instruction({I::Ignore(B(true, repeat_symbol), false, false)}, {}, {block.back});
+
+				// "repeat" block.
+				const Index repeat_block_index = block.back = block.instructions.merge(repeat_block.instructions, block.back, repeat_block.front, repeat_block.back);
+
+				// "repeat" condition.
+				const Index repeat_condition_index = block.back = block.instructions.merge(repeat_condition.instructions, block.back, repeat_condition.output_index);
+				block.back = block.instructions.add_instruction({I::BranchZero(B(), false, repeat_symbol)}, {repeat_condition_index}, {block.back});
+
+				// We don't need the endrepeat label, and it is unused, but emit it anyway for readability.
+				block.back = block.instructions.add_instruction({I::Ignore(B(true, endrepeat_symbol), false, false)}, {}, {block.back});
+
+				// We're done.
 				break;
 			} case Statement::for_branch: {
 				const Statement::For &statement_for = grammar.statement_for_storage.at(statement.data);
