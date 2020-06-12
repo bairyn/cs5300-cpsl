@@ -5200,6 +5200,19 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::MultFrom::emit(cons
 	const Storage &left_destination_storage  = ignore_lo ? null_storage : storages[next_storage_index++];
 	const Storage &right_destination_storage = ignore_hi ? null_storage : storages[next_storage_index++];
 
+	std::vector<std::string>::size_type next_temporary = 0;
+	std::vector<std::string> temporaries;
+	if (!ignore_hi && right_destination_storage.is_register_direct() && right_destination_storage.register_ != left_destination_storage.register_ && right_destination_storage.register_ != right_destination_storage.register_) {
+		temporaries.push_back(right_destination_storage.register_);
+	}
+	if (!ignore_lo && left_destination_storage.is_register_direct() && left_destination_storage.register_ != left_destination_storage.register_) {
+		// (Only "left" can get to this.  We'll be overwriting the destination anyway, so we will have already read from right.)
+		// (TODO: check if you can conditionally reverse order of left, right reading?)
+		temporaries.push_back(right_destination_storage.register_);
+	}
+	temporaries.push_back("$t9");
+	temporaries.push_back("$t8");
+
 	// Prepare output vector.
 	std::vector<Output::Line> lines;
 
@@ -5227,7 +5240,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::MultFrom::emit(cons
 	Output::Line sized_load = is_save_word ? "\tlw    " : "\tlb    ";
 
 	// Part 1: load right_storage.
-	std::string right_register = "$t9";
+	std::string right_register = temporaries[0];
 	bool is_t9_free            = false;
 	if        (right_source_storage.is_register_direct()) {
 		right_register = right_source_storage.register_;
@@ -5247,7 +5260,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::MultFrom::emit(cons
 	}
 
 	// Part 2: load left_storage.
-	std::string left_register = is_t9_free ? "$t9" : "$t8";
+	std::string left_register = is_t9_free ? temporaries[0] : temporaries[1];
 	bool is_t8_free           = is_t9_free;
 	if        (left_source_storage.is_register_direct()) {
 		left_register = left_source_storage.register_;
@@ -5348,6 +5361,18 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::DivFrom::emit(const
 	const Storage &left_destination_storage  = ignore_lo ? null_storage : storages[next_storage_index++];
 	const Storage &right_destination_storage = ignore_hi ? null_storage : storages[next_storage_index++];
 
+	std::vector<std::string>::size_type next_temporary = 0;
+	std::vector<std::string> temporaries;
+	if (!ignore_hi && right_destination_storage.is_register_direct() && right_destination_storage.register_ != left_destination_storage.register_ && right_destination_storage.register_ != right_destination_storage.register_) {
+		temporaries.push_back(right_destination_storage.register_);
+	}
+	if (!ignore_lo && left_destination_storage.is_register_direct() && left_destination_storage.register_ != left_destination_storage.register_) {
+		// (Only "left" can get to this.  We'll be overwriting the destination anyway, so we will have already read from right.)
+		temporaries.push_back(right_destination_storage.register_);
+	}
+	temporaries.push_back("$t9");
+	temporaries.push_back("$t8");
+
 	// Prepare output vector.
 	std::vector<Output::Line> lines;
 
@@ -5375,7 +5400,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::DivFrom::emit(const
 	Output::Line sized_load = is_save_word ? "\tlw    " : "\tlb    ";
 
 	// Part 1: load right_storage.
-	std::string right_register = "$t9";
+	std::string right_register = temporaries[0];
 	bool is_t9_free            = false;
 	if        (right_source_storage.is_register_direct()) {
 		right_register = right_source_storage.register_;
@@ -5395,7 +5420,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::DivFrom::emit(const
 	}
 
 	// Part 2: load left_storage.
-	std::string left_register = is_t9_free ? "$t9" : "$t8";
+	std::string left_register = is_t9_free ? temporaries[0] : temporaries[1];
 	bool is_t8_free           = is_t9_free;
 	if        (left_source_storage.is_register_direct()) {
 		left_register = left_source_storage.register_;
