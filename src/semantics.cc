@@ -5584,11 +5584,23 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::Jump::emit(const st
 Semantics::Instruction::Call::Call()
 	{}
 
-Semantics::Instruction::Call::Call(const Base &base, const Symbol &jump_destination, bool push_saved_registers, bool pop_saved_registers)
+Semantics::Instruction::Call::Call(const Base &base, const Symbol &jump_destination, bool push_saved_registers, bool pop_saved_registers, const std::vector<uint64_t> &nosaves_)
 	: Base(base)
 	, jump_destination(jump_destination)
 	, push_saved_registers(push_saved_registers)
 	, pop_saved_registers(pop_saved_registers)
+{
+	for (const uint64_t &nosave_index : std::as_const(nosaves_)) {
+		nosaves.push_back({nosave_index, 0});
+	}
+}
+
+Semantics::Instruction::Call::Call(const Base &base, const Symbol &jump_destination, bool push_saved_registers, bool pop_saved_registers, const std::vector<std::pair<uint64_t, uint64_t>> &nosaves)
+	: Base(base)
+	, jump_destination(jump_destination)
+	, push_saved_registers(push_saved_registers)
+	, pop_saved_registers(pop_saved_registers)
+	, nosaves(nosaves)
 	{}
 
 std::vector<uint32_t> Semantics::Instruction::Call::get_input_sizes() const { return {}; }
@@ -10134,7 +10146,19 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 					throw SemanticsError(sstr.str());
 				}
 
+				// Get IOs for which we'll skip the save.
+				std::set<IO> in_nosaves;
+				for (const std::pair<uint64_t, uint64_t> &nosave_pair : std::as_const(call.nosaves)) {
+					in_nosaves.insert({nosave_pair.first, nosave_pair.second});
+				}
+
 				// Get storages we need to save.
+
+				// Commented out: we don't want to overwrite inputs.  Working
+				// storages and outputs are fine; we will be writing to them
+				// anyway.  They are writeable.  But inputs may or may not be
+				// writeable.
+#if 0
 				for (const std::map<IO, Storage>::value_type &input_storage_pair : std::as_const(input_storages)) {
 					const Storage &input_storage_unit = input_storage_pair.second;
 					if ((input_storage_unit.is_register_direct() || input_storage_unit.is_register_dereference()) && input_storage_unit.is_caller_preserved) {
@@ -10144,21 +10168,31 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 						}
 					}
 				}
+#endif /* #if 0 */
+				// Note: this doesn't check if we will be overwriting output_storage_pair's storage again if it gets clobbered; it just saves it regardless.
 				for (const std::map<IO, Storage>::value_type &output_storage_pair : std::as_const(capture_outputs)) {
-					const Storage &output_storage_unit = output_storage_pair.second;
-					if ((output_storage_unit.is_register_direct() || output_storage_unit.is_register_dereference()) && output_storage_unit.is_caller_preserved) {
-						if (in_pushed_registers.find(output_storage_unit) == in_pushed_registers.cend()) {
-							in_pushed_registers.insert(output_storage_unit);
-							pushed_registers.push_back(output_storage_unit);
+					if (in_nosaves.find(output_storage_pair.first) == in_nosaves.cend()) {
+						const Storage &output_storage_unit = output_storage_pair.second;
+						if ((output_storage_unit.is_register_direct() || output_storage_unit.is_register_dereference()) && output_storage_unit.is_caller_preserved) {
+							if (in_pushed_registers.find(output_storage_unit) == in_pushed_registers.cend()) {
+								in_pushed_registers.insert(output_storage_unit);
+								pushed_registers.push_back(output_storage_unit);
+							}
 						}
 					}
 				}
+				// Generally, these should be saved.  An exception is that
+				// pushing arguments occurs *after* saving registers, and there
+				// is no need to push these arguments twice when they won't be
+				// re-used afterward.
 				for (const std::map<Storage::Index, IO>::value_type &working_storage_pair : std::as_const(claimed_working_storages)) {
-					const Storage &working_storage_unit = working_storages[working_storage_pair.first];
-					if ((working_storage_unit.is_register_direct() || working_storage_unit.is_register_dereference()) && working_storage_unit.is_caller_preserved) {
-						if (in_pushed_registers.find(working_storage_unit) == in_pushed_registers.cend()) {
-							in_pushed_registers.insert(working_storage_unit);
-							pushed_registers.push_back(working_storage_unit);
+					if (in_nosaves.find(working_storage_pair.second) == in_nosaves.cend()) {
+						const Storage &working_storage_unit = working_storages[working_storage_pair.first];
+						if ((working_storage_unit.is_register_direct() || working_storage_unit.is_register_dereference()) && working_storage_unit.is_caller_preserved) {
+							if (in_pushed_registers.find(working_storage_unit) == in_pushed_registers.cend()) {
+								in_pushed_registers.insert(working_storage_unit);
+								pushed_registers.push_back(working_storage_unit);
+							}
 						}
 					}
 				}
@@ -12225,7 +12259,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				}
 
 				// Push registers that need to be saved onto the stack.
-				last_call_index = expression_semantics.instructions.add_instruction({I::Call(B(), Symbol(), true, false)}, {}, last_call_index);
+				last_call_index = expression_semantics.instructions.add_instruction({I::Call(B(), Symbol(), true, false, argument_outputs)}, {}, last_call_index);
 
 				// Push arguments.
 				if (expressions.size() > 4) {
@@ -12251,7 +12285,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				}
 
 				// Pop registers that need to be saved onto the stack.
-				last_call_index = expression_semantics.instructions.add_instruction({I::Call(B(), Symbol(), false, true)}, {}, last_call_index);
+				last_call_index = expression_semantics.instructions.add_instruction({I::Call(B(), Symbol(), false, true, argument_outputs)}, {}, last_call_index);
 
 				// Pop the refs storages back from the stack.
 				std::vector<Storage> register_refs_reversed(std::as_const(register_refs));

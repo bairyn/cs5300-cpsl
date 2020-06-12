@@ -1069,12 +1069,17 @@ public:
 		class Call : public Base {
 		public:
 			Call();
-			Call(const Base &base, const Symbol &jump_destination, bool push_saved_registers = false, bool pop_saved_registers = false);
+			// | Single-index variant fills with output-index 0 (the first output).  These refer to outputs, not inputs.
+			// Callers should manually handle input storage units, since we don't want undesired overwriting of inputs.
+			Call(const Base &base, const Symbol &jump_destination, bool push_saved_registers, bool pop_saved_registers, const std::vector<uint64_t> &nosaves);
+			Call(const Base &base, const Symbol &jump_destination, bool push_saved_registers = false, bool pop_saved_registers = false, const std::vector<std::pair<uint64_t, uint64_t>> &nosaves = {});
 			Symbol jump_destination;
 			// | Instead of performing a call, tell MIPSIO::emit() to push saved registers onto the stack.
 			bool push_saved_registers = false;
 			// | Instead of performing a call, tell MIPSIO::emit() to pop saved registers from the stack.
 			bool pop_saved_registers = false;
+			// | Don't save these registers if push_saved_registers.
+			std::vector<std::pair<uint64_t, uint64_t>> nosaves;
 
 			std::vector<uint32_t> get_input_sizes() const;
 			std::vector<uint32_t> get_working_sizes() const;
