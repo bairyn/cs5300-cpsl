@@ -1109,9 +1109,10 @@ public:
 		class BranchZero : public Base {
 		public:
 			BranchZero();
-			BranchZero(const Base &base, bool is_word, Symbol branch_destination);
+			BranchZero(const Base &base, bool is_word, Symbol branch_destination, bool branch_non_zero = false);
 			bool is_word;
 			Symbol branch_destination;
+			bool branch_non_zero = false;
 
 			std::vector<uint32_t> get_input_sizes() const;
 			std::vector<uint32_t> get_working_sizes() const;

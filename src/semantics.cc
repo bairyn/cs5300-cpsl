@@ -5695,10 +5695,11 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::Return::emit(const 
 Semantics::Instruction::BranchZero::BranchZero()
 	{}
 
-Semantics::Instruction::BranchZero::BranchZero(const Base &base, bool is_word, Symbol branch_destination)
+Semantics::Instruction::BranchZero::BranchZero(const Base &base, bool is_word, Symbol branch_destination, bool branch_non_zero)
 	: Base(base)
 	, is_word(is_word)
 	, branch_destination(branch_destination)
+	, branch_non_zero(branch_non_zero)
 	{}
 
 std::vector<uint32_t> Semantics::Instruction::BranchZero::get_input_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1)}; }
@@ -5723,6 +5724,9 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::BranchZero::emit(co
 		lines.push_back({":", symbol});
 	}
 
+	// Get the branch operator.
+	Output::Line branch_operator = !branch_non_zero ? "\tbeq   " : "\tbne   ";
+
 	// Part 1: get source address.
 	if           (source_storage.is_global_address()) {
 		lines.push_back("\tla    $t8, " + source_storage.global_address);
@@ -5744,9 +5748,9 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::BranchZero::emit(co
 
 	// Part 3: jump.
 	if (!source_storage.is_register_direct()) {
-		lines.push_back("\tbeq   $t8, $zero, " + branch_destination);
+		lines.push_back(branch_operator + "$t8, $zero, " + branch_destination);
 	} else {
-		lines.push_back("\tbeq   " + source_storage.register_ + ", $zero, " + branch_destination);
+		lines.push_back(branch_operator + source_storage.register_ + ", $zero, " + branch_destination);
 	}
 
 	// Return the output.
@@ -12981,12 +12985,54 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				const Statement::While &statement_while = grammar.statement_while_storage.at(statement.data);
 				const WhileStatement   &while_statement = grammar.while_statement_storage.at(statement_while.while_statement);
 
-				const LexemeKeyword     &while_keyword0     = grammar.lexemes.at(while_statement.while_keyword0).get_keyword(); (void) while_keyword0;
-				const ::Expression      &expression0        = grammar.expression_storage.at(while_statement.expression);
-				const LexemeKeyword     &do_keyword0        = grammar.lexemes.at(while_statement.do_keyword0).get_keyword(); (void) do_keyword0;
-				const StatementSequence &statement_sequence = grammar.statement_sequence_storage.at(while_statement.statement_sequence);
-				const LexemeKeyword     &end_keyword0       = grammar.lexemes.at(while_statement.end_keyword0).get_keyword(); (void) end_keyword0;
+				const LexemeKeyword     &while_keyword0           = grammar.lexemes.at(while_statement.while_keyword0).get_keyword(); (void) while_keyword0;
+				const ::Expression      &while_expression0        = grammar.expression_storage.at(while_statement.expression);
+				const LexemeKeyword     &while_do_keyword0        = grammar.lexemes.at(while_statement.do_keyword0).get_keyword(); (void) while_do_keyword0;
+				const StatementSequence &while_statement_sequence = grammar.statement_sequence_storage.at(while_statement.statement_sequence);
+				const LexemeKeyword     &while_end_keyword0       = grammar.lexemes.at(while_statement.end_keyword0).get_keyword(); (void) while_end_keyword0;
 
+				// There are a few ways to do this.
+				//
+				// At the end of the block, branch back to the beginning of the block if the condition is met.
+
+				// Analyze the "while" block condition.  Don't merge it yet.
+				const Expression while_condition   = analyze_expression(while_expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Symbol     while_symbol      = Symbol(labelify(grammar.lexemes_text(while_condition.lexeme_begin, while_condition.lexeme_end), "while"), "", while_statement.do_keyword0);
+				const Symbol     checkwhile_symbol = Symbol(labelify(grammar.lexemes_text(while_condition.lexeme_begin, while_condition.lexeme_end), "checkwhile"), "", while_statement.end_keyword0);
+
+				// Require the "while" block condition type to be a boolean.
+				if (!storage_scope.resolve_type(while_condition.output_type).matches(type_scope.type("boolean"), storage_scope)) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_statements: error (line "
+						<< grammar.lexemes.at(while_condition.lexeme_begin).get_line() << " col " << grammar.lexemes.at(while_condition.lexeme_begin).get_column()
+						<< "): an ``while\" condition must be of boolean type, not of type ``"
+						<< storage_scope.type(while_condition.output_type).get_repr(storage_scope)
+						<< "\"."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Analyze the "while" block.
+				const Block while_block = analyze_statements(routine_declaration, while_statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol);
+
+				// First, jump to "checkwhile" to check the condition for the first time.
+				block.back = block.instructions.add_instruction({I::Jump(B(), checkwhile_symbol)}, {}, {block.back});
+
+				// "while" label.
+				block.back = block.instructions.add_instruction({I::Ignore(B(true, while_symbol), false, false)}, {}, {block.back});
+
+				// "while" block.
+				const Index while_block_index = block.back = block.instructions.merge(while_block.instructions, block.back, while_block.front, while_block.back);
+
+				// "checkwhile" label.
+				block.back = block.instructions.add_instruction({I::Ignore(B(true, checkwhile_symbol), false, false)}, {}, {block.back});
+
+				// "while" condition.  (BranchZero has the branch_non_zero flag set to true.)
+				const Index while_condition_index = block.back = block.instructions.merge(while_condition.instructions, block.back, while_condition.output_index);
+				block.back = block.instructions.add_instruction({I::BranchZero(B(), false, while_symbol, true)}, {while_condition_index}, {block.back});
+
+				// We're done.
 				break;
 			} case Statement::repeat_branch: {
 				const Statement::Repeat &statement_repeat = grammar.statement_repeat_storage.at(statement.data);
@@ -12996,6 +13042,8 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				const StatementSequence &statement_sequence = grammar.statement_sequence_storage.at(repeat_statement.statement_sequence);
 				const LexemeKeyword     &until_keyword0     = grammar.lexemes.at(repeat_statement.until_keyword0).get_keyword(); (void) until_keyword0;
 				const ::Expression      &expression0        = grammar.expression_storage.at(repeat_statement.expression);
+
+				// At the end of the block, branch to the beginning of the block if the condition is not met.
 
 				break;
 			} case Statement::for_branch: {
