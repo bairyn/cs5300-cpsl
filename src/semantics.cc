@@ -5701,7 +5701,7 @@ Semantics::Instruction::BranchZero::BranchZero(const Base &base, bool is_word, S
 	, branch_destination(branch_destination)
 	{}
 
-std::vector<uint32_t> Semantics::Instruction::BranchZero::get_input_sizes() const { return {4}; }
+std::vector<uint32_t> Semantics::Instruction::BranchZero::get_input_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1)}; }
 std::vector<uint32_t> Semantics::Instruction::BranchZero::get_working_sizes() const { return {}; }
 std::vector<uint32_t> Semantics::Instruction::BranchZero::get_output_sizes() const { return {}; }
 std::vector<uint32_t> Semantics::Instruction::BranchZero::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
@@ -5762,7 +5762,7 @@ Semantics::Instruction::BranchNonnegative::BranchNonnegative(const Base &base, b
 	, branch_destination(branch_destination)
 	{}
 
-std::vector<uint32_t> Semantics::Instruction::BranchNonnegative::get_input_sizes() const { return {4}; }
+std::vector<uint32_t> Semantics::Instruction::BranchNonnegative::get_input_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1)}; }
 std::vector<uint32_t> Semantics::Instruction::BranchNonnegative::get_working_sizes() const { return {}; }
 std::vector<uint32_t> Semantics::Instruction::BranchNonnegative::get_output_sizes() const { return {}; }
 std::vector<uint32_t> Semantics::Instruction::BranchNonnegative::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
@@ -9548,7 +9548,7 @@ std::pair<std::vector<uint32_t>, std::vector<uint64_t>> Semantics::MIPSIO::prepa
 						<< "\toutput node              : " << output_io.first << std::endl
 						<< "\toutput node output index : " << output_io.second << std::endl
 						<< "\tinput_index              : " << input_index << std::endl
-						<< "\toutput storage size      : " << reverse_claimed_working_storages_search->second << std::endl
+						<< "\toutput storage size      : " << working_storage.max_size << std::endl
 						<< "\tinput storage size       : " << instruction.get_input_sizes().at(input_index)
 						;
 					throw SemanticsError(sstr.str());
@@ -9967,7 +9967,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 						<< "\toutput node              : " << output_io.first << std::endl
 						<< "\toutput node output index : " << output_io.second << std::endl
 						<< "\tinput_index              : " << input_index << std::endl
-						<< "\toutput storage size      : " << reverse_claimed_working_storages_search->second << std::endl
+						<< "\toutput storage size      : " << working_storage.max_size << std::endl
 						<< "\tinput storage size       : " << instruction.get_input_sizes().at(input_index)
 						;
 					throw SemanticsError(sstr.str());
