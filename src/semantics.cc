@@ -15416,9 +15416,12 @@ void Semantics::analyze() {
 									;
 								throw SemanticsError(sstr.str());
 							}
+
+							// Let the compiler know we found a definition for the forward declaration.
+							routine_definitions.insert(identifier.text);
 						}
 
-						// Emit function definition.
+						// Emit procedure definition.
 						std::vector<Output::Line> routine_definition_lines;
 						routine_definition_lines = analyze_routine(routine_declaration, parameter_names, body, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope, storage_scope);
 						output.add_line(Output::text_section, ":", routine_symbol);
@@ -15924,6 +15927,9 @@ void Semantics::analyze() {
 									;
 								throw SemanticsError(sstr.str());
 							}
+
+							// Let the compiler know we found a definition for the forward declaration.
+							routine_definitions.insert(identifier.text);
 						}
 
 						// Emit function definition.
