@@ -12266,6 +12266,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Our stack will look like this:
 				// - Our local stack data.
 				// - return address ($sp currently points here)
+				// - pushed array and record copies (TODO)
 				// - pushed refs
 				// - pushed saved registers
 				// - pushed arguments
@@ -12842,7 +12843,9 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				break;
 			} case Statement::null__branch: {
 				const Statement::Null_ &statement_null_ = grammar.statement_null__storage.at(statement.data);
-				const NullStatement    &null_statement  = grammar.null_statement_storage.at(statement_null_.null_statement);
+				const NullStatement    &null_statement  = grammar.null_statement_storage.at(statement_null_.null_statement); (void) null_statement;
+
+				// Nothing to do.
 
 				break;
 			}
