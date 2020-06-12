@@ -41,6 +41,8 @@ public:
 #define CPSL_CC_SEMANTICS_ALL_ARRAY_RECORDS_ARE_REFS               false
 #define CPSL_CC_SEMANTICS_PERMIT_SEQUENCE_CONNECTION_DELAYS        true
 #define CPSL_CC_SEMANTICS_PERMIT_SHADOWING                         true
+#define CPSL_CC_SEMANTICS_EMIT_SOME_REDUNDANT_LABELS               true
+#define CPSL_CC_SEMANTICS_EMIT_EXTRA_REDUNDANT_LABELS              false
 
 // TODO: remove these redefinitions; they're only here to let me know when
 //       sequence connection delays and shadowing happen during development.
@@ -51,6 +53,8 @@ class Semantics {
 public:
 	static const bool combine_identifier_namespaces;
 	static const bool permit_shadowing;
+	static const bool emit_some_redundant_labels;
+	static const bool emit_extra_redundant_labels;
 
 	// | In the assembled output, locations marked as symbols will be replaced
 	// with a unique and consistent substring.

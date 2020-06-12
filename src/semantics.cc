@@ -36,8 +36,9 @@ SemanticsError::SemanticsError(const std::string &message)
  */
 
 const bool Semantics::combine_identifier_namespaces = CPSL_CC_SEMANTICS_COMBINE_IDENTIFIER_NAMESPACES;
-
-const bool Semantics::permit_shadowing = CPSL_CC_SEMANTICS_PERMIT_SHADOWING;
+const bool Semantics::permit_shadowing              = CPSL_CC_SEMANTICS_PERMIT_SHADOWING;
+const bool Semantics::emit_some_redundant_labels    = CPSL_CC_SEMANTICS_EMIT_SOME_REDUNDANT_LABELS;
+const bool Semantics::emit_extra_redundant_labels   = CPSL_CC_SEMANTICS_EMIT_EXTRA_REDUNDANT_LABELS;
 
 Semantics::Symbol::Symbol()
 	{}
@@ -12929,7 +12930,9 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				// First, output the "if" clause.
 
 				// "if" label.  (Redundant and unused, but may aid in readability.)
-				block.back = block.instructions.add_instruction({I::Ignore(B(true, if_symbol), false, false)}, {}, {block.back});
+				if (emit_some_redundant_labels || emit_extra_redundant_labels) {
+					block.back = block.instructions.add_instruction({I::Ignore(B(true, if_symbol), false, false)}, {}, {block.back});
+				}
 
 				// "if" condition.
 				const Symbol next_block_symbol = elseif_symbols.size() > 0 ? elseif_symbols.front() : (has_else ? else_symbol : endif_symbol);
@@ -12999,6 +13002,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				const Expression while_condition   = analyze_expression(while_expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				const Symbol     while_symbol      = Symbol(labelify(grammar.lexemes_text(while_condition.lexeme_begin, while_condition.lexeme_end), "while"), "", while_statement.do_keyword0);
 				const Symbol     checkwhile_symbol = Symbol(labelify(grammar.lexemes_text(while_condition.lexeme_begin, while_condition.lexeme_end), "checkwhile"), "", while_statement.end_keyword0);
+				const Symbol     endwhile_symbol   = Symbol(labelify(grammar.lexemes_text(while_condition.lexeme_begin, while_condition.lexeme_end), "endwhile"), "", while_statement.end_keyword0);
 
 				// Require the "while" block condition type to be a boolean.
 				if (!storage_scope.resolve_type(while_condition.output_type).matches(type_scope.type("boolean"), storage_scope)) {
@@ -13031,6 +13035,11 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				// "while" condition.  (BranchZero has the branch_non_zero flag set to true.)
 				const Index while_condition_index = block.back = block.instructions.merge(while_condition.instructions, block.back, while_condition.output_index);
 				block.back = block.instructions.add_instruction({I::BranchZero(B(), false, while_symbol, true)}, {while_condition_index}, {block.back});
+
+				// "endwhile label".  We don't need the endwhile label, and it is unused, but emit it anyway for readability.
+				if (emit_extra_redundant_labels) {
+					block.back = block.instructions.add_instruction({I::Ignore(B(true, endwhile_symbol), false, false)}, {}, {block.back});
+				}
 
 				// We're done.
 				break;
@@ -13076,8 +13085,10 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				const Index repeat_condition_index = block.back = block.instructions.merge(repeat_condition.instructions, block.back, repeat_condition.output_index);
 				block.back = block.instructions.add_instruction({I::BranchZero(B(), false, repeat_symbol)}, {repeat_condition_index}, {block.back});
 
-				// We don't need the endrepeat label, and it is unused, but emit it anyway for readability.
-				block.back = block.instructions.add_instruction({I::Ignore(B(true, endrepeat_symbol), false, false)}, {}, {block.back});
+				// "endrepeat label".  We don't need the endrepeat label, and it is unused, but emit it anyway for readability.
+				if (emit_extra_redundant_labels) {
+					block.back = block.instructions.add_instruction({I::Ignore(B(true, endrepeat_symbol), false, false)}, {}, {block.back});
+				}
 
 				// We're done.
 				break;
