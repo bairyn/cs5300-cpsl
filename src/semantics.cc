@@ -10505,9 +10505,27 @@ void Semantics::MIPSIO::add_sequence_connections(const std::vector<Index> before
 // "add_instruction" into "other" (but not "this") must be added by the
 // returned value to remain correct.
 Semantics::MIPSIO::Index Semantics::MIPSIO::merge(const MIPSIO &other) {
-	Index addition = instructions.size();
+	const Index addition = instructions.size();
 
-	instructions.insert(instructions.end(), other.instructions.cbegin(), other.instructions.cend());
+	//instructions.insert(instructions.end(), other.instructions.cbegin(), other.instructions.cend());
+	// Correctly merge nosaves from Calls.
+	for (const Instruction &instruction : std::as_const(other.instructions)) {
+		if (!instruction.is_call() || (!instruction.get_call().push_saved_registers && !instruction.get_call().pop_saved_registers)) {
+			instructions.push_back(instruction);
+		} else {
+			const Instruction::Call &call = instruction.get_call();
+			std::vector<std::pair<uint64_t, uint64_t>> new_nosaves;
+			for (const std::pair<uint64_t, uint64_t> &nosave_pair : std::as_const(call.nosaves)) {
+				const Index   nosave_node   = static_cast<Index>(nosave_pair.first);
+				const IOIndex nosave_output = static_cast<IOIndex>(nosave_pair.second);
+				new_nosaves.push_back({static_cast<uint64_t>(nosave_node) + addition, static_cast<uint64_t>(nosave_output)});
+			}
+			Instruction::Call new_call(call);
+			new_call.nosaves = new_nosaves;
+			Instruction new_instruction(new_call);
+			instructions.push_back(new_call);
+		}
+	}
 
 	for (const std::map<IO, IO>::value_type &connection : std::as_const(other.connections)) {
 		const IO &input  = connection.first;
@@ -12203,7 +12221,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						if (argument < 4) {
 							last_call_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, ref_offset, true, true, Storage("$a" + std::to_string(argument)), Storage("$sp", true))}, {}, last_call_index);
 							// argument_outputs[argument] should be ignored for argument < 4.
-							argument_outputs.push_back(0);
+							argument_outputs.push_back(std::numeric_limits<Index>::max());
 						} else {
 							last_call_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, ref_offset, false, true, Storage(), Storage("$sp", true))}, {}, last_call_index);
 							argument_outputs.push_back(last_call_index);
