@@ -12973,7 +12973,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				}
 
 				// Finally, output the endif label.
-				block.back = block.instructions.add_instruction({I::Ignore(B(true, if_symbol), false, false)}, {}, {block.back});
+				block.back = block.instructions.add_instruction({I::Ignore(B(true, endif_symbol), false, false)}, {}, {block.back});
 
 				// We're done.
 				break;
