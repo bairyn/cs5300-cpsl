@@ -71,7 +71,7 @@ std::map<Semantics::Symbol, std::string> Semantics::Symbol::generate_symbol_valu
 		static const uint64_t start_number = 2;
 		for (uint64_t iterations = 0; iterations < max_unique_try_iterations; ++iterations) {
 			std::ostringstream stry;
-			stry << start << iterations + start_number;
+			stry << start << "_" << iterations + start_number;
 			std::string try_ = stry.str();
 
 			// Does this one work?
