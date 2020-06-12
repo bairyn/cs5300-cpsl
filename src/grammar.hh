@@ -1273,6 +1273,9 @@ public:
 		dot_operator0, identifier,
 		leftbracket_operator0, expression, rightbracket_operator0
 	)
+
+	// | [begin, end)
+	std::string lexemes_text(uint64_t begin, uint64_t end) const;
 };
 
 #endif /* #ifndef CPSL_CC_GRAMMAR_HH */

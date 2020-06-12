@@ -1392,6 +1392,11 @@ public:
 		// "add_instruction" into "other" (but not "this") must be added by the
 		// returned value to remain correct.
 		Index merge(const MIPSIO &other);
+		// | Variant that adds a sequence connection between "before" in "this" and "after" in "other".
+		// Return the new "other_after" index after merging.
+		Index merge(const MIPSIO &other, Index this_before, Index other_after);
+		// | Variant like the previous but instead returns the new "other_index" from "other" rather than the new "other_after" from "other".
+		Index merge(const MIPSIO &other, Index this_before, Index other_after, Index other_index);
 
 		static const bool permit_sequence_connection_delays;
 
@@ -1468,8 +1473,8 @@ public:
 	};
 
 	// The non-const part is the ability to store strings.
-	Expression analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, bool no_dereference_record_array = false);
-	Expression analyze_expression(const ::Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, bool no_dereference_record_array = false);
+	Expression analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope);
+	Expression analyze_expression(const ::Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope);
 
 	// | A computation graph from needed input storage units to needed output storage units.
 	// MIPSIO with input types and locations and output types and locations.
@@ -1542,7 +1547,7 @@ public:
 	// | Get the symbol to a string literal, tracking it if this is the first time encountering it.
 	Symbol string_literal(const std::string &string);
 	static const uint64_t max_string_requested_label_suffix_length;
-	static std::string labelify(const std::string &string);
+	static std::string labelify(const std::string &string, const std::string &prefix = "string_literal");
 
 	static bool would_addition_overflow(int32_t a, int32_t b);
 	static bool would_multiplication_overflow(int32_t a, int32_t b);

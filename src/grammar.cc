@@ -1127,3 +1127,14 @@ DEFINE_SYMBOL_2_3(
 	dot_operator0, identifier,
 	leftbracket_operator0, expression, rightbracket_operator0
 )
+
+std::string Grammar::lexemes_text(uint64_t begin, uint64_t end) const {
+	std::string concatenated;
+
+	for (uint64_t index = begin; index < end; ++index) {
+		const Lexeme &lexeme = lexemes.at(index);
+		concatenated += lexeme.get_text();
+	}
+
+	return concatenated;
+}

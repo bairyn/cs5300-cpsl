@@ -10558,6 +10558,23 @@ Semantics::MIPSIO::Index Semantics::MIPSIO::merge(const MIPSIO &other) {
 	return addition;
 }
 
+// | Variant that adds a sequence connection between "before" in "this" and "after" in "other".
+// Return the new "other_after" index after merging.
+Semantics::MIPSIO::Index Semantics::MIPSIO::merge(const MIPSIO &other, Index this_before, Index other_after) {
+	const Index new_after_index = merge(other) + other_after;
+	add_sequence_connection(this_before, new_after_index);
+	return new_after_index;
+}
+
+// | Variant like the previous but instead returns the new "other_index" from "other" rather than the new "other_after" from "other".
+Semantics::MIPSIO::Index Semantics::MIPSIO::merge(const MIPSIO &other, Index this_before, Index other_after, Index other_index) {
+	const Index merge_index     = merge(other);
+	const Index new_after_index = merge_index + other_after;
+	const Index new_other_index = merge_index + other_index;
+	add_sequence_connection(this_before, new_after_index);
+	return new_other_index;
+}
+
 const bool Semantics::MIPSIO::permit_sequence_connection_delays = CPSL_CC_SEMANTICS_PERMIT_SEQUENCE_CONNECTION_DELAYS;
 
 const bool Semantics::all_arrays_records_are_refs = CPSL_CC_SEMANTICS_ALL_ARRAY_RECORDS_ARE_REFS;
@@ -10793,7 +10810,7 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 						}
 
 						// Get the index expression, which should be an integer.
-						const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+						const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 						const Type &value_resolved_type = storage_scope.type(value.output_type).resolve_type(storage_scope);
 						if (!value_resolved_type.is_primitive() || !value_resolved_type.get_primitive().is_integer()) {
 							std::ostringstream sstr;
@@ -10897,11 +10914,11 @@ Semantics::Expression::Expression() {}
 Semantics::Expression::Expression(const MIPSIO  &instructions, TypeIndex output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(          instructions ), output_type(output_type), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
 Semantics::Expression::Expression(      MIPSIO &&instructions, TypeIndex output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(std::move(instructions)), output_type(output_type), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
 
-Semantics::Expression Semantics::analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, bool no_dereference_record_array) {
-	return analyze_expression(grammar.expression_storage.at(expression), constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, no_dereference_record_array);
+Semantics::Expression Semantics::analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope) {
+	return analyze_expression(grammar.expression_storage.at(expression), constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 }
 
-Semantics::Expression Semantics::analyze_expression(const ::Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, bool no_dereference_record_array) {
+Semantics::Expression Semantics::analyze_expression(const ::Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope) {
 	// Some type aliases to improve readability.
 	using M = Semantics::MIPSIO;
 	using I = Semantics::Instruction;
@@ -10938,8 +10955,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression       &expression1    = grammar.expression_storage.at(pipe.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 
 				// Make sure left and right are of primitive types.
 				if (!storage_scope.type(left.output_type).resolve_type(storage_scope).is_primitive() || !storage_scope.type(right.output_type).resolve_type(storage_scope).is_primitive()) {
@@ -10996,8 +11013,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression            &expression1         = grammar.expression_storage.at(ampersand.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -11056,8 +11073,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression         &expression1      = grammar.expression_storage.at(equals.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -11124,8 +11141,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression         &expression1        = grammar.expression_storage.at(lt_or_gt.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -11193,8 +11210,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression     &expression1  = grammar.expression_storage.at(le.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -11263,8 +11280,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression     &expression1  = grammar.expression_storage.at(ge.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -11333,8 +11350,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression     &expression1  = grammar.expression_storage.at(lt.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -11399,8 +11416,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression     &expression1  = grammar.expression_storage.at(gt.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -11465,8 +11482,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression       &expression1    = grammar.expression_storage.at(plus.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -11538,8 +11555,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression        &expression1     = grammar.expression_storage.at(minus.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -11611,8 +11628,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression        &expression1     = grammar.expression_storage.at(times.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -11686,8 +11703,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression        &expression1     = grammar.expression_storage.at(slash.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -11761,8 +11778,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression          &expression1       = grammar.expression_storage.at(percent.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -11837,7 +11854,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression        &expression0     = grammar.expression_storage.at(tilde.expression);
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				expression_semantics.lexeme_begin = tilde.tilde_operator0;
 				expression_semantics.lexeme_end   = value.lexeme_end;
 
@@ -11880,7 +11897,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression             &expression0     = grammar.expression_storage.at(unary_minus.expression);
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				expression_semantics.lexeme_begin = unary_minus.minus_operator0;
 				expression_semantics.lexeme_end   = value.lexeme_end;
 
@@ -11939,7 +11956,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const LexemeOperator            &rightparenthesis_operator0 = grammar.lexemes.at(parentheses.rightparenthesis_operator0).get_operator();
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				expression_semantics.lexeme_begin = parentheses.leftparenthesis_operator0;
 				expression_semantics.lexeme_end   = parentheses.rightparenthesis_operator0 + 1;
 
@@ -12231,7 +12248,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 							argument_outputs.push_back(last_call_index);
 						}
 					} else {
-						const Expression argument_expression  = analyze_expression(argument_expression_symbol, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, true);
+						const Expression argument_expression  = analyze_expression(argument_expression_symbol, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 						const Index argument_expression_index = expression_semantics.instructions.merge(argument_expression.instructions) + argument_expression.output_index;
 						expression_semantics.instructions.add_sequence_connection(last_call_index, argument_expression_index);
 						last_call_index = argument_expression_index;
@@ -12339,7 +12356,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Convert an integer to a char.
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				expression_semantics.lexeme_begin = chr.chr_keyword0;
 				expression_semantics.lexeme_end   = chr.rightparenthesis_operator0 + 1;
 
@@ -12400,7 +12417,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Convert a char to an integer.
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				expression_semantics.lexeme_begin = ord.ord_keyword0;
 				expression_semantics.lexeme_end   = ord.rightparenthesis_operator0 + 1;
 
@@ -12463,7 +12480,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Find the predecessor of a value.
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				expression_semantics.lexeme_begin = pred.pred_keyword0;
 				expression_semantics.lexeme_end   = pred.rightparenthesis_operator0 + 1;
 
@@ -12518,7 +12535,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Find the successor of a value.
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				expression_semantics.lexeme_begin = succ.succ_keyword0;
 				expression_semantics.lexeme_end   = succ.rightparenthesis_operator0 + 1;
 
@@ -12706,7 +12723,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				// LoadFrom to store the output to whatever the lvalue refers to.
 
 				// Analyze the expression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 
 				block.lexeme_end = value.lexeme_end;
 
@@ -12751,14 +12768,214 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				const Statement::If &statement_if = grammar.statement_if_storage.at(statement.data);
 				const IfStatement   &if_statement = grammar.if_statement_storage.at(statement_if.if_statement);
 
-				const LexemeKeyword     &if_keyword0        = grammar.lexemes.at(if_statement.if_keyword0).get_keyword(); (void) if_keyword0;
-				const ::Expression      &expression0        = grammar.expression_storage.at(if_statement.expression);
-				const LexemeKeyword     &then_keyword0      = grammar.lexemes.at(if_statement.then_keyword0).get_keyword(); (void) then_keyword0;
-				const StatementSequence &statement_sequence = grammar.statement_sequence_storage.at(if_statement.statement_sequence);
-				const ElseifClauseList  &elseif_clause_list = grammar.elseif_clause_list_storage.at(if_statement.elseif_clause_list);
-				const ElseClauseOpt     &else_clause_opt    = grammar.else_clause_opt_storage.at(if_statement.else_clause_opt);
-				const LexemeKeyword     &end_keyword0       = grammar.lexemes.at(if_statement.end_keyword0).get_keyword(); (void) end_keyword0;
+				const LexemeKeyword     &if_keyword0           = grammar.lexemes.at(if_statement.if_keyword0).get_keyword(); (void) if_keyword0;
+				const ::Expression      &if_expression0        = grammar.expression_storage.at(if_statement.expression);
+				const LexemeKeyword     &if_then_keyword0      = grammar.lexemes.at(if_statement.then_keyword0).get_keyword(); (void) if_then_keyword0;
+				const StatementSequence &if_statement_sequence = grammar.statement_sequence_storage.at(if_statement.statement_sequence);
+				const ElseifClauseList  &elseif_clause_list    = grammar.elseif_clause_list_storage.at(if_statement.elseif_clause_list);
+				const ElseClauseOpt     &else_clause_opt       = grammar.else_clause_opt_storage.at(if_statement.else_clause_opt);
+				const LexemeKeyword     &end_keyword0          = grammar.lexemes.at(if_statement.end_keyword0).get_keyword(); (void) end_keyword0;
 
+				// First, collect all the elseif clauses.
+
+				// Collect the lvalue accessor clauses in the list.
+				std::vector<const ElseifClause *> elseif_clauses;
+				bool reached_end = false;
+				for (const ElseifClauseList *last_list = &elseif_clause_list; !reached_end; ) {
+					// Unpack the last list encountered.
+					switch(last_list->branch) {
+						case ElseifClauseList::empty_branch: {
+							// We're done.
+							// (No need to unpack the empty branch.)
+							reached_end = true;
+							break;
+						}
+
+						case ElseifClauseList::cons_branch: {
+							// Unpack the list.
+							const ElseifClauseList::Cons &last_elseif_clause_list_cons = grammar.elseif_clause_list_cons_storage.at(last_list->data);
+							const ElseifClauseList       &last_elseif_clause_list      = grammar.elseif_clause_list_storage.at(last_elseif_clause_list_cons.elseif_clause_list);
+							const ElseifClause           &last_elseif_clause           = grammar.elseif_clause_storage.at(last_elseif_clause_list_cons.elseif_clause);
+
+							// Add the constant assignment.
+							elseif_clauses.push_back(&last_elseif_clause);
+							last_list = &last_elseif_clause_list;
+
+							// Loop.
+							break;
+						}
+
+						// Unrecognized branch.
+						default: {
+							std::ostringstream sstr;
+							sstr << "Semantics::analyze_statements: internal error: invalid elseif_clause_list branch at index " << last_list - &grammar.elseif_clause_list_storage[0] << ": " << last_list->branch;
+							throw SemanticsError(sstr.str());
+						}
+					}
+				}
+
+				// Correct the order of the list.
+				std::reverse(elseif_clauses.begin(), elseif_clauses.end());
+
+				// Set up a chain of blocks.  At the beginning of each block,
+				// check the condition if any, and jump to the beginning of the
+				// next block if the condition is false.  At the end of all but
+				// the last blocks, jump to the end of the chain.  This is the
+				// approach we take.
+				//
+				// An alternative approach would be to, before placing the
+				// blocks/clauses in reverse order, where there is a jump to
+				// the end of the chain after each non-last block, place the if
+				// condition check/jump following by the rest, omitting the
+				// final unconditional jump to the else clause.
+
+				// Analyze the "if" block condition.  Don't merge it yet.
+				const Expression if_condition = analyze_expression(if_expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Symbol     if_symbol    = Symbol(labelify(grammar.lexemes_text(if_condition.lexeme_begin, if_condition.lexeme_end), "if"), "", if_statement.then_keyword0);
+				const Symbol     endif_symbol = Symbol(labelify(grammar.lexemes_text(if_condition.lexeme_begin, if_condition.lexeme_end), "endif"), "", if_statement.end_keyword0);
+
+				// Require the "if" block condition type to be a boolean.
+				if (!storage_scope.resolve_type(if_condition.output_type).matches(type_scope.type("boolean"), storage_scope)) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_statements: error (line "
+						<< grammar.lexemes.at(if_condition.lexeme_begin).get_line() << " col " << grammar.lexemes.at(if_condition.lexeme_begin).get_column()
+						<< "): an ``if\" condition must be of boolean type, not of type ``"
+						<< storage_scope.type(if_condition.output_type).get_repr(storage_scope)
+						<< "\"."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Analyze the "if" block.
+				const Block      if_block     = analyze_statements(routine_declaration, if_statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol);
+
+				// Analyze all "elseif" block conditions.
+				std::vector<Expression> elseif_conditions;
+				std::vector<Symbol>     elseif_symbols;
+				std::vector<Block>      elseif_blocks;
+
+				// Handle the elseif blocks.
+				for (const ElseifClause *next_elseif_clause : std::as_const(elseif_clauses)) {
+					const LexemeKeyword     &elseif_keyword0           = grammar.lexemes.at(next_elseif_clause->elseif_keyword0).get_keyword(); (void) elseif_keyword0;
+					const ::Expression      &elseif_expression0        = grammar.expression_storage.at(next_elseif_clause->expression);
+					const LexemeKeyword     &elseif_then_keyword0      = grammar.lexemes.at(next_elseif_clause->then_keyword0).get_keyword(); (void) elseif_then_keyword0;
+					const StatementSequence &elseif_statement_sequence = grammar.statement_sequence_storage.at(next_elseif_clause->statement_sequence);
+
+					// Analyze the "elseif" block condition.
+					const Expression elseif_condition = analyze_expression(elseif_expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+					const Symbol     elseif_symbol    = Symbol(labelify(grammar.lexemes_text(elseif_condition.lexeme_begin, elseif_condition.lexeme_end), "elseif"), "", next_elseif_clause->then_keyword0);
+
+					// Require the "elseif" block condition type to be a boolean.
+					if (!storage_scope.resolve_type(elseif_condition.output_type).matches(type_scope.type("boolean"), storage_scope)) {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze_statements: error (line "
+							<< grammar.lexemes.at(if_condition.lexeme_begin).get_line() << " col " << grammar.lexemes.at(if_condition.lexeme_begin).get_column()
+							<< "): an ``elseif\" condition must be of boolean type, not of type ``"
+							<< storage_scope.type(elseif_condition.output_type).get_repr(storage_scope)
+							<< "\"."
+							;
+						throw SemanticsError(sstr.str());
+					}
+
+					// Analyze the "elseif" block.
+					const Block      elseif_block     = analyze_statements(routine_declaration, elseif_statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol);
+
+					// Add this "elseif" block.
+					elseif_conditions.push_back(elseif_condition);
+					elseif_symbols.push_back(elseif_symbol);
+					elseif_blocks.push_back(elseif_block);
+				}
+
+				// Analyze the "else" block.
+				const bool has_else = else_clause_opt.branch == ElseClauseOpt::value_branch;
+				Symbol else_symbol;
+				Block  else_block;
+				// Unpack the else clause.
+				switch (else_clause_opt.branch) {
+					case ElseClauseOpt::empty_branch: {
+						// (No need to unpack the empty branch.)
+						break;
+					}
+
+					case ElseClauseOpt::value_branch: {
+						const ElseClauseOpt::Value &else_clause_opt_value   = grammar.else_clause_opt_value_storage.at(else_clause_opt.data);
+						const ElseClause           &else_clause             = grammar.else_clause_storage.at(else_clause_opt_value.else_clause);
+
+						const LexemeKeyword        &else_keyword0           = grammar.lexemes.at(else_clause.else_keyword0).get_keyword(); (void) else_keyword0;
+						const StatementSequence    &else_statement_sequence = grammar.statement_sequence_storage.at(else_clause.statement_sequence);
+
+						// Set the else symbol.
+						else_symbol= Symbol(labelify(grammar.lexemes_text(if_condition.lexeme_begin, if_condition.lexeme_end), "else"), "", else_clause.else_keyword0);
+
+						// Analyze the "else" block.
+						else_block = analyze_statements(routine_declaration, else_statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol);
+						break;
+					}
+
+					// Unrecognized branch.
+					default: {
+						std::ostringstream sstr;
+						sstr << "Semantics::analyze_statements: internal error: invalid else_clause_opt branch at index " << &else_clause_opt - &grammar.else_clause_opt_storage[0] << ": " << else_clause_opt.branch;
+						throw SemanticsError(sstr.str());
+					}
+				}
+
+				// First, output the "if" clause.
+
+				// "if" label.  (Redundant and unused, but may aid in readability.)
+				block.back = block.instructions.add_instruction({I::Ignore(B(true, if_symbol), false, false)}, {}, {block.back});
+
+				// "if" condition.
+				const Symbol next_block_symbol = elseif_symbols.size() > 0 ? elseif_symbols.front() : (has_else ? else_symbol : endif_symbol);
+				const Index if_condition_index = block.back = block.instructions.merge(if_condition.instructions, block.back, if_condition.output_index);
+				block.back = block.instructions.add_instruction({I::BranchZero(B(), false, next_block_symbol)}, {if_condition_index}, {block.back});
+
+				// "if" block.
+				const Index if_block_index = block.back = block.instructions.merge(if_block.instructions, block.back, if_block.front, if_block.back);
+				// Jump to the end of the chain after executing this block, if any.
+				if (elseif_symbols.size() > 0 || has_else) {
+					block.back = block.instructions.add_instruction({I::Jump(B(), endif_symbol)}, {}, {block.back});
+				}
+
+				// Next, output the "elseif" clauses.
+				for (const Expression &elseif_condition : std::as_const(elseif_conditions)) {
+					const std::vector<Expression>::size_type elseif_condition_expression_index = &elseif_condition - &elseif_conditions[0];
+					const Symbol &elseif_symbol = elseif_symbols[elseif_condition_expression_index];
+					const Block &elseif_block   = elseif_blocks[elseif_condition_expression_index];
+
+					// "elseif" label.
+					block.back = block.instructions.add_instruction({I::Ignore(B(true, elseif_symbol), false, false)}, {}, {block.back});
+
+					// "elseif" condition.
+					const Symbol next_block_symbol = elseif_condition_expression_index < elseif_symbols.size() - 1 ? elseif_symbols[elseif_condition_expression_index + 1] : (has_else ? else_symbol : endif_symbol);
+					const Index elseif_condition_index = block.back = block.instructions.merge(elseif_condition.instructions, block.back, elseif_condition.output_index);
+					block.back = block.instructions.add_instruction({I::BranchZero(B(), false, next_block_symbol)}, {elseif_condition_index}, {block.back});
+
+					// "elseif" block.
+					const Index elseif_block_index = block.back = block.instructions.merge(elseif_block.instructions, block.back, elseif_block.front, elseif_block.back);
+					// Jump to the end of the chain after executing this block, if any.
+					if (elseif_condition_expression_index < elseif_conditions.size() - 1 || has_else) {
+						block.back = block.instructions.add_instruction({I::Jump(B(), endif_symbol)}, {}, {block.back});
+					}
+				}
+
+				// Output the "else" clause if present.
+				if (has_else) {
+					// "else" label.
+					block.back = block.instructions.add_instruction({I::Ignore(B(true, else_symbol), false, false)}, {}, {block.back});
+
+					// "else" block.
+					const Index else_block_index = block.back = block.instructions.merge(else_block.instructions, block.back, else_block.front, else_block.back);
+
+					// No need to jump to the end of chain, since we're already there.
+				}
+
+				// Finally, output the endif label.
+				block.back = block.instructions.add_instruction({I::Ignore(B(true, if_symbol), false, false)}, {}, {block.back});
+
+				// We're done.
 				break;
 			} case Statement::while_branch: {
 				const Statement::While &statement_while = grammar.statement_while_storage.at(statement.data);
@@ -13908,7 +14125,7 @@ Semantics::Symbol Semantics::string_literal(const std::string &string) {
 
 const uint64_t Semantics::max_string_requested_label_suffix_length = CPSL_CC_SEMANTICS_MAX_STRING_REQUESTED_LABEL_SUFFIX_LENGTH;
 
-std::string Semantics::labelify(const std::string &string) {
+std::string Semantics::labelify(const std::string &string, const std::string &prefix) {
 	std::string label_suffix;
 
 	bool last_alnum = false;
@@ -13932,7 +14149,7 @@ std::string Semantics::labelify(const std::string &string) {
 		}
 	}
 
-	return "string_literal" + label_suffix;
+	return prefix + label_suffix;
 }
 
 bool Semantics::would_addition_overflow(int32_t a, int32_t b) {
