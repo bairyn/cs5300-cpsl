@@ -465,7 +465,8 @@ std::string cli::get_usage(const std::optional<std::string> &prog) {
 		<< "      --grammar        indicate if parsing the grammar of the input succeeded and stop after the parsing stage." << std::endl
 		<< "      --parser-trace," << std::endl
 		<< "      --grammar-trace  print bison tracing information while parsing." << std::endl
-		<< "      --no-optimize    don't apply optimizations." << std::endl
+		// Commented out until there are actually optimizations implemented.
+		//<< "      --no-optimize    don't apply optimizations." << std::endl
 		;
 	return sstr.str();
 }
