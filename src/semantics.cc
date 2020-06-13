@@ -12822,9 +12822,9 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			var_nonprimitive_offsets.push_back(std::numeric_limits<uint32_t>::max());  // Unused.
 		} else {
 			is_argument_expression_var_nonprimitives.push_back(true);
-			var_nonprimitive_allocated = Instruction::AddSp::round_to_align(var_nonprimitive_allocated, 4);
+			var_nonprimitive_allocated = Instruction::AddSp::round_to_align(var_nonprimitive_allocated, argument_type.get_size());
 			var_nonprimitive_offsets.push_back(var_nonprimitive_allocated);
-			var_nonprimitive_allocated += 4;
+			var_nonprimitive_allocated += argument_type.get_size();
 		}
 	}
 	// For all combined non-ref array and record copies, align to 8 bytes.
