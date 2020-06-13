@@ -10963,7 +10963,7 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 						const int32_t      min_index  = array_type.get_min_index();
 
 						// | The last output type is now the base type.
-						last_output_type = storage_scope.type(last_output_type).get_array().base_type;
+						last_output_type = array_type.base_type;
 						// | Get the integer's index.
 						const Index value_index                 = lvalue_source_analysis.merge_expression(value);
 						Index shifted_value_index;
