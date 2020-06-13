@@ -10171,17 +10171,33 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 						alt_load_from.fixed_load_storage.offset -= add_sp_total;
 					}
 #endif /* #if 0 */
-					if (alt_load_from.fixed_load_storage.is_register_dereference() && alt_load_from.fixed_load_storage.register_ == "$sp") {
-						int32_t add_sp_already_applied = 0;
+					if (alt_load_from.fixed_load_storage.is_register_dereference()) {
+						if (alt_load_from.fixed_load_storage.is_register_dereference() && alt_load_from.fixed_load_storage.register_ == "$sp") {
+							int32_t add_sp_already_applied = 0;
 
-						if (alt_load_from.fixed_load_storage.offset >= -pushed_sp_total) {
-							alt_load_from.fixed_load_storage.offset -= pushed_sp_total;
-							add_sp_already_applied += pushed_sp_total;
+							if (alt_load_from.fixed_load_storage.offset >= -pushed_sp_total) {
+								alt_load_from.fixed_load_storage.offset -= pushed_sp_total;
+								add_sp_already_applied += pushed_sp_total;
+							}
+
+							if (!alt_load_from.fixed_load_storage.no_sp_adjust) {
+								alt_load_from.fixed_load_storage.no_sp_adjust = true;
+								alt_load_from.fixed_load_storage.offset -= add_sp_total - add_sp_already_applied;
+							}
 						}
+					} else if (alt_load_from.fixed_load_storage.is_register_direct()) {
+						if (alt_load_from.fixed_load_storage.is_register_dereference() && alt_load_from.fixed_load_storage.register_ == "$sp") {
+							int32_t add_sp_already_applied = 0;
 
-						if (!alt_load_from.fixed_load_storage.no_sp_adjust) {
-							alt_load_from.fixed_load_storage.no_sp_adjust = true;
-							alt_load_from.fixed_load_storage.offset -= add_sp_total - add_sp_already_applied;
+							if (alt_load_from.addition >= -pushed_sp_total) {
+								alt_load_from.addition -= pushed_sp_total;
+								add_sp_already_applied += pushed_sp_total;
+							}
+
+							if (!alt_load_from.fixed_load_storage.no_sp_adjust) {
+								alt_load_from.fixed_load_storage.no_sp_adjust = true;
+								alt_load_from.addition -= add_sp_total - add_sp_already_applied;
+							}
 						}
 					}
 				}
