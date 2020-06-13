@@ -10979,30 +10979,8 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 						//const Index ignore_index                = lvalue_source_analysis.instructions.add_instruction_indexed({I::Ignore(B())}, {{array_element_offset_index, 1}}, array_element_offset_index); (void) ignore_index;
 						const Index array_element_offset_index  = lvalue_source_analysis.instructions.add_instruction({I::MultFrom(B(), true, true)}, {load_element_size_index, shifted_value_index});
 						const Index array_element_address_index = lvalue_source_analysis.instructions.add_instruction({I::AddFrom(B(), true)}, {last_output_index, array_element_offset_index});
-						// Actually dereference if the base type is primitive.  Just leave it at the address if the base type is a record or array.
+						// Leave the base address.  In an expression context, the analyze_expression handler can dereference the array if needed.
 						const Type &last_output_resolved_type = storage_scope.type(last_output_type).resolve_type(storage_scope);
-						if (true || !last_output_resolved_type.is_primitive()) {
-							last_output_index = array_element_address_index;
-						} else {
-							// Dereference.
-							const Type::Primitive &last_output_resolved_primitive_type = last_output_resolved_type.get_primitive();
-							const Index array_dereference_index = lvalue_source_analysis.instructions.add_instruction(
-								{I::LoadFrom(
-									B(),                                            // base
-									last_output_resolved_primitive_type.is_word(),  // is_word_save
-									last_output_resolved_primitive_type.is_word(),  // is_word_load
-									0,                                              // addition
-									false,                                          // is_save_fixed
-									false,                                          // is_load_fixed
-									{},                                             // fixed_save_storage
-									{},                                             // fixed_load_storage
-									false,                                          // dereference_save
-									true                                            // dereference_load
-								)},
-								{array_element_address_index}
-							);
-							last_output_index = array_dereference_index;
-						}
 
 						break;
 					}
