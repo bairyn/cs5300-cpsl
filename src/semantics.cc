@@ -10186,7 +10186,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 							}
 						}
 					} else if (alt_load_from.fixed_load_storage.is_register_direct()) {
-						if (alt_load_from.fixed_load_storage.is_register_dereference() && alt_load_from.fixed_load_storage.register_ == "$sp") {
+						if (alt_load_from.fixed_load_storage.register_ == "$sp") {
 							int32_t add_sp_already_applied = 0;
 
 							if (alt_load_from.addition >= -pushed_sp_total) {
@@ -13069,15 +13069,28 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 		} else if (!parameter_is_ref || !storage_scope.resolve_type(argument_type_index).is_primitive()) {
 			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {argument_output}, {block.back});
 		} else {
-			// primref parameter.  If it were a primvar argument, is_direct_register would be true, but it isn't.
-			// primref parameter and primref argument.
-			//
-			// The expression index refers to the dereferenced prim, and the
-			// lvalue storage is the storage that contains the address.  Don't
-			// use argument_output, which would dereference; just copy the
-			// contents of the storage.
-			const Index load_lvalue_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), argument_lvalue_source_analysis.lvalue_fixed_storage)}, {}, {block.back});
-			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {load_lvalue_index}, {block.back});
+			// primref parameter and primref or primvar argument.
+			assert(argument_lvalue_source_analysis.is_lvalue_fixed_storage);
+
+			// primref argument?
+			if (argument_lvalue_source_analysis.is_lvalue_primref) {
+				// primref argument.
+				//
+				// Copy the value, which is a pointer.
+				assert(argument_lvalue_source_analysis.lvalue_fixed_storage.is_register_dereference());
+				const Index load_lvalue_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), argument_lvalue_source_analysis.lvalue_fixed_storage)}, {}, {block.back});
+				const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {load_lvalue_index}, {block.back});
+			} else {
+				// primvar argument.
+				//
+				// The expression index refers to the dereferenced prim, and the
+				// lvalue storage is the storage that contains the address.  Don't
+				// use argument_output, which would dereference; just copy the
+				// contents of the storage.
+				assert(argument_lvalue_source_analysis.lvalue_fixed_storage.is_register_dereference());
+				const Index load_lvalue_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, argument_lvalue_source_analysis.lvalue_fixed_storage.offset, false, true, Storage(), argument_lvalue_source_analysis.lvalue_fixed_storage.register_)}, {}, {block.back});
+				const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {load_lvalue_index}, {block.back});
+			}
 		}
 	}
 
