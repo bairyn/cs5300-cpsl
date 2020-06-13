@@ -12913,7 +12913,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			// Load the value into the ref storage.
 			//const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {load_lvalue_index}, {block.back});
 			assert(argument_lvalue_source_analysis.is_lvalue_fixed_storage);
-			const Index load_lvalue_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), argument_lvalue_source_analysis.lvalue_fixed_storage)});
+			const Index load_lvalue_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), argument_lvalue_source_analysis.lvalue_fixed_storage)}, {}, {block.back});
 			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), argument_type.resolve_type(storage_scope).get_primitive().is_word(), argument_type.resolve_type(storage_scope).get_primitive().is_word(), 0, true, false, Storage("$sp", argument_type.resolve_type(storage_scope).get_primitive().is_word() ? 4 : 1, direct_register_ref_offsets[argument_expression_index]), Storage())}, {load_lvalue_index}, {block.back});
 			// Since we'll be restoring this register ourselves, there is no need to preserve this register.
 			nosave_registers.insert(argument_lvalue_source_analysis.lvalue_fixed_storage.register_);
@@ -13003,7 +13003,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			// lvalue storage is the storage that contains the address.  Don't
 			// use argument_output, which would dereference; just copy the
 			// contents of the storage.
-			const Index load_lvalue_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), argument_lvalue_source_analysis.lvalue_fixed_storage)});
+			const Index load_lvalue_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), argument_lvalue_source_analysis.lvalue_fixed_storage)}, {}, {block.back});
 			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {load_lvalue_index}, {block.back});
 		}
 	}
@@ -13610,9 +13610,10 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 
 				// Analyze the call.
 				std::pair<Block, std::optional<std::pair<Index, TypeIndex>>> call_analysis = analyze_call(identifier, expression_sequence_opt, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
-				const Block &call_block        = call_analysis.first;
-				const bool   call_has_output   = call_analysis.second.has_value();
-				const Index  call_output_index = !call_has_output ? std::numeric_limits<Index>::max() : call_analysis.second->first;
+				const Block     &call_block             = call_analysis.first;
+				const bool       call_has_output        = call_analysis.second.has_value();
+				const Index      call_output_index      = !call_has_output ? std::numeric_limits<Index>::max() : call_analysis.second->first;
+				const TypeIndex  call_output_type_index = !call_has_output ? std::numeric_limits<Index>::max() : call_analysis.second->second; (void) call_output_type_index;
 
 				// Fail if unused function outputs are prohibited.
 				if (!permit_unused_function_outputs) {
@@ -13628,7 +13629,11 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				}
 
 				// Merge the call block.
-				const Index call_block_index = block.merge_append(call_block);
+				const Index call_block_index
+					= call_has_output
+					? block.merge_append(call_block, call_output_index)
+					: block.merge_append(call_block)
+					;
 
 				// We're done.
 				break;
