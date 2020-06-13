@@ -13924,10 +13924,11 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 		// We've done checking, but don't add the variable bindings until we know how much stack space we will allocate.
 		const bool is_primitive_and_ref  = parameter_is_ref && storage_scope.resolve_type(parameter_type).is_primitive();
 		const bool is_resolved_type_word = !storage_scope.resolve_type(parameter_type).is_primitive() || storage_scope.resolve_type(parameter_type).get_primitive().is_word();
+		const bool is_nonprimitive = storage_scope.type(parameter_type).resolve_type(storage_scope).is_array() || storage_scope.type(parameter_type).resolve_type(storage_scope).is_record();
 		if (parameter_index < 4) {
 			const Storage parameter_storage
-				= !is_primitive_and_ref
-				? Storage("$a" + std::to_string(parameter_index))                                    // Just use $a directly; don't dereference.
+				= !is_primitive_and_ref || is_nonprimitive
+				? Storage("$a" + std::to_string(parameter_index))                                    // Just use $a directly; don't dereference.  (Primitive Var.)
 				: Storage("$a" + std::to_string(parameter_index), is_resolved_type_word ? 4 : 1, 0)  // The variable should dereference an address.
 				;
 
@@ -13938,6 +13939,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 
 			stack_argument_total_size = Instruction::AddSp::round_to_align(stack_argument_total_size, is_word ? 4 : 1);
 
+			// If it's an array, this storage dereferences the argument to get the real pointer to the beginning of the array.  (The first element involves 2 dereferences.)
 			const Storage parameter_storage
 				= !is_primitive_and_ref
 				? Storage(is_word ? 4 : 1, false, Symbol(), "$sp", true, stack_argument_total_size, false, false)
