@@ -12906,7 +12906,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			//const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {load_lvalue_index}, {block.back});
 			assert(argument_lvalue_source_analysis.is_lvalue_fixed_storage);
 			const Index load_lvalue_index = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), argument_lvalue_source_analysis.lvalue_fixed_storage)});
-			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), argument_type.resolve_type(storage_scope).get_primitive().is_word(), argument_type.get_primitive().is_word(), 0, true, false, Storage("$sp", argument_type.get_primitive().is_word() ? 4 : 1, direct_register_ref_offsets[argument_expression_index]), Storage())}, {load_lvalue_index}, {block.back});
+			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), argument_type.resolve_type(storage_scope).get_primitive().is_word(), argument_type.resolve_type(storage_scope).get_primitive().is_word(), 0, true, false, Storage("$sp", argument_type.resolve_type(storage_scope).get_primitive().is_word() ? 4 : 1, direct_register_ref_offsets[argument_expression_index]), Storage())}, {load_lvalue_index}, {block.back});
 			// Since we'll be restoring this register ourselves, there is no need to preserve this register.
 			nosave_registers.insert(argument_lvalue_source_analysis.lvalue_fixed_storage.register_);
 		}
@@ -13034,7 +13034,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			// Load the value into the ref storage.
 			//const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {load_lvalue_index}, {block.back});
 			assert(argument_lvalue_source_analysis.is_lvalue_fixed_storage);
-			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), argument_type.resolve_type(storage_scope).get_primitive().is_word(), argument_type.get_primitive().is_word(), 0, true, true, argument_lvalue_source_analysis.lvalue_fixed_storage, Storage("$sp", argument_type.get_primitive().is_word() ? 4 : 1, direct_register_ref_offsets[argument_expression_index]))}, {}, {block.back});
+			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), argument_type.resolve_type(storage_scope).get_primitive().is_word(), argument_type.resolve_type(storage_scope).get_primitive().is_word(), 0, true, true, argument_lvalue_source_analysis.lvalue_fixed_storage, Storage("$sp", argument_type.resolve_type(storage_scope).get_primitive().is_word() ? 4 : 1, direct_register_ref_offsets[argument_expression_index]))}, {}, {block.back});
 		}
 	}
 	if (direct_ref_allocated != 0) {
@@ -13050,7 +13050,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	Index callee_output_index = std::numeric_limits<Index>::max();
 	if (callee_has_output) {
 		const Type &callee_output_resolved_type = storage_scope.resolve_type(*callee_output);
-		const bool is_word = callee_output_resolved_type.is_primitive() || callee_output_resolved_type.get_primitive().is_word();
+		const bool is_word = !callee_output_resolved_type.is_primitive() || callee_output_resolved_type.get_primitive().is_word();
 		callee_output_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, true, 0, false, true, {}, Storage("$v0"))}, {}, {block.back});
 	}
 
