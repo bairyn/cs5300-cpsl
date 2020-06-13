@@ -10980,7 +10980,7 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 						const Index array_element_offset_index  = lvalue_source_analysis.instructions.add_instruction({I::MultFrom(B(), true, true)}, {load_element_size_index, shifted_value_index});
 						const Index array_element_address_index = lvalue_source_analysis.instructions.add_instruction({I::AddFrom(B(), true)}, {last_output_index, array_element_offset_index});
 						// Leave the base address.  In an expression context, the analyze_expression handler can dereference the array if needed.
-						const Type &last_output_resolved_type = storage_scope.type(last_output_type).resolve_type(storage_scope);
+						last_output_index = array_element_address_index;
 
 						break;
 					}
