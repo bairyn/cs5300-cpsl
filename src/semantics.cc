@@ -12430,7 +12430,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 					} else {
 						// It's a primitive.  Dereference.
 						const bool is_word = storage_scope.type(lvalue_source_analysis.lvalue_type).resolve_type(storage_scope).get_primitive().is_word();
-						const Index dereference_address_index = expression_semantics.instructions.add_instruction(I::LoadFrom({B(), is_word, false, 0, false, false, Storage(), Storage(), false, true}), {load_address_index});
+						const Index dereference_address_index = expression_semantics.instructions.add_instruction(I::LoadFrom({B(), is_word, is_word, 0, false, false, Storage(), Storage(), false, true}), {load_address_index});
 						expression_semantics.output_index = dereference_address_index;
 					}
 				}
