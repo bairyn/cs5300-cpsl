@@ -12903,8 +12903,8 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			// ...
 			const Index get_temporary_offset_index2 = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), temporary_offset_integer_var)}, {}, {block.back});
 			const Index get_type_size_index         = block.back = block.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(argument_type.get_size()), 0, 0))}, {}, {block.back});
-			const Index while_condition_index       = block.back = block.instructions.add_instruction({I::LessThanFrom(B(), true)}, {}, {block.back});
-			block.back = block.instructions.add_instruction({I::BranchZero(B(), false, while_symbol, true)}, {get_temporary_offset_index2, get_type_size_index}, {block.back});
+			const Index while_condition_index       = block.back = block.instructions.add_instruction({I::LessThanFrom(B(), true)}, {get_temporary_offset_index2, get_type_size_index}, {block.back});
+			block.back = block.instructions.add_instruction({I::BranchZero(B(), false, while_symbol, true)}, {while_condition_index}, {block.back});
 
 			// "endwhile label".  We don't need the endwhile label, and it is unused, but emit it anyway for readability.
 			if (emit_extra_redundant_labels) {
@@ -13285,8 +13285,8 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 					// ...
 					const Index get_temporary_offset_index2 = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), temporary_offset_integer_var)}, {}, {block.back});
 					const Index get_type_size_index         = block.back = block.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(storage_scope.type(lvalue_source_analysis.lvalue_type).get_size()), 0, 0))}, {}, {block.back});
-					const Index while_condition_index       = block.back = block.instructions.add_instruction({I::LessThanFrom(B(), true)}, {}, {block.back});
-					block.back = block.instructions.add_instruction({I::BranchZero(B(), false, while_symbol, true)}, {get_temporary_offset_index2, get_type_size_index}, {block.back});
+					const Index while_condition_index       = block.back = block.instructions.add_instruction({I::LessThanFrom(B(), true)}, {get_temporary_offset_index2, get_type_size_index}, {block.back});
+					block.back = block.instructions.add_instruction({I::BranchZero(B(), false, while_symbol, true)}, {while_condition_index}, {block.back});
 
 					// "endwhile label".  We don't need the endwhile label, and it is unused, but emit it anyway for readability.
 					if (emit_extra_redundant_labels) {
