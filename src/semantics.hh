@@ -1407,7 +1407,7 @@ public:
 		// | Variant like the previous but instead returns the new "other_index" from "other" rather than the new "other_after" from "other".
 		Index merge(const MIPSIO &other, Index this_before, Index other_after, Index other_index);
 		// | When pushing saved registers, back this up too.
-		void preserve_reg(const std::string &register_);
+		void preserve_register(const std::string &register_);
 
 		static const bool permit_sequence_connection_delays;
 

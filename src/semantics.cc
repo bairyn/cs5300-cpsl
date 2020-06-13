@@ -10617,7 +10617,7 @@ Semantics::MIPSIO::Index Semantics::MIPSIO::merge(const MIPSIO &other, Index thi
 }
 
 // | When pushing saved registers, back this up too.
-void Semantics::MIPSIO::preserve_reg(const std::string &register_) {
+void Semantics::MIPSIO::preserve_register(const std::string &register_) {
 	preserved_regs.insert(register_);
 }
 
@@ -10736,6 +10736,14 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 		const Var       &var = var_scope.get(lvalue_identifier.text).get_var();
 		const TypeIndex type = var.type;
 
+		// First, if the variable refers to a direct register with no offset,
+		// e.g. $a0-$a3, we're accessing it, so calls will need to save this
+		// unless this is the last access.  TODO: optimization: calls after the
+		// last access don't need this backed up.
+		if (var.storage.is_register_direct()) {
+			lvalue_source_analysis.instructions.preserve_register(var.storage.register_);
+		}
+
 		// What Type is it?
 		const Type &resolved_type = storage_scope.type(type).resolve_type(storage_scope);
 		if        (resolved_type.is_primitive()) {
@@ -10759,6 +10767,10 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 			lvalue_source_analysis.lvalue_fixed_storage    = var.storage;
 			lvalue_source_analysis.is_lvalue_fixed_storage = true;
 			lvalue_source_analysis.is_lvalue_primref       = var.is_primitive_and_ref;
+
+			// To preserve registers, add an empty instruction, so that
+			// lvalue_source_analysis can always be merged.
+			lvalue_source_analysis.lvalue_index = lvalue_source_analysis.instructions.add_instruction({I::Ignore(B(), false, false)});
 		} else if (resolved_type.is_record() || resolved_type.is_array()) {
 			// Load the base address of the array or record.  Apply any provided accessors.
 			TypeIndex last_output_type  = type;
@@ -12331,10 +12343,11 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_begin = lvalue_source_analysis.lexeme_begin;
 				expression_semantics.lexeme_end   = lvalue_source_analysis.lexeme_end;
 				if (lvalue_source_analysis.is_lvalue_fixed_storage) {
+					const Index lvalue_source_analysis_index = expression_semantics.merge_lvalue_source_analysis(lvalue_source_analysis);
 					if (!lvalue_source_analysis.is_lvalue_primref) {
 						// No accessors or instructions; just load from the storage.
 						const bool is_word = storage_scope.type(lvalue_source_analysis.lvalue_type).resolve_type(storage_scope).get_primitive().is_word();
-						const Index load_lvalue_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, false, true, Storage(), lvalue_source_analysis.lvalue_fixed_storage)});
+						const Index load_lvalue_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, false, true, Storage(), lvalue_source_analysis.lvalue_fixed_storage)}, {}, {lvalue_source_analysis_index});
 						expression_semantics.output_index = load_lvalue_index;
 					} else {
 						// No accessors or instructions, but it's a reference
@@ -12342,7 +12355,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						// and then dereference it.
 						const bool is_resolved_word = storage_scope.type(lvalue_source_analysis.lvalue_type).resolve_type(storage_scope).get_primitive().is_word();
 						const Index load_lvalue_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), lvalue_source_analysis.lvalue_fixed_storage)});
-						const Index dereference_address_index = expression_semantics.instructions.add_instruction(I::LoadFrom({B(), is_resolved_word, false, 0, false, false, Storage(), Storage(), false, true}), {load_lvalue_index});
+						const Index dereference_address_index = expression_semantics.instructions.add_instruction(I::LoadFrom({B(), is_resolved_word, false, 0, false, false, Storage(), Storage(), false, true}), {load_lvalue_index}, {lvalue_source_analysis_index});
 						expression_semantics.output_index = dereference_address_index;
 					}
 				} else {
@@ -12664,10 +12677,11 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			const LexemeIdentifier           &lexeme_identifier           = grammar.lexemes.at(lvalue.identifier).get_identifier();
 			const LvalueAccessorClauseList   &lvalue_accessor_clause_list = grammar.lvalue_accessor_clause_list_storage.at(lvalue.lvalue_accessor_clause_list);
 			LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+			const Index lvalue_source_analysis_index = block.merge_lvalue_source_analysis(lvalue_source_analysis);
 			const Index lvalue_output_index
 				= lvalue_source_analysis.is_lvalue_fixed_storage
 				? std::numeric_limits<Index>::max()
-				: block.merge_lvalue_source_analysis(lvalue_source_analysis)
+				: lvalue_source_analysis_index
 				;
 			is_lvalue.push_back(true);
 			lvalue_outputs.push_back(lvalue_output_index);
@@ -13115,9 +13129,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 
 				// Merge the lvalue lookup instructions if there was not a fixed storage found.
 				Index lvalue_index;
-				if (!lvalue_source_analysis.is_lvalue_fixed_storage) {
-					lvalue_index = block.merge_lvalue_source_analysis(lvalue_source_analysis);
-				}
+				lvalue_index = block.merge_lvalue_source_analysis(lvalue_source_analysis);
 
 				// LoadFrom to store the output to whatever the lvalue refers to.
 
