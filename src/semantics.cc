@@ -10113,7 +10113,29 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 		for (Storage &instruction_storage_unit : instruction_storage) {
 			if (instruction_storage_unit.is_register_dereference() && instruction_storage_unit.register_ == "$sp" && !instruction_storage_unit.no_sp_adjust) {
 				instruction_storage_unit.no_sp_adjust = true;
-				instruction_storage_unit.offset += add_sp_total;
+				instruction_storage_unit.offset -= add_sp_total;
+			}
+		}
+
+		// | Make sure dereferenced "$sp" storage units in fixed storages are also adjusted.
+		Instruction alt_instruction = std::as_const(instruction);
+		if (instruction.is_load_from()) {
+			const Instruction::LoadFrom &load_from = instruction.get_load_from();
+			Instruction::LoadFrom alt_load_from = std::as_const(load_from);
+			if (alt_load_from.is_save_fixed || alt_load_from.is_load_fixed) {
+				if (alt_load_from.is_save_fixed) {
+					if (alt_load_from.fixed_save_storage.is_register_dereference() && alt_load_from.fixed_save_storage.register_ == "$sp" && !alt_load_from.fixed_save_storage.no_sp_adjust) {
+						alt_load_from.fixed_save_storage.no_sp_adjust = true;
+						alt_load_from.fixed_save_storage.offset -= add_sp_total;
+					}
+				}
+				if (alt_load_from.is_load_fixed) {
+					if (alt_load_from.fixed_load_storage.is_register_dereference() && alt_load_from.fixed_load_storage.register_ == "$sp" && !alt_load_from.fixed_load_storage.no_sp_adjust) {
+						alt_load_from.fixed_load_storage.no_sp_adjust = true;
+						alt_load_from.fixed_load_storage.offset -= add_sp_total;
+					}
+				}
+				alt_instruction = alt_load_from;
 			}
 		}
 
@@ -10136,7 +10158,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 		// Emit the instruction.
 		std::vector<Output::Line> instruction_output;
 		if (!instruction.is_call() || (!instruction.get_call().push_saved_registers && !instruction.get_call().pop_saved_registers)) {
-			instruction_output = instruction.emit(instruction_storage);
+			instruction_output = alt_instruction.emit(instruction_storage);
 		} else {
 			// Instead of a call, just push or pop saved registers.
 			const Instruction::Call &call = instruction.get_call();
@@ -12816,8 +12838,9 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			pushed_argument_offsets.push_back(std::numeric_limits<uint32_t>::max());  // Unused.
 		} else {
 			is_argument_pushed.push_back(true);
+			pushed_arg_allocated = Instruction::AddSp::round_to_align(pushed_arg_allocated, is_word ? 4 : 1);
 			pushed_argument_offsets.push_back(pushed_arg_allocated);
-			pushed_arg_allocated = Instruction::AddSp::round_to_align(pushed_arg_allocated + (is_word ? 4 : 1), is_word ? 4 : 1);
+			pushed_arg_allocated += is_word ? 4 : 1;
 		}
 	}
 	// For all combined direct register ref storages, align to 8 bytes.
@@ -13683,7 +13706,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 
 	// Assign variables and working storage units to Storages and allocate
 	// sufficient space on the stack.
-	uint32_t stack_allocated = 0;
+	int32_t stack_allocated = 0;
 
 	// Commented out: these are already copied on a call!  Instead, just add a binding to the appropriate storage.  We do that here.
 #if 0
@@ -13743,6 +13766,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			throw SemanticsError(sstr.str());
 		}
 
+		// We've done checking, but don't add the variable bindings until we know how much stack space we will allocate.
 		const bool is_primitive_and_ref  = parameter_is_ref && storage_scope.resolve_type(parameter_type).is_primitive();
 		const bool is_resolved_type_word = !storage_scope.resolve_type(parameter_type).is_primitive() || storage_scope.resolve_type(parameter_type).get_primitive().is_word();
 		if (parameter_index < 4) {
@@ -13756,18 +13780,22 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			local_combined_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
 		} else {
 			const bool is_word = is_resolved_type_word || parameter_is_ref;
+
+			stack_argument_total_size = Instruction::AddSp::round_to_align(stack_argument_total_size, is_word ? 4 : 1);
+
 			const Storage parameter_storage
 				= !is_primitive_and_ref
 				? Storage(is_word ? 4 : 1, false, Symbol(), "$sp", true, stack_argument_total_size, false, false)
 				: Storage(is_word ? 4 : 1, false, Symbol(), "$sp", true, stack_argument_total_size, false, false)
 				;
 
-			stack_argument_total_size = Instruction::AddSp::round_to_align(stack_argument_total_size  + (is_word ? 4 : 1), is_word ? 4 : 1);
+			stack_argument_total_size += is_word ? 4 : 1;
 
 			local_var_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage, is_primitive_and_ref))});
 			local_combined_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage, is_primitive_and_ref))});
 		}
 	}
+	stack_argument_total_size = Instruction::AddSp::round_to_align(stack_argument_total_size);
 
 	// Handle local variables.
 	for (const std::pair<std::string, TypeIndex> &local_variable : std::as_const(local_variables)) {
@@ -13844,17 +13872,19 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			local_combined_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, temporary_storage))});
 		} else {
 			const uint32_t size = storage_scope.type(local_variable_type).get_size();
+			stack_allocated = Instruction::AddSp::round_to_align(stack_allocated + size, size);
 			Storage stack_storage;
 			if (!storage_scope.type(local_variable_type).resolve_type(storage_scope).is_record() && !storage_scope.type(local_variable_type).resolve_type(storage_scope).is_array()) {
-				stack_storage = Storage(size, false, Symbol(), "$sp", true, stack_allocated, false, false);
+				stack_storage = Storage(size, false, Symbol(), "$sp", true, -stack_argument_total_size, false, false);
 			} else {
-				stack_storage = Storage(4, false, Symbol(), "$sp", false, stack_allocated, false, false);
+				stack_storage = Storage(4, false, Symbol(), "$sp", false, -stack_argument_total_size, false, false);
 			}
-			stack_allocated += Instruction::AddSp::round_to_align(size);
 			local_var_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
 			local_combined_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
 		}
 	}
+
+	stack_allocated = Instruction::AddSp::round_to_align(stack_allocated);
 
 	// Analyze the statements in the block.
 	Block block_semantics = analyze_statements(routine_declaration, statement_sequence, constant_scope, type_scope, routine_scope, local_var_scope, local_combined_scope, storage_scope, cleanup_symbol);
@@ -13973,17 +14003,19 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			local_combined_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, temporary_storage))});
 		} else {
 			const uint32_t size = storage_scope.type(local_variable_type).get_size();
+			stack_allocated = Instruction::AddSp::round_to_align(stack_allocated + size, size);
 			Storage stack_storage;
 			if (!storage_scope.type(local_variable_type).resolve_type(storage_scope).is_record() && !storage_scope.type(local_variable_type).resolve_type(storage_scope).is_array()) {
-				stack_storage = Storage(size, false, Symbol(), "$sp", true, stack_allocated, false, false);
+				stack_storage = Storage(size, false, Symbol(), "$sp", true, -stack_allocated, false, false);
 			} else {
-				stack_storage = Storage(4, false, Symbol(), "$sp", false, stack_allocated, false, false);
+				stack_storage = Storage(4, false, Symbol(), "$sp", false, -stack_allocated, false, false);
 			}
-			stack_allocated += Instruction::AddSp::round_to_align(size);
 			local_var_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
 			local_combined_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
 		}
 	}
+
+	stack_allocated = Instruction::AddSp::round_to_align(stack_allocated);
 
 	// Get working storages.
 	std::vector<Storage> working_storages;
@@ -14026,9 +14058,9 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 	last_intro_index     = block_semantics.instructions.add_instruction({I::AddSp(B(), -4)}, {}, last_intro_index);
 	last_intro_index     = block_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, Storage("$sp", 4, 0, true), Storage("$ra"), false, false)}, {}, last_intro_index);
 
-	// Allocate space on the stack.  Bypass AddSp's Storage adjustments since we're manually setting $sp so that our Storages are correct, by using a Custom instruction.
+	// Allocate space on the stack.
 	if (stack_allocated > 0) {
-		last_intro_index     = block_semantics.instructions.add_instruction({I::Custom(B(), {"\taddiu $sp, $sp, -" + std::to_string(stack_allocated)})}, {}, last_intro_index);
+		last_intro_index = block_semantics.instructions.add_instruction({I::AddSp(B(), -stack_allocated)}, {}, last_intro_index);
 	}
 
 	// Commented out: these are already copied on a call!  Instead, just add a binding to the appropriate storage.  We do that above.
@@ -14081,7 +14113,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 
 	// Reverse what intro did.
 	if (stack_allocated > 0) {
-		block_semantics.back = block_semantics.instructions.add_instruction({I::Custom(B(), {"\taddiu $sp, $sp, " + std::to_string(stack_allocated)})}, {}, block_semantics.back);
+		block_semantics.back = block_semantics.instructions.add_instruction({I::AddSp(B(), stack_allocated)}, {}, block_semantics.back);
 	}
 	block_semantics.back = block_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, Storage("$ra"), Storage("$sp", 4, 0, true), false, false)}, {}, block_semantics.back);
 	block_semantics.back = block_semantics.instructions.add_instruction({I::AddSp(B(), 4)}, {}, block_semantics.back);
