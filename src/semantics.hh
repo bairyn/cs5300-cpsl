@@ -522,7 +522,7 @@ public:
 		// | If global and/or dereferencing, add this value to the loaded result.  If dereferencing, add before dereferencing.  (Does nothing when neither global or dereferencing.)
 		int32_t     offset = 0;
 
-		// | If this is a dereferenced SP, adjust offset according to AddSp instructions?
+		// | If this is a dereferenced SP, adjust offset according to AddSp instructions?  (if true, pushing saved registers will still be taken into account.)
 		bool no_sp_adjust = true;
 
 		// | If this is a register, does the caller preserve it?
