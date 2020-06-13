@@ -1431,6 +1431,7 @@ public:
 
 	static const bool all_arrays_records_are_refs;
 
+	class Expression;
 	class LvalueSourceAnalysis {
 	public:
 		LvalueSourceAnalysis();
@@ -1445,9 +1446,12 @@ public:
 		bool                    is_lvalue_primref = false;  // Ignored if !is_value_fixed_storage.  If is_lvalue_primref, then the fixed storage refers not to base primref, but to the address of the base primref.
 		uint64_t                lexeme_begin = 0;
 		uint64_t                lexeme_end   = 0;
+
+		MIPSIO::Index merge_expression(const Expression &other);
 	};
 	LvalueSourceAnalysis analyze_lvalue_source(const Lvalue &lvalue, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope);
 
+	class Block;
 	class Expression {
 	public:
 		MIPSIO         instructions;
@@ -1463,6 +1467,11 @@ public:
 		Expression();  // (No instructions; null type.)
 		Expression(const MIPSIO  &instructions, TypeIndex output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
 		Expression(      MIPSIO &&instructions, TypeIndex output_type, MIPSIO::Index output_index, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+
+		MIPSIO::Index merge(const Expression &other);
+		// | merge_block: Ignore front and back.
+		MIPSIO::Index merge_block(const Block &other, MIPSIO::Index other_output_index = 0);
+		MIPSIO::Index merge_lvalue_source_analysis(const LvalueSourceAnalysis &other);
 
 // TODO: inline support.
 #if 0
@@ -1535,6 +1544,19 @@ public:
 		Block();
 		Block(const MIPSIO  &instructions, MIPSIO::Index front, MIPSIO::Index back, const std::map<std::string, TypeIndex> &local_variables, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
 		Block(      MIPSIO &&instructions, MIPSIO::Index front, MIPSIO::Index back, const std::map<std::string, TypeIndex> &local_variables, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+
+		// | All blocks must be non-empty for merges.
+		// | Return the new "back".
+		MIPSIO::Index merge_append(const Block &other);
+		// | Return the new "front".
+		MIPSIO::Index merge_prepend(const Block &other);
+		// | Return the new output index after the merge.
+		MIPSIO::Index merge_append(const Block &other, MIPSIO::Index other_output_index);
+		// | Return the new output index after the merge.
+		MIPSIO::Index merge_prepend(const Block &other, MIPSIO::Index other_output_index);
+		// | Since a sequence connection is added, other_output_index is not optional and does not default to 0.
+		MIPSIO::Index merge_expression(const Expression &other);
+		MIPSIO::Index merge_lvalue_source_analysis(const LvalueSourceAnalysis &other);
 	};
 
 	// | Analyze a call and return a block that performs a call.  If the

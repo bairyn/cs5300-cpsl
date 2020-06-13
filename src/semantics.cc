@@ -10639,6 +10639,11 @@ Semantics::LvalueSourceAnalysis::LvalueSourceAnalysis(MIPSIO &&instructions, con
 	, lexeme_end(lexeme_end)
 	{}
 
+Semantics::MIPSIO::Index Semantics::LvalueSourceAnalysis::merge_expression(const Expression &other) {
+	const MIPSIO::Index merged_other_output_index = instructions.merge(other.instructions) + other.output_index;
+	return merged_other_output_index;
+}
+
 Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &lvalue, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope) {
 	// Some type aliases to improve readability.
 	using M = Semantics::MIPSIO;
@@ -10862,7 +10867,7 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 						// | The last output type is now the base type.
 						last_output_type = storage_scope.type(last_output_type).get_array().base_type;
 						// | Get the integer's index.
-						const Index value_index                 = lvalue_source_analysis.instructions.merge(value.instructions) + value.output_index;
+						const Index value_index                 = lvalue_source_analysis.merge_expression(value);
 						// | Now dereference the array.
 						const Index load_element_size_index     = lvalue_source_analysis.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(storage_scope.type(last_output_type).get_size()), 0, 0))});
 						const Index array_element_offset_index  = lvalue_source_analysis.instructions.add_instruction({I::MultFrom(B(), true)}, {load_element_size_index, value_index});
@@ -10949,6 +10954,21 @@ Semantics::Expression::Expression() {}
 
 Semantics::Expression::Expression(const MIPSIO  &instructions, TypeIndex output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(          instructions ), output_type(output_type), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
 Semantics::Expression::Expression(      MIPSIO &&instructions, TypeIndex output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(std::move(instructions)), output_type(output_type), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
+
+Semantics::MIPSIO::Index Semantics::Expression::merge(const Expression &other) {
+	const MIPSIO::Index merged_other_output_index = instructions.merge(other.instructions) + other.output_index;
+	return merged_other_output_index;
+}
+
+Semantics::MIPSIO::Index Semantics::Expression::merge_block(const Block &other, MIPSIO::Index other_output_index) {
+	const MIPSIO::Index merged_other_output_index = instructions.merge(other.instructions) + other_output_index;
+	return merged_other_output_index;
+}
+
+Semantics::MIPSIO::Index Semantics::Expression::merge_lvalue_source_analysis(const LvalueSourceAnalysis &other) {
+	const MIPSIO::Index merged_other_output_index = instructions.merge(other.instructions) + other.lvalue_index;
+	return merged_other_output_index;
+}
 
 Semantics::Expression Semantics::analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope) {
 	return analyze_expression(grammar.expression_storage.at(expression), constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
@@ -11037,9 +11057,9 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 
 				// Apply bitwise OR depending on the integer type.
 				expression_semantics.output_type = left.output_type;
-				const Index left_index  = expression_semantics.instructions.merge(left.instructions);
-				const Index right_index = expression_semantics.instructions.merge(right.instructions);
-				const Index or_index    = expression_semantics.instructions.add_instruction({I::OrFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+				const Index left_index  = expression_semantics.merge(left);
+				const Index right_index = expression_semantics.merge(right);
+				const Index or_index    = expression_semantics.instructions.add_instruction({I::OrFrom(B(), left_type.is_word())}, {left_index, right_index});
 				expression_semantics.output_index = or_index;
 				break;
 			} case ::Expression::ampersand_branch: {
@@ -11097,9 +11117,9 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 
 				// Apply bitwise AND depending on the integer type.
 				expression_semantics.output_type = left.output_type;
-				const Index left_index  = expression_semantics.instructions.merge(left.instructions);
-				const Index right_index = expression_semantics.instructions.merge(right.instructions);
-				const Index and_index   = expression_semantics.instructions.add_instruction({I::AndFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+				const Index left_index  = expression_semantics.merge(left);
+				const Index right_index = expression_semantics.merge(right);
+				const Index and_index   = expression_semantics.instructions.add_instruction({I::AndFrom(B(), left_type.is_word())}, {left_index, right_index});
 				expression_semantics.output_index = and_index;
 				break;
 			} case ::Expression::equals_branch: {
@@ -11132,9 +11152,9 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 					const Type::Primitive &left_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 					if (!left_type.is_string()) {
 						expression_semantics.output_type  = type_scope.index("boolean");
-						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
-						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
-						const Index sub_index             = expression_semantics.instructions.add_instruction({I::SubFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+						const Index left_index            = expression_semantics.merge(left);
+						const Index right_index           = expression_semantics.merge(right);
+						const Index sub_index             = expression_semantics.instructions.add_instruction({I::SubFrom(B(), left_type.is_word())}, {left_index, right_index});
 						const Index load_1_index          = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), left_type.is_word(), ConstantValue(static_cast<int32_t>(1), 0, 0))});
 						const Index eq_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word())}, {sub_index, load_1_index});
 						expression_semantics.output_index = eq_index;
@@ -11200,9 +11220,9 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 					const Type::Primitive &left_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 					if (!left_type.is_string()) {
 						expression_semantics.output_type  = type_scope.index("boolean");
-						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
-						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
-						const Index sub_index             = expression_semantics.instructions.add_instruction({I::SubFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+						const Index left_index            = expression_semantics.merge(left);
+						const Index right_index           = expression_semantics.merge(right);
+						const Index sub_index             = expression_semantics.instructions.add_instruction({I::SubFrom(B(), left_type.is_word())}, {left_index, right_index});
 						const Index load_1_index          = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), left_type.is_word(), ConstantValue(static_cast<int32_t>(1), 0, 0))});
 						const Index eq_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word())}, {sub_index, load_1_index});
 						const Index neq_index             = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word())}, {eq_index, load_1_index});
@@ -11269,10 +11289,10 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 					const Type::Primitive &left_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 					if (!left_type.is_string()) {
 						expression_semantics.output_type  = type_scope.index("boolean");
-						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
-						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
-						const Index lt_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word(), true)}, {left.output_index + left_index, right.output_index + right_index});
-						const Index sub_index             = expression_semantics.instructions.add_instruction({I::SubFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+						const Index left_index            = expression_semantics.merge(left);
+						const Index right_index           = expression_semantics.merge(right);
+						const Index lt_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word(), true)}, {left_index, right_index});
+						const Index sub_index             = expression_semantics.instructions.add_instruction({I::SubFrom(B(), left_type.is_word())}, {left_index, right_index});
 						const Index load_1_index          = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), left_type.is_word(), ConstantValue(static_cast<int32_t>(1), 0, 0))});
 						const Index eq_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word())}, {sub_index, load_1_index});
 						const Index le_index              = expression_semantics.instructions.add_instruction({I::OrFrom(B(), false)}, {eq_index, lt_index});
@@ -11339,10 +11359,10 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 					const Type::Primitive &left_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 					if (!left_type.is_string()) {
 						expression_semantics.output_type  = type_scope.index("boolean");
-						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
-						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
-						const Index gt_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word(), true)}, {right.output_index + right_index, left.output_index + left_index});
-						const Index sub_index             = expression_semantics.instructions.add_instruction({I::SubFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+						const Index left_index            = expression_semantics.merge(left);
+						const Index right_index           = expression_semantics.merge(right);
+						const Index gt_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word(), true)}, {right_index, left_index});
+						const Index sub_index             = expression_semantics.instructions.add_instruction({I::SubFrom(B(), left_type.is_word())}, {left_index, right_index});
 						const Index load_1_index          = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), left_type.is_word(), ConstantValue(static_cast<int32_t>(1), 0, 0))});
 						const Index eq_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word())}, {sub_index, load_1_index});
 						const Index ge_index              = expression_semantics.instructions.add_instruction({I::OrFrom(B(), false)}, {eq_index, gt_index});
@@ -11409,9 +11429,9 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 					const Type::Primitive &left_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 					if (!left_type.is_string()) {
 						expression_semantics.output_type  = type_scope.index("boolean");
-						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
-						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
-						const Index lt_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word(), true)}, {left.output_index + left_index, right.output_index + right_index});
+						const Index left_index            = expression_semantics.merge(left);
+						const Index right_index           = expression_semantics.merge(right);
+						const Index lt_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word(), true)}, {left_index, right_index});
 						expression_semantics.output_index = lt_index;
 					} else {
 						std::ostringstream sstr;
@@ -11475,9 +11495,9 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 					const Type::Primitive &left_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 					if (!left_type.is_string()) {
 						expression_semantics.output_type  = type_scope.index("boolean");
-						const Index left_index            = expression_semantics.instructions.merge(left.instructions);
-						const Index right_index           = expression_semantics.instructions.merge(right.instructions);
-						const Index gt_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word(), true)}, {right.output_index + right_index, left.output_index + left_index});
+						const Index left_index            = expression_semantics.merge(left);
+						const Index right_index           = expression_semantics.merge(right);
+						const Index gt_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word(), true)}, {right_index, left_index});
 						expression_semantics.output_index = gt_index;
 					} else {
 						std::ostringstream sstr;
@@ -11579,9 +11599,9 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 
 				// Apply addition depending on the integer type.
 				expression_semantics.output_type = left.output_type;
-				const Index left_index  = expression_semantics.instructions.merge(left.instructions);
-				const Index right_index = expression_semantics.instructions.merge(right.instructions);
-				const Index add_index   = expression_semantics.instructions.add_instruction({I::AddFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+				const Index left_index  = expression_semantics.merge(left);
+				const Index right_index = expression_semantics.merge(right);
+				const Index add_index   = expression_semantics.instructions.add_instruction({I::AddFrom(B(), left_type.is_word())}, {left_index, right_index});
 				expression_semantics.output_index = add_index;
 				break;
 			} case ::Expression::minus_branch: {
@@ -11652,9 +11672,9 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 
 				// Apply subtraction depending on the integer type.
 				expression_semantics.output_type = left.output_type;
-				const Index left_index  = expression_semantics.instructions.merge(left.instructions);
-				const Index right_index = expression_semantics.instructions.merge(right.instructions);
-				const Index sub_index   = expression_semantics.instructions.add_instruction({I::SubFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+				const Index left_index  = expression_semantics.merge(left);
+				const Index right_index = expression_semantics.merge(right);
+				const Index sub_index   = expression_semantics.instructions.add_instruction({I::SubFrom(B(), left_type.is_word())}, {left_index, right_index});
 				expression_semantics.output_index = sub_index;
 				break;
 			} case ::Expression::times_branch: {
@@ -11725,11 +11745,11 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 
 				// Apply multiplication depending on the integer type.
 				expression_semantics.output_type = left.output_type;
-				const Index left_index   = expression_semantics.instructions.merge(left.instructions);
-				const Index right_index  = expression_semantics.instructions.merge(right.instructions);
-				//const Index mult_index   = expression_semantics.instructions.add_instruction({I::MultFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+				const Index left_index   = expression_semantics.merge(left);
+				const Index right_index  = expression_semantics.merge(right);
+				//const Index mult_index   = expression_semantics.instructions.add_instruction({I::MultFrom(B(), left_type.is_word())}, {left_index, right_index});
 				//const Index ignore_index = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{mult_index, 1}}, mult_index); (void) ignore_index;
-				const Index mult_index   = expression_semantics.instructions.add_instruction({I::MultFrom(B(), left_type.is_word(), true)}, {left.output_index + left_index, right.output_index + right_index});
+				const Index mult_index   = expression_semantics.instructions.add_instruction({I::MultFrom(B(), left_type.is_word(), true)}, {left_index, right_index});
 				expression_semantics.output_index = mult_index;
 				break;
 			} case ::Expression::slash_branch: {
@@ -11800,11 +11820,11 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 
 				// Apply division depending on the integer type.
 				expression_semantics.output_type = left.output_type;
-				const Index left_index   = expression_semantics.instructions.merge(left.instructions);
-				const Index right_index  = expression_semantics.instructions.merge(right.instructions);
-				//const Index div_index    = expression_semantics.instructions.add_instruction({I::DivFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+				const Index left_index   = expression_semantics.merge(left);
+				const Index right_index  = expression_semantics.merge(right);
+				//const Index div_index    = expression_semantics.instructions.add_instruction({I::DivFrom(B(), left_type.is_word())}, {left_index, right_index});
 				//const Index ignore_index = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{div_index, 1}}, div_index); (void) ignore_index;
-				const Index div_index    = expression_semantics.instructions.add_instruction({I::DivFrom(B(), left_type.is_word(), true, false)}, {left.output_index + left_index, right.output_index + right_index});
+				const Index div_index    = expression_semantics.instructions.add_instruction({I::DivFrom(B(), left_type.is_word(), true, false)}, {left_index, right_index});
 				expression_semantics.output_index = div_index;
 				break;
 			} case ::Expression::percent_branch: {
@@ -11875,13 +11895,13 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 
 				// Apply mod depending on the integer type.
 				expression_semantics.output_type = left.output_type;
-				const Index left_index      = expression_semantics.instructions.merge(left.instructions);
-				const Index right_index     = expression_semantics.instructions.merge(right.instructions);
-				//const Index div_index       = expression_semantics.instructions.add_instruction({I::DivFrom(B(), left_type.is_word())}, {left.output_index + left_index, right.output_index + right_index});
+				const Index left_index      = expression_semantics.merge(left);
+				const Index right_index     = expression_semantics.merge(right);
+				//const Index div_index       = expression_semantics.instructions.add_instruction({I::DivFrom(B(), left_type.is_word())}, {left_index, right_index});
 				//const Index ignore_index    = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{div_index, 0}}, div_index); (void) ignore_index;
 				//const Index remainder_index = expression_semantics.instructions.add_instruction_indexed({I::LoadFrom(B(), left_type.is_word())}, {{div_index, 1}}, div_index);
 				//expression_semantics.output_index = remainder_index;
-				const Index div_index       = expression_semantics.instructions.add_instruction({I::DivFrom(B(), left_type.is_word(), false, true)}, {left.output_index + left_index, right.output_index + right_index});
+				const Index div_index       = expression_semantics.instructions.add_instruction({I::DivFrom(B(), left_type.is_word(), false, true)}, {left_index, right_index});
 				expression_semantics.output_index = div_index;
 				break;
 			} case ::Expression::tilde_branch: {
@@ -11923,8 +11943,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 
 				// Apply bitwise NOT depending on the integer type.
 				expression_semantics.output_type = value.output_type;
-				const Index value_index = expression_semantics.instructions.merge(value.instructions);
-				const Index not_index   = expression_semantics.instructions.add_instruction({I::NorFrom(B(), value_type.is_word())}, {value.output_index + value_index, value.output_index + value_index});
+				const Index value_index = expression_semantics.merge(value);
+				const Index not_index   = expression_semantics.instructions.add_instruction({I::NorFrom(B(), value_type.is_word())}, {value_index, value_index});
 				expression_semantics.output_index = not_index;
 				break;
 			} case ::Expression::unary_minus_branch: {
@@ -11979,9 +11999,9 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 
 				// Apply unary minus depending on the integer type.
 				expression_semantics.output_type = value.output_type;
-				const Index value_index   = expression_semantics.instructions.merge(value.instructions);
+				const Index value_index   = expression_semantics.merge(value);
 				const Index load_n1_index = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), value_type.is_word(), ConstantValue(static_cast<int32_t>(-1), 1, 0))});
-				const Index mult_index    = expression_semantics.instructions.add_instruction({I::MultFrom(B(), value_type.is_word())}, {load_n1_index, value.output_index + value_index});
+				const Index mult_index    = expression_semantics.instructions.add_instruction({I::MultFrom(B(), value_type.is_word())}, {load_n1_index, value_index});
 				const Index ignore_index  = expression_semantics.instructions.add_instruction_indexed({I::Ignore(B())}, {{mult_index, 1}}, mult_index); (void) ignore_index;
 				expression_semantics.output_index = mult_index;
 				break;
@@ -12040,7 +12060,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 
 				// Merge the instructions.  Set the output index to the output of the call.  (Ignore front and back.)
 				expression_semantics.output_type  = call_output_type_index;
-				expression_semantics.output_index = expression_semantics.instructions.merge(call_block.instructions) + call_output_index;
+				expression_semantics.output_index = expression_semantics.merge_block(call_block, call_output_index);
 
 				// We're done.
 				break;
@@ -12101,8 +12121,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Apply chr() depending on the integer type.
 				// Truncate all but the lowest bits.  We may be storing e.g. to a byte in an array.
 				expression_semantics.output_type = type_scope.index("char");
-				const Index value_index  = expression_semantics.instructions.merge(value.instructions);
-				const Index resize_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), Type::Primitive::char_type.is_word(), Type::Primitive::integer_type.is_word())}, {value.output_index + value_index});
+				const Index value_index  = expression_semantics.merge(value);
+				const Index resize_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), Type::Primitive::char_type.is_word(), Type::Primitive::integer_type.is_word())}, {value_index});
 				expression_semantics.output_index = resize_index;
 				break;
 			} case ::Expression::ord_branch: {
@@ -12164,8 +12184,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// and fill the rest with 0s if loading from a memory address.
 				// (We could always reset it to 0 before loading if not.)
 				expression_semantics.output_type = type_scope.index("integer");
-				const Index value_index  = expression_semantics.instructions.merge(value.instructions);
-				const Index resize_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), Type::Primitive::integer_type.is_word(), Type::Primitive::char_type.is_word())}, {value.output_index + value_index});
+				const Index value_index  = expression_semantics.merge(value);
+				const Index resize_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), Type::Primitive::integer_type.is_word(), Type::Primitive::char_type.is_word())}, {value_index});
 				expression_semantics.output_index = resize_index;
 				break;
 			} case ::Expression::pred_branch: {
@@ -12212,14 +12232,14 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Apply pred() depending on the integer type.
 				expression_semantics.output_type = value.output_type;
 				if (!value_type.is_boolean()) {
-					const Index value_index  = expression_semantics.instructions.merge(value.instructions);
+					const Index value_index  = expression_semantics.merge(value);
 					const Index load_1_index = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), value_type.is_word(), ConstantValue(static_cast<int32_t>(1), 0, 0))});
-					const Index sub_index    = expression_semantics.instructions.add_instruction({I::SubFrom(B(), value_type.is_word())}, {value.output_index + value_index, load_1_index});
+					const Index sub_index    = expression_semantics.instructions.add_instruction({I::SubFrom(B(), value_type.is_word())}, {value_index, load_1_index});
 					expression_semantics.output_index = sub_index;
 				} else {
-					const Index value_index   = expression_semantics.instructions.merge(value.instructions);
+					const Index value_index   = expression_semantics.merge(value);
 					const Index load_1_index  = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), value_type.is_word(), ConstantValue(static_cast<int32_t>(1), 0, 0))});
-					const Index bnot_index    = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), value_type.is_word())}, {value.output_index + value_index, load_1_index});
+					const Index bnot_index    = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), value_type.is_word())}, {value_index, load_1_index});
 					expression_semantics.output_index = bnot_index;
 				}
 				break;
@@ -12267,14 +12287,14 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Apply succ() depending on the integer type.
 				if (!value_type.is_boolean()) {
 					expression_semantics.output_type = value.output_type;
-					const Index value_index  = expression_semantics.instructions.merge(value.instructions);
+					const Index value_index  = expression_semantics.merge(value);
 					const Index load_1_index = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), value_type.is_word(), ConstantValue(static_cast<int32_t>(1), 0, 0))});
-					const Index add_index    = expression_semantics.instructions.add_instruction({I::AddFrom(B(), value_type.is_word())}, {value.output_index + value_index, load_1_index});
+					const Index add_index    = expression_semantics.instructions.add_instruction({I::AddFrom(B(), value_type.is_word())}, {value_index, load_1_index});
 					expression_semantics.output_index = add_index;
 				} else {
-					const Index value_index   = expression_semantics.instructions.merge(value.instructions);
+					const Index value_index   = expression_semantics.merge(value);
 					const Index load_1_index  = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), value_type.is_word(), ConstantValue(static_cast<int32_t>(1), 0, 0))});
-					const Index bnot_index    = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), value_type.is_word())}, {value.output_index + value_index, load_1_index});
+					const Index bnot_index    = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), value_type.is_word())}, {value_index, load_1_index});
 					expression_semantics.output_index = bnot_index;
 				}
 				break;
@@ -12316,7 +12336,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 					}
 				} else {
 					// Merge the instructions that get us the address of an array or record.
-					const Index load_address_index = expression_semantics.instructions.merge(lvalue_source_analysis.instructions) + lvalue_source_analysis.lvalue_index;
+					const Index load_address_index = expression_semantics.merge_lvalue_source_analysis(lvalue_source_analysis);
 
 					// Dereference the address if it's primitive.
 					if (!storage_scope.type(lvalue_source_analysis.lvalue_type).resolve_type(storage_scope).is_primitive()) {
@@ -12376,6 +12396,40 @@ Semantics::Block::Block(MIPSIO &&instructions, MIPSIO::Index front, MIPSIO::Inde
 	, lexeme_begin(lexeme_begin)
 	, lexeme_end(lexeme_end)
 	{}
+
+Semantics::MIPSIO::Index Semantics::Block::merge_append(const Block &other) {
+	const MIPSIO::Index new_back = back = instructions.merge(other.instructions, back, other.front, other.back);
+	return new_back;
+}
+
+Semantics::MIPSIO::Index Semantics::Block::merge_prepend(const Block &other) {
+	Block reversed_merge = std::as_const(other);
+	const MIPSIO::Index new_back = reversed_merge.merge_append(*this); (void) new_back;
+	*this = reversed_merge;
+	return front;
+}
+
+Semantics::MIPSIO::Index Semantics::Block::merge_append(const Block &other, MIPSIO::Index other_output_index) {
+	const MIPSIO::Index new_output_index = back = instructions.merge(other.instructions, back, other_output_index);
+	return new_output_index;
+}
+
+Semantics::MIPSIO::Index Semantics::Block::merge_prepend(const Block &other, MIPSIO::Index other_output_index) {
+	Block reversed_merge = std::as_const(other);
+	const MIPSIO::Index new_output_index = reversed_merge.merge_append(*this, other_output_index);
+	*this = reversed_merge;
+	return new_output_index;
+}
+
+Semantics::MIPSIO::Index Semantics::Block::merge_expression(const Expression &other) {
+	const MIPSIO::Index merged_other_output_index = back = instructions.merge(other.instructions, back, other.output_index);
+	return merged_other_output_index;
+}
+
+Semantics::MIPSIO::Index Semantics::Block::merge_lvalue_source_analysis(const LvalueSourceAnalysis &other) {
+	const MIPSIO::Index merged_other_output_index = back = instructions.merge(other.instructions, back, other.lvalue_index);
+	return merged_other_output_index;
+}
 
 // | Analyze a call and return a block that performs a call.  If the
 // function returns a value, return the index to the instruction that
@@ -12583,7 +12637,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 		const Type &argument_type             = *parameter_types[argument_expression_index];
 		const bool &argument_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
 
-		const Index argument_output_index = block.back = block.instructions.merge(argument_expression.instructions, block.back, argument_expression.output_index);
+		const Index argument_output_index = block.merge_expression(argument_expression);
 		argument_outputs.push_back(argument_output_index);
 
 		// Is this an lvalue?  Get the lvalue analysis if so.
@@ -12602,7 +12656,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			const Index lvalue_output_index
 				= lvalue_source_analysis.is_lvalue_fixed_storage
 				? std::numeric_limits<Index>::max()
-				: (block.back = block.instructions.merge(lvalue_source_analysis.instructions, block.back, lvalue_source_analysis.lvalue_index))
+				: block.merge_lvalue_source_analysis(lvalue_source_analysis)
 				;
 			is_lvalue.push_back(true);
 			lvalue_outputs.push_back(lvalue_output_index);
@@ -13051,9 +13105,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				// Merge the lvalue lookup instructions if there was not a fixed storage found.
 				Index lvalue_index;
 				if (!lvalue_source_analysis.is_lvalue_fixed_storage) {
-					lvalue_index = block.instructions.merge(lvalue_source_analysis.instructions) + lvalue_source_analysis.lvalue_index;
-					block.instructions.add_sequence_connection(block.back, lvalue_index);
-					block.back = lvalue_index;
+					lvalue_index = block.merge_lvalue_source_analysis(lvalue_source_analysis);
 				}
 
 				// LoadFrom to store the output to whatever the lvalue refers to.
@@ -13076,9 +13128,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				}
 
 				// Merge the expression and get the output value.
-				const Index value_index = block.instructions.merge(value.instructions) + value.output_index;
-				block.instructions.add_sequence_connection(block.back, value_index);
-				block.back = value_index;
+				const Index value_index = block.merge_expression(value);
 
 				// Are we writing a primitive?
 				if (storage_scope.type(value.output_type).resolve_type(storage_scope).is_primitive()) {
@@ -13325,11 +13375,11 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 
 				// "if" condition.
 				const Symbol next_block_symbol = elseif_symbols.size() > 0 ? elseif_symbols.front() : (has_else ? else_symbol : endif_symbol);
-				const Index if_condition_index = block.back = block.instructions.merge(if_condition.instructions, block.back, if_condition.output_index);
+				const Index if_condition_index = block.merge_expression(if_condition);
 				block.back = block.instructions.add_instruction({I::BranchZero(B(), false, next_block_symbol)}, {if_condition_index}, {block.back});
 
 				// "if" block.
-				const Index if_block_index = block.back = block.instructions.merge(if_block.instructions, block.back, if_block.front, if_block.back);
+				const Index if_block_index = block.merge_append(if_block);
 				// Jump to the end of the chain after executing this block, if any.
 				if (elseif_symbols.size() > 0 || has_else) {
 					block.back = block.instructions.add_instruction({I::Jump(B(), endif_symbol)}, {}, {block.back});
@@ -13346,11 +13396,11 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 
 					// "elseif" condition.
 					const Symbol next_block_symbol = elseif_condition_expression_index < elseif_symbols.size() - 1 ? elseif_symbols[elseif_condition_expression_index + 1] : (has_else ? else_symbol : endif_symbol);
-					const Index elseif_condition_index = block.back = block.instructions.merge(elseif_condition.instructions, block.back, elseif_condition.output_index);
+					const Index elseif_condition_index = block.merge_expression(elseif_condition);
 					block.back = block.instructions.add_instruction({I::BranchZero(B(), false, next_block_symbol)}, {elseif_condition_index}, {block.back});
 
 					// "elseif" block.
-					const Index elseif_block_index = block.back = block.instructions.merge(elseif_block.instructions, block.back, elseif_block.front, elseif_block.back);
+					const Index elseif_block_index = block.merge_append(elseif_block);
 					// Jump to the end of the chain after executing this block, if any.
 					if (elseif_condition_expression_index < elseif_conditions.size() - 1 || has_else) {
 						block.back = block.instructions.add_instruction({I::Jump(B(), endif_symbol)}, {}, {block.back});
@@ -13363,7 +13413,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 					block.back = block.instructions.add_instruction({I::Ignore(B(true, else_symbol), false, false)}, {}, {block.back});
 
 					// "else" block.
-					const Index else_block_index = block.back = block.instructions.merge(else_block.instructions, block.back, else_block.front, else_block.back);
+					const Index else_block_index = block.merge_append(else_block);
 
 					// No need to jump to the end of chain, since we're already there.
 				}
@@ -13416,13 +13466,13 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				block.back = block.instructions.add_instruction({I::Ignore(B(true, while_symbol), false, false)}, {}, {block.back});
 
 				// "while" block.
-				const Index while_block_index = block.back = block.instructions.merge(while_block.instructions, block.back, while_block.front, while_block.back);
+				const Index while_block_index = block.merge_append(while_block);
 
 				// "checkwhile" label.
 				block.back = block.instructions.add_instruction({I::Ignore(B(true, checkwhile_symbol), false, false)}, {}, {block.back});
 
 				// "while" condition.  (BranchZero has the branch_non_zero flag set to true.)
-				const Index while_condition_index = block.back = block.instructions.merge(while_condition.instructions, block.back, while_condition.output_index);
+				const Index while_condition_index = block.merge_expression(while_condition);
 				block.back = block.instructions.add_instruction({I::BranchZero(B(), false, while_symbol, true)}, {while_condition_index}, {block.back});
 
 				// "endwhile label".  We don't need the endwhile label, and it is unused, but emit it anyway for readability.
@@ -13468,10 +13518,10 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				block.back = block.instructions.add_instruction({I::Ignore(B(true, repeat_symbol), false, false)}, {}, {block.back});
 
 				// "repeat" block.
-				const Index repeat_block_index = block.back = block.instructions.merge(repeat_block.instructions, block.back, repeat_block.front, repeat_block.back);
+				const Index repeat_block_index = block.merge_append(repeat_block);
 
 				// "repeat" condition.
-				const Index repeat_condition_index = block.back = block.instructions.merge(repeat_condition.instructions, block.back, repeat_condition.output_index);
+				const Index repeat_condition_index = block.merge_expression(repeat_condition);
 				block.back = block.instructions.add_instruction({I::BranchZero(B(), false, repeat_symbol)}, {repeat_condition_index}, {block.back});
 
 				// "endrepeat label".  We don't need the endrepeat label, and it is unused, but emit it anyway for readability.
@@ -13565,7 +13615,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				}
 
 				// Merge the instructions.  Set the output index to the output of the call.  (Ignore front and back.)
-				const Index call_block_index = block.back = block.instructions.merge(call_block.instructions, block.back, call_block.front, call_block.back);
+				const Index call_block_index = block.merge_append(call_block);
 
 				// We're done.
 				break;
