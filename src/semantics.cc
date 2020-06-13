@@ -13083,10 +13083,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			} else {
 				// primvar argument.
 				//
-				// The expression index refers to the dereferenced prim, and the
-				// lvalue storage is the storage that contains the address.  Don't
-				// use argument_output, which would dereference; just copy the
-				// contents of the storage.
+				// The lvalue storage would dereference it.  Unpack it to get the address instead, much like "&foo" in C.
 				assert(argument_lvalue_source_analysis.lvalue_fixed_storage.is_register_dereference());
 				const Index load_lvalue_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, argument_lvalue_source_analysis.lvalue_fixed_storage.offset, false, true, Storage(), argument_lvalue_source_analysis.lvalue_fixed_storage.register_)}, {}, {block.back});
 				const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {load_lvalue_index}, {block.back});
