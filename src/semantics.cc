@@ -12777,7 +12777,9 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	}
 	// Get 2 temporary fixed Variables for us to use for our manual memmove loop.  4 bytes rounded to 8 bytes.
 	int32_t temporary_variables_allocated = Instruction::AddSp::round_to_align(2 * Type::Primitive::integer_type.get_size());
-	block.back = block.instructions.add_instruction({I::AddSp(B(), -temporary_variables_allocated)}, {}, {block.back});
+	if (var_nonprimitive_allocated != 0) {
+		block.back = block.instructions.add_instruction({I::AddSp(B(), -temporary_variables_allocated)}, {}, {block.back});
+	}
 	Storage temporary_offset_integer_var = Storage("$sp", Type::Primitive::integer_type.get_size(), 0 * Type::Primitive::integer_type.get_size());
 	Storage temporary_address_var        = Storage("$sp", Type::Primitive::integer_type.get_size(), 1 * Type::Primitive::integer_type.get_size());
 	std::vector<Index> var_nonprimitive_address_indices;
@@ -12852,7 +12854,9 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 		}
 	}
 	// Free our temporary variables.
-	block.back = block.instructions.add_instruction({I::AddSp(B(), temporary_variables_allocated)}, {}, {block.back});
+	if (var_nonprimitive_allocated != 0) {
+		block.back = block.instructions.add_instruction({I::AddSp(B(), temporary_variables_allocated)}, {}, {block.back});
+	}
 
 	// Next up, direct register ref storages.
 
