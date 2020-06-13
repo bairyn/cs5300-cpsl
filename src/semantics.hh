@@ -1325,6 +1325,7 @@ public:
 		std::map<Index, Index>     sequences;             // sequences[this_node] == the node that should be emitted (after its unemitted children (inputs) are emitted) right after this_node is emitted, i.e.
 		                                                  // sequences[before]    == after
 		std::map<Index, Index>     reversed_sequences;    // sequences reversed.  We have a bimap now.
+		std::set<std::string>      preserved_regs;        // When pushing saved registers, back these up too.
 
 		// | In order to emit these MIPSIO instructions that write these outputs, how many working storages are needed?
 		std::vector<uint32_t> prepare(const std::set<IO>          &capture_outputs, std::optional<Index> back = std::optional<Index>()) const;
@@ -1405,6 +1406,8 @@ public:
 		Index merge(const MIPSIO &other, Index this_before, Index other_after);
 		// | Variant like the previous but instead returns the new "other_index" from "other" rather than the new "other_after" from "other".
 		Index merge(const MIPSIO &other, Index this_before, Index other_after, Index other_index);
+		// | When pushing saved registers, back this up too.
+		void preserve_reg(const std::string &register_);
 
 		static const bool permit_sequence_connection_delays;
 

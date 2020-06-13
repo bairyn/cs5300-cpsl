@@ -10231,6 +10231,10 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 						}
 					}
 				}
+				// Save "preserved_regs" too.
+				for (const std::string &preserved_reg : std::as_const(preserved_regs)) {
+					pushed_registers.push_back(Storage(preserved_reg));
+				}
 
 				// Emit code to push these registers.
 				const int32_t addition = -4*(pushed_registers.size() % 2 == 0 ? pushed_registers.size() : pushed_registers.size() + 1);
@@ -10546,6 +10550,8 @@ void Semantics::MIPSIO::add_sequence_connections(const std::vector<Index> before
 Semantics::MIPSIO::Index Semantics::MIPSIO::merge(const MIPSIO &other) {
 	const Index addition = instructions.size();
 
+	preserved_regs.insert(other.preserved_regs.cbegin(), other.preserved_regs.cend());
+
 	//instructions.insert(instructions.end(), other.instructions.cbegin(), other.instructions.cend());
 	// Correctly merge nosaves from Calls.
 	for (const Instruction &instruction : std::as_const(other.instructions)) {
@@ -10608,6 +10614,11 @@ Semantics::MIPSIO::Index Semantics::MIPSIO::merge(const MIPSIO &other, Index thi
 	const Index new_other_index = merge_index + other_index;
 	add_sequence_connection(this_before, new_after_index);
 	return new_other_index;
+}
+
+// | When pushing saved registers, back this up too.
+void Semantics::MIPSIO::preserve_reg(const std::string &register_) {
+	preserved_regs.insert(register_);
 }
 
 const bool Semantics::MIPSIO::permit_sequence_connection_delays = CPSL_CC_SEMANTICS_PERMIT_SEQUENCE_CONNECTION_DELAYS;
