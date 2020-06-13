@@ -12781,8 +12781,8 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	if (var_nonprimitive_allocated != 0) {
 		block.back = block.instructions.add_instruction({I::AddSp(B(), -temporary_variables_allocated)}, {}, {block.back});
 	}
-	Storage temporary_offset_integer_var = Storage("$sp", Type::Primitive::integer_type.get_size(), 0 * Type::Primitive::integer_type.get_size());
-	Storage temporary_address_var        = Storage("$sp", Type::Primitive::integer_type.get_size(), 1 * Type::Primitive::integer_type.get_size());
+	Storage temporary_offset_integer_var = Storage("$sp", Type::Primitive::integer_type.get_size(), 0 * Type::Primitive::integer_type.get_size(), true);
+	Storage temporary_address_var        = Storage("$sp", Type::Primitive::integer_type.get_size(), 1 * Type::Primitive::integer_type.get_size(), true);
 	std::vector<Index> var_nonprimitive_address_indices;
 	for (const Expression &argument_expression : std::as_const(argument_expressions)) {
 		const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
@@ -12801,7 +12801,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			var_nonprimitive_address_indices.push_back(std::numeric_limits<Index>::max());
 		} else {
 			// Add a storage that refers to the base address of this copied array or record.
-			//const Storage var_nonprimitive_storage = Storage("$sp", 4, var_nonprimitive_offset);  // Wait...this storage will dereference it!
+			//const Storage var_nonprimitive_storage = Storage("$sp", 4, var_nonprimitive_offset, true);  // Wait...this storage will dereference it!
 			//var_nonprimitive_storages.push_back(var_nonprimitive_storage);
 
 			// memmove for dest < src: equivalent of this:
@@ -12811,7 +12811,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			// 		*temp0++ = *temp1++;
 			// 	}
 			// Get dest and src addresses into dynamically selected storages.  Initialize offset to 0.
-			const Index dest_index             = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, temporary_variables_allocated + var_nonprimitive_offset, false, true, Storage(), Storage("$sp"))}, {}, {block.back});
+			const Index dest_index             = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, temporary_variables_allocated + var_nonprimitive_offset, false, true, Storage(), Storage("$sp", true))}, {}, {block.back});
 			const Index src_index              = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true)}, {argument_output}, {block.back});
 			const Index zero_initialize_offset = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, temporary_offset_integer_var, Storage("$zero"))}, {}, {block.back});
 			var_nonprimitive_address_indices.push_back(dest_index);
@@ -12920,7 +12920,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			//const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {load_lvalue_index}, {block.back});
 			assert(argument_lvalue_source_analysis.is_lvalue_fixed_storage);
 			const Index load_lvalue_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), argument_lvalue_source_analysis.lvalue_fixed_storage)}, {}, {block.back});
-			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), argument_type.resolve_type(storage_scope).get_primitive().is_word(), argument_type.resolve_type(storage_scope).get_primitive().is_word(), 0, true, false, Storage("$sp", argument_type.resolve_type(storage_scope).get_primitive().is_word() ? 4 : 1, direct_register_ref_offsets[argument_expression_index]), Storage())}, {load_lvalue_index}, {block.back});
+			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), argument_type.resolve_type(storage_scope).get_primitive().is_word(), argument_type.resolve_type(storage_scope).get_primitive().is_word(), 0, true, false, Storage("$sp", argument_type.resolve_type(storage_scope).get_primitive().is_word() ? 4 : 1, direct_register_ref_offsets[argument_expression_index], true), Storage())}, {load_lvalue_index}, {block.back});
 			// Since we'll be restoring this register ourselves, there is no need to preserve this register.
 			nosave_registers.insert(argument_lvalue_source_analysis.lvalue_fixed_storage.register_);
 		}
@@ -12992,13 +12992,13 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			//= argument_expression_index < 4
 			= !is_argument_pushed[argument_expression_index]
 			? Storage(is_word ? 4 : 1, false, Symbol(), "$a" + std::to_string(argument_expression_index), false, 0)
-			: Storage("$sp", is_word ? 4 : 1, pushed_argument_offsets[argument_expression_index])
+			: Storage("$sp", is_word ? 4 : 1, pushed_argument_offsets[argument_expression_index], true)
 			;
 
 		if (argument_is_var_nonprimitive) {
-			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, true, argument_storage, Storage("$sp", is_word ? 4 : 1, pushed_arg_allocated + direct_ref_allocated + var_nonprimitive_offsets[argument_expression_index]))}, {}, {block.back});
+			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, true, argument_storage, Storage("$sp", is_word ? 4 : 1, pushed_arg_allocated + direct_ref_allocated + var_nonprimitive_offsets[argument_expression_index], true))}, {}, {block.back});
 		} else if (is_direct_register) {
-			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, true, argument_storage, Storage("$sp", is_word ? 4 : 1, pushed_arg_allocated + direct_register_ref_offsets[argument_expression_index]))}, {}, {block.back});
+			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, true, argument_storage, Storage("$sp", is_word ? 4 : 1, pushed_arg_allocated + direct_register_ref_offsets[argument_expression_index], true))}, {}, {block.back});
 		} else if (!parameter_is_ref || !storage_scope.resolve_type(argument_type_index).is_primitive()) {
 			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {argument_output}, {block.back});
 		} else {
@@ -13048,7 +13048,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			// Load the value into the ref storage.
 			//const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {load_lvalue_index}, {block.back});
 			assert(argument_lvalue_source_analysis.is_lvalue_fixed_storage);
-			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), argument_type.resolve_type(storage_scope).get_primitive().is_word(), argument_type.resolve_type(storage_scope).get_primitive().is_word(), 0, true, true, argument_lvalue_source_analysis.lvalue_fixed_storage, Storage("$sp", argument_type.resolve_type(storage_scope).get_primitive().is_word() ? 4 : 1, direct_register_ref_offsets[argument_expression_index]))}, {}, {block.back});
+			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), argument_type.resolve_type(storage_scope).get_primitive().is_word(), argument_type.resolve_type(storage_scope).get_primitive().is_word(), 0, true, true, argument_lvalue_source_analysis.lvalue_fixed_storage, Storage("$sp", argument_type.resolve_type(storage_scope).get_primitive().is_word() ? 4 : 1, direct_register_ref_offsets[argument_expression_index], true))}, {}, {block.back});
 		}
 	}
 	if (direct_ref_allocated != 0) {
@@ -13166,11 +13166,11 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 					// Get 2 temporary fixed Variables for us to use for our manual memmove loop.  4 bytes rounded to 8 bytes.
 					const int32_t temporary_variables_allocated = Instruction::AddSp::round_to_align(2 * Type::Primitive::integer_type.get_size());
 					block.back = block.instructions.add_instruction({I::AddSp(B(), -temporary_variables_allocated)}, {}, {block.back});
-					const Storage temporary_offset_integer_var = Storage("$sp", Type::Primitive::integer_type.get_size(), 0 * Type::Primitive::integer_type.get_size());
-					const Storage temporary_address_var        = Storage("$sp", Type::Primitive::integer_type.get_size(), 1 * Type::Primitive::integer_type.get_size());
+					const Storage temporary_offset_integer_var = Storage("$sp", Type::Primitive::integer_type.get_size(), 0 * Type::Primitive::integer_type.get_size(), true);
+					const Storage temporary_address_var        = Storage("$sp", Type::Primitive::integer_type.get_size(), 1 * Type::Primitive::integer_type.get_size(), true);
 
 					// Add a storage that refers to the base address of this copied array or record.
-					//const Storage var_nonprimitive_storage = Storage("$sp", 4, var_nonprimitive_offset);  // Wait...this storage will dereference it!
+					//const Storage var_nonprimitive_storage = Storage("$sp", 4, var_nonprimitive_offset, true);  // Wait...this storage will dereference it!
 					//var_nonprimitive_storages.push_back(var_nonprimitive_storage);
 
 					// memmove for dest < src: equivalent of this:
