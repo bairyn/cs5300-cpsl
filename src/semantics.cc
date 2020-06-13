@@ -12874,7 +12874,9 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 		const Type      &argument_type              = *parameter_types[argument_expression_index];
 		const bool      &parameter_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
 
-		const bool argument_is_primref = lvalue_source_analyses[argument_expression_index].is_lvalue_primref;
+		const LvalueSourceAnalysis &argument_lvalue_source_analysis = lvalue_source_analyses[argument_expression_index];
+
+		const bool argument_is_primref = argument_lvalue_source_analysis.is_lvalue_primref;
 
 		// Only handle this if the argument is a prim Var and the parameter is a ref Var.
 
@@ -12882,11 +12884,11 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 		// the address, since the Ref is already a pointer, and we have no need
 		// to create a new pointer.
 
-		if (!parameter_is_ref || !storage_scope.resolve_type(argument_type_index).is_primitive() || argument_is_primref) {
+		if (!parameter_is_ref || !storage_scope.resolve_type(argument_type_index).is_primitive() || argument_is_primref || !argument_lvalue_source_analysis.is_lvalue_fixed_storage || !argument_lvalue_source_analysis.lvalue_fixed_storage.is_register_direct()) {
 			is_argument_direct_register_ref.push_back(false);
 			direct_register_ref_offsets.push_back(std::numeric_limits<uint32_t>::max());  // Unused.
 		} else {
-			// primref parameter; varref argument.
+			// primref parameter; varref argument; direct register.
 			is_argument_direct_register_ref.push_back(true);
 			direct_ref_allocated = Instruction::AddSp::round_to_align(direct_ref_allocated, storage_scope.type(argument_type_index).get_size());
 			direct_register_ref_offsets.push_back(direct_ref_allocated);
