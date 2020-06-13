@@ -10959,18 +10959,25 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 							throw SemanticsError(sstr.str());
 						}
 
-						const Type::Array &array_type = storage_scope.resolve_type(last_output_type);
-						const int32_t      min_index  = array_type.get_min_Index();
+						const Type::Array &array_type = storage_scope.resolve_type(last_output_type).get_array();
+						const int32_t      min_index  = array_type.get_min_index();
 
 						// | The last output type is now the base type.
 						last_output_type = storage_scope.type(last_output_type).get_array().base_type;
 						// | Get the integer's index.
 						const Index value_index                 = lvalue_source_analysis.merge_expression(value);
+						Index shifted_value_index;
+						if (min_index == 0) {
+							shifted_value_index = value_index;
+						} else {
+							const Index load_min_index = lvalue_source_analysis.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(min_index), 0, 0))});
+							shifted_value_index        = lvalue_source_analysis.instructions.add_instruction({I::SubFrom(B(), true)}, {value_index, load_min_index});
+						}
 						// | Now dereference the array.
 						const Index load_element_size_index     = lvalue_source_analysis.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(storage_scope.type(last_output_type).get_size()), 0, 0))});
-						//const Index array_element_offset_index  = lvalue_source_analysis.instructions.add_instruction({I::MultFrom(B(), true)}, {load_element_size_index, value_index});
+						//const Index array_element_offset_index  = lvalue_source_analysis.instructions.add_instruction({I::MultFrom(B(), true)}, {load_element_size_index, shifted_value_index});
 						//const Index ignore_index                = lvalue_source_analysis.instructions.add_instruction_indexed({I::Ignore(B())}, {{array_element_offset_index, 1}}, array_element_offset_index); (void) ignore_index;
-						const Index array_element_offset_index  = lvalue_source_analysis.instructions.add_instruction({I::MultFrom(B(), true, true)}, {load_element_size_index, value_index});
+						const Index array_element_offset_index  = lvalue_source_analysis.instructions.add_instruction({I::MultFrom(B(), true, true)}, {load_element_size_index, shifted_value_index});
 						const Index array_element_address_index = lvalue_source_analysis.instructions.add_instruction({I::AddFrom(B(), true)}, {last_output_index, array_element_offset_index});
 						// Actually dereference if the base type is primitive.  Just leave it at the address if the base type is a record or array.
 						const Type &last_output_resolved_type = storage_scope.type(last_output_type).resolve_type(storage_scope);
