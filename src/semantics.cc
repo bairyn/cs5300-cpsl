@@ -13038,7 +13038,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 		const LvalueSourceAnalysis &argument_lvalue_source_analysis = lvalue_source_analyses[argument_expression_index];
 
 		//const bool is_word = !storage_scope.resolve_type(argument_type_index).is_primitive() || storage_scope.resolve_type(argument_type_index).get_primitive().is_word() || (!argument_is_var_nonprimitive && !parameter_is_primitive_ref);
-		const bool is_word = !storage_scope.resolve_type(argument_type_index).is_primitive() || storage_scope.resolve_type(argument_type_index).get_primitive().is_word() || !argument_is_var_nonprimitive || parameter_is_ref;
+		const bool is_word = !storage_scope.resolve_type(argument_type_index).is_primitive() || storage_scope.resolve_type(argument_type_index).get_primitive().is_word() || argument_is_var_nonprimitive || parameter_is_ref;
 		const Storage argument_storage
 			//= argument_expression_index < 4
 			= !is_argument_pushed[argument_expression_index]
