@@ -35,10 +35,11 @@ SemanticsError::SemanticsError(const std::string &message)
  * Semantics types.
  */
 
-const bool Semantics::combine_identifier_namespaces = CPSL_CC_SEMANTICS_COMBINE_IDENTIFIER_NAMESPACES;
-const bool Semantics::permit_shadowing              = CPSL_CC_SEMANTICS_PERMIT_SHADOWING;
-const bool Semantics::emit_some_redundant_labels    = CPSL_CC_SEMANTICS_EMIT_SOME_REDUNDANT_LABELS;
-const bool Semantics::emit_extra_redundant_labels   = CPSL_CC_SEMANTICS_EMIT_EXTRA_REDUNDANT_LABELS;
+const bool Semantics::combine_identifier_namespaces  = CPSL_CC_SEMANTICS_COMBINE_IDENTIFIER_NAMESPACES;
+const bool Semantics::permit_shadowing               = CPSL_CC_SEMANTICS_PERMIT_SHADOWING;
+const bool Semantics::emit_some_redundant_labels     = CPSL_CC_SEMANTICS_EMIT_SOME_REDUNDANT_LABELS;
+const bool Semantics::emit_extra_redundant_labels    = CPSL_CC_SEMANTICS_EMIT_EXTRA_REDUNDANT_LABELS;
+const bool Semantics::permit_unused_function_outputs = CPSL_CC_SEMANTICS_PERMIT_UNUSED_FUNCTION_OUTPUTS;
 
 Semantics::Symbol::Symbol()
 	{}
@@ -2243,9 +2244,10 @@ Semantics::IdentifierScope::IdentifierBinding::Static::Static(ConstantValue &&co
 Semantics::IdentifierScope::IdentifierBinding::Var::Var()
 	{}
 
-Semantics::IdentifierScope::IdentifierBinding::Var::Var(TypeIndex type, const Storage &storage)
+Semantics::IdentifierScope::IdentifierBinding::Var::Var(TypeIndex type, const Storage &storage, bool is_primitive_and_ref)
 	: type(type)
 	, storage(storage)
+	, is_primitive_and_ref(is_primitive_and_ref)
 	{}
 
 Semantics::IdentifierScope::IdentifierBinding::RoutineDeclaration::RoutineDeclaration()
@@ -5016,9 +5018,15 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 			lines.push_back(sized_save + source_register + ", (" + free_register + ")");
 		}
 	} else if (destination_storage.is_global_address()) {
-		std::ostringstream sstr;
-		sstr << "Semantics::Instruction::LoadFrom::emit: error: cannot save to a global address without dereferencing it.";
-		throw SemanticsError(sstr.str());
+		if (!dereference_save) {
+			std::ostringstream sstr;
+			sstr << "Semantics::Instruction::LoadFrom::emit: error: cannot save to a global address without dereferencing it.";
+			throw SemanticsError(sstr.str());
+		} else {
+			lines.push_back("\tla    " + free_register + ", " + destination_storage.global_address);
+			std::string offset_string = destination_storage.offset == 0 ? "" : std::to_string(destination_storage.offset);
+			lines.push_back(sized_save + source_register + ", " + offset_string + "(" + free_register + ")");
+		}
 	} else { //destination_storage.is_global_dereference()
 		lines.push_back("\tla    " + free_register + ", " + destination_storage.global_address);
 		std::string offset_string = destination_storage.offset == 0 ? "" : std::to_string(destination_storage.offset);
@@ -10712,6 +10720,7 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 			lvalue_source_analysis.lvalue_index            = 0;
 			lvalue_source_analysis.lvalue_fixed_storage    = var.storage;
 			lvalue_source_analysis.is_lvalue_fixed_storage = true;
+			lvalue_source_analysis.is_lvalue_primref       = var.is_primitive_and_ref;
 		} else if (resolved_type.is_record() || resolved_type.is_array()) {
 			// Load the base address of the array or record.  Apply any provided accessors.
 			TypeIndex last_output_type  = type;
@@ -11985,34 +11994,14 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_begin = call.identifier;
 				expression_semantics.lexeme_end   = call.rightparenthesis_operator0 + 1;
 
-				// Lookup the RoutineDeclaration.
-				if (!combined_scope.has(call_identifier.text)) {
-					std::ostringstream sstr;
-					sstr
-						<< "Semantics::analyze_expression: error (line "
-						<< call_identifier.line << " col " << call_identifier.column
-						<< "): identifier out of scope, for call of ``"
-						<< call_identifier.text
-						<< "\"."
-						;
-					throw SemanticsError(sstr.str());
-				}
-				if (!routine_scope.has(call_identifier.text)) {
-					std::ostringstream sstr;
-					sstr
-						<< "Semantics::analyze_expression: error (line "
-						<< call_identifier.line << " col " << call_identifier.column
-						<< "): cannot find a function or procedure with the identifier in scope, for call of ``"
-						<< call_identifier.text
-						<< "\"."
-						;
-					throw SemanticsError(sstr.str());
-				}
+				// Analyze the call.
+				std::pair<Block, std::optional<std::pair<Index, TypeIndex>>> call_analysis = analyze_call(routine_declaration, call_identifier, expression_sequence_opt, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Block &call_block        = call_analysis.first;
+				const bool   call_has_output   = call_analysis.second.has_value();
+				const Index  call_output_index = call_has_output ? std::numeric_limits<Index>::max() : call_analysis.second->first;
 
-				const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration = routine_scope.get(call_identifier.text).get_routine_declaration();
-
-				// In an expression, the call has to refer to a function that returns an output, not a procedure that does not.
-				if (!routine_declaration.output.has_value()) {
+				// This is an expression, so we should have output.
+				if (!call_has_output) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
@@ -12023,331 +12012,12 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						;
 					throw SemanticsError(sstr.str());
 				}
-				expression_semantics.output_type = *routine_declaration.output;
 
-				// Output types of arrays or records are currently unsupported.
-				if (!storage_scope.type(*routine_declaration.output).resolve_type(storage_scope).is_primitive()) {
-					std::ostringstream sstr;
-					sstr
-						<< "Semantics::analyze_expression: error (line "
-						<< call_identifier.line << " col " << call_identifier.column
-						<< "): returning arrays or records is currently not supported, in call of ``"
-						<< call_identifier.text
-						<< "\"."
-						;
-					throw SemanticsError(sstr.str());
-				}
+				const Type &call_output_type = &storage_scope.type(call_analysis.second->second);
 
-				// Collect the expressions in the list.
-				std::vector<const ::Expression *> expressions;
-				switch (expression_sequence_opt.branch) {
-					case ExpressionSequenceOpt::empty_branch: {
-						// No need to retrieve the empty value.
-						break;
-					}
-
-					case ExpressionSequenceOpt::value_branch: {
-						const ExpressionSequenceOpt::Value &expression_sequence_opt_value = grammar.expression_sequence_opt_value_storage.at(expression_sequence_opt.data);
-						const ExpressionSequence           &expression_sequence           = grammar.expression_sequence_storage.at(expression_sequence_opt_value.expression_sequence);
-
-						const ::Expression           &first_expression         = grammar.expression_storage.at(expression_sequence.expression);
-						const ExpressionPrefixedList &expression_prefixed_list = grammar.expression_prefixed_list_storage.at(expression_sequence.expression_prefixed_list);
-
-						// Collect the expressions in the list.
-						expressions.push_back(&first_expression);
-						bool reached_end = false;
-						for (const ExpressionPrefixedList *last_list = &expression_prefixed_list; !reached_end; ) {
-							// Unpack the last list encountered.
-							switch(last_list->branch) {
-								case ExpressionPrefixedList::empty_branch: {
-									// We're done.
-									// (No need to unpack the empty branch.)
-									reached_end = true;
-									break;
-								}
-
-								case ExpressionPrefixedList::cons_branch: {
-									// Unpack the list.
-									const ExpressionPrefixedList::Cons &last_expression_prefixed_list_cons = grammar.expression_prefixed_list_cons_storage.at(last_list->data);
-									const ExpressionPrefixedList       &last_expression_prefixed_list      = grammar.expression_prefixed_list_storage.at(last_expression_prefixed_list_cons.expression_prefixed_list);
-									const LexemeOperator               &last_comma_operator0               = grammar.lexemes.at(last_expression_prefixed_list_cons.comma_operator0).get_operator(); (void) last_comma_operator0;
-									const ::Expression                 &last_expression                    = grammar.expression_storage.at(last_expression_prefixed_list_cons.expression);
-
-									// Add the expression.
-									expressions.push_back(&last_expression);
-									last_list = &last_expression_prefixed_list;
-
-									// Loop.
-									break;
-								}
-
-								// Unrecognized branch.
-								default: {
-									std::ostringstream sstr;
-									sstr << "Semantics::analyze_expression: internal error: invalid expression_prefixed_list branch at index " << last_list - &grammar.expression_prefixed_list_storage[0] << ": " << last_list->branch;
-									throw SemanticsError(sstr.str());
-								}
-							}
-						}
-
-						// Correct the order of the list.
-						std::reverse(expressions.begin() + 1, expressions.end());
-
-						// We've finished collecting the expressions.
-						break;
-					}
-
-					// Unrecognized branch.
-					default: {
-						std::ostringstream sstr;
-						sstr << "Semantics::analyze_expression: internal error: invalid expression_sequence_opt branch at index " << call.expression_sequence_opt << ": " << expression_sequence_opt.branch;
-						throw SemanticsError(sstr.str());
-					}
-				}
-
-				// Make sure the number of parameters matches the number of expressions.
-				if (expressions.size() != routine_declaration.parameters.size()) {
-					std::ostringstream sstr;
-					sstr
-						<< "Semantics::analyze_expression: error (line "
-						<< call_identifier.line << " col " << call_identifier.column
-						<< "): number of arguments provided (" << expressions.size() << ") in call to ``"
-						<< call_identifier.text
-						<< "\" does not match what was expected (" << routine_declaration.parameters.size() << ")."
-						;
-					throw SemanticsError(sstr.str());
-				}
-
-				// Var (as opposed to Ref) arrays and records are copied.
-
-				// References must be lvalues: variables or record addresses or
-				// array addresses.  For record addresses or array references,
-				// just pass the address.  For all unique references to
-				// primitive variables that are direct registers, push the
-				// value onto the stack, use the address of the pushed value as
-				// the pointer, and when the call returns, put the value in
-				// that address back into the variable.  Use the same address
-				// if the same variable is specified multiple times.
-				//
-				// After pushing unique primitive direct register variables and
-				// registers that need to be saved, put the first 4 arguments
-				// in $a0-$a3, push the rest, and then pop them.
-				//
-				// Var arrays and records will get copied if configured.
-
-				// First, get all primitive vars that are direct registers.
-				std::vector<Storage>                                                                    register_refs;
-				std::set<Storage>                                                                       in_register_refs;
-				std::map<std::vector<const ::Expression *>::size_type, std::vector<Storage>::size_type> register_ref_arguments;
-				for (std::vector<const ::Expression *>::size_type argument = 0; argument < expressions.size(); ++argument) {
-					const ::Expression               &argument_expression_symbol = *expressions[argument];
-					const std::pair<bool, TypeIndex> &parameter                  = routine_declaration.parameters[argument];
-					const bool                        is_parameter_ref           = parameter.first;
-					const TypeIndex                   parameter_type             = parameter.second;
-
-					// Is this parameter a reference?
-					if (is_parameter_ref) {
-						if (argument_expression_symbol.branch != ::Expression::lvalue_branch) {
-							std::ostringstream sstr;
-							sstr
-								<< "Semantics::analyze_expression: error (line "
-								<< call_identifier.line << " col " << call_identifier.column
-								<< "): parameter # " << argument + 1 << " in call to ``"
-								<< call_identifier.text
-								<< "\" expects a reference, but the expression provided is not an lvalue."
-								;
-							throw SemanticsError(sstr.str());
-						} else {
-							const ::Expression::Lvalue &expression_lvalue = grammar.expression_lvalue_storage.at(argument_expression_symbol.data);
-							const Lvalue               &lvalue            = grammar.lvalue_storage.at(expression_lvalue.lvalue);
-
-							const LexemeIdentifier           &lvalue_identifier           = grammar.lexemes.at(lvalue.identifier).get_identifier();
-							const LvalueAccessorClauseList   &lvalue_accessor_clause_list = grammar.lvalue_accessor_clause_list_storage.at(lvalue.lvalue_accessor_clause_list);
-
-							if (lvalue_accessor_clause_list.branch != LvalueAccessorClauseList::empty_branch) {
-								// There is at least one array or record
-								// accessor, so we know this argument is not a
-								// primitive variable not in an array or
-								// record.  No need to reserve stack space for
-								// it.
-							} else {
-								// Lookup the lvalue identifier.
-								if (!combined_scope.has(lvalue_identifier.text)) {
-									std::ostringstream sstr;
-									sstr
-										<< "Semantics::analyze_expression: error (line "
-										<< call_identifier.line << " col " << call_identifier.column
-										<< "): argument # " << argument + 1 << "(line "
-										<< lvalue_identifier.line << " col " << lvalue_identifier.column
-										<< ") in call to ``"
-										<< call_identifier.text
-										<< "\" for a reference uses an lvalue reference with an identifier that is not in scope: not found."
-										;
-									throw SemanticsError(sstr.str());
-								}
-								// The lvalue identifier can be in other
-								// scopes, e.g. global variables, but for here
-								// we only need to do something if it's a
-								// direct primitive register variable.
-								if (var_scope.has(lvalue_identifier.text)) {
-									const Var     &var         = var_scope.get(lvalue_identifier.text).get_var();
-									const Storage &var_storage = var.storage;
-									if (var_storage.is_register_direct()) {
-										if (in_register_refs.find(var_storage) == in_register_refs.cend()) {
-											register_ref_arguments.insert({argument, register_refs.size()});
-											in_register_refs.insert(var_storage);
-											register_refs.push_back(var_storage);
-										} else {
-											bool found = false;
-											for (const Storage &storage : std::as_const(register_refs)) {
-												const std::vector<Storage>::size_type storage_index = &storage - &register_refs[0];
-												if (storage == var_storage) {
-													found = true;
-													register_ref_arguments.insert({argument, storage_index});
-													break;
-												}
-											}
-											if (!found) {
-												std::ostringstream sstr;
-												sstr
-													<< "Semantics::analyze_expression: internal error (line "
-													<< call_identifier.line << " col " << call_identifier.column
-													<< "): argument # " << argument + 1 << "(line "
-													<< lvalue_identifier.line << " col " << lvalue_identifier.column
-													<< ") in call to ``"
-													<< call_identifier.text
-													<< "\": we calculated that a storage exists but couldn't find it."
-													;
-												throw SemanticsError(sstr.str());
-											}
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-
-				// Start our sequenced chain of instructions to perform a call.
-				Index last_call_index = expression_semantics.instructions.add_instruction({I::Ignore(B(), false, false)});
-
-				// Evaluate all arguments.
-				std::vector<Index> argument_outputs;
-				for (std::vector<const ::Expression *>::size_type argument = 0; argument < expressions.size(); ++argument) {
-					const ::Expression               &argument_expression_symbol = *expressions[argument];
-					const std::pair<bool, TypeIndex> &parameter                  = routine_declaration.parameters[argument];
-					const bool                        is_parameter_ref           = parameter.first;
-					const TypeIndex                   parameter_type             = parameter.second;
-
-					std::map<std::vector<const ::Expression *>::size_type, std::vector<Storage>::size_type>::const_iterator register_ref_arguments_search = register_ref_arguments.find(argument);
-
-					if (register_ref_arguments_search != register_ref_arguments.cend()) {
-						const std::vector<Storage>::size_type &register_ref_argument_index = register_ref_arguments_search->second;
-						int32_t ref_offset = I::AddSp::round_to_align(-4*register_refs.size()) - 4*register_ref_argument_index;
-						if (argument < 4) {
-							last_call_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, ref_offset, true, true, Storage("$a" + std::to_string(argument)), Storage("$sp", true))}, {}, last_call_index);
-							// argument_outputs[argument] should be ignored for argument < 4.
-							argument_outputs.push_back(std::numeric_limits<Index>::max());
-						} else {
-							last_call_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, ref_offset, false, true, Storage(), Storage("$sp", true))}, {}, last_call_index);
-							argument_outputs.push_back(last_call_index);
-						}
-					} else {
-						const Expression argument_expression  = analyze_expression(argument_expression_symbol, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
-						const Index argument_expression_index = expression_semantics.instructions.merge(argument_expression.instructions) + argument_expression.output_index;
-						expression_semantics.instructions.add_sequence_connection(last_call_index, argument_expression_index);
-						last_call_index = argument_expression_index;
-
-						if (!all_arrays_records_are_refs && !is_parameter_ref && !storage_scope.type(parameter_type).resolve_type(storage_scope).is_primitive()) {
-							// TODO
-							throw SemanticsError("TODO: TODO: implement copying of arrays and records for non-Ref Vars.");
-						}
-
-						argument_outputs.push_back(argument_expression_index);
-
-						if (!storage_scope.type(argument_expression.output_type).resolve_type(storage_scope).matches(storage_scope.type(parameter_type).resolve_type(storage_scope), storage_scope)) {
-							std::ostringstream sstr;
-							sstr
-								<< "Semantics::analyze_expression: error (line "
-								<< call_identifier.line << " col " << call_identifier.column
-								<< "): argument #" << argument + 1 << ": the type of the argument provided does not match the required parameter type in call to ``"
-								<< call_identifier.text
-								<< "\" for a reference uses an lvalue reference with an identifier that is not in scope: not found."
-								;
-							throw SemanticsError(sstr.str());
-						}
-
-						if (argument < 4) {
-							// argument_outputs[argument] should be ignored for argument < 4, but it's there anyway.
-							const bool input_word = !storage_scope.type(parameter_type).is_primitive() || storage_scope.type(parameter_type).get_primitive().is_word();
-							last_call_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, input_word, 0, true, false, Storage("$a" + std::to_string(argument)), Storage())}, {argument_expression_index}, last_call_index);
-						}
-					}
-				}
-
-				// Our stack will look like this:
-				// - Our local stack data.
-				// - return address ($sp currently points here)
-				// - pushed array and record copies (TODO)
-				// - pushed refs
-				// - pushed saved registers
-				// - pushed arguments
-
-				// Push these refs storages onto the stack.  (AddSp automatically rounds to 8-byte aligns.)
-				if (register_refs.size() > 0) {
-					last_call_index = expression_semantics.instructions.add_instruction({I::AddSp(B(), -4*register_refs.size())}, {}, last_call_index);
-				}
-				for (const Storage &register_ref : std::as_const(register_refs)) {
-					const std::vector<Storage>::size_type register_ref_index  = &register_ref - &register_refs[0];
-					const uint32_t                        register_ref_offset = 4 * register_ref_index;
-					last_call_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, Storage("$sp", 4, register_ref_offset, true), register_ref)}, {}, last_call_index);
-				}
-
-				// Push registers that need to be saved onto the stack.
-				last_call_index = expression_semantics.instructions.add_instruction({I::Call(B(), Symbol(), true, false, argument_outputs)}, {}, last_call_index);
-
-				// Push arguments.
-				if (expressions.size() > 4) {
-					last_call_index = expression_semantics.instructions.add_instruction({I::AddSp(B(), -4*(expressions.size() - 4))}, {}, last_call_index);
-					for (std::vector<const ::Expression *>::size_type argument = 4; argument < expressions.size(); ++argument) {
-						const ::Expression               &argument_expression_symbol = *expressions[argument]; (void) argument_expression_symbol;
-						const std::pair<bool, TypeIndex> &parameter                  = routine_declaration.parameters[argument];
-						const bool                        is_parameter_ref           = parameter.first; (void) is_parameter_ref;
-						const TypeIndex                   parameter_type             = parameter.second;
-
-						const bool     input_word          = (register_ref_arguments.find(argument) != register_ref_arguments.cend()) || !storage_scope.type(parameter_type).is_primitive() || storage_scope.type(parameter_type).get_primitive().is_word();
-						const uint32_t register_ref_offset = 4 * (argument - 4);
-						last_call_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, input_word, 0, true, false, Storage("$sp", 4, register_ref_offset, true), Storage())}, {argument_outputs[argument]}, last_call_index);
-					}
-				}
-
-				// Call the function.
-				last_call_index = expression_semantics.instructions.add_instruction({I::Call(B(), routine_declaration.location)}, {}, last_call_index);
-
-				// Pop arguments and discard.
-				if (expressions.size() > 4) {
-					last_call_index = expression_semantics.instructions.add_instruction({I::AddSp(B(), 4*(expressions.size() - 4))}, {}, last_call_index);
-				}
-
-				// Pop registers that need to be saved onto the stack.
-				last_call_index = expression_semantics.instructions.add_instruction({I::Call(B(), Symbol(), false, true, argument_outputs)}, {}, last_call_index);
-
-				// Pop the refs storages back from the stack.
-				std::vector<Storage> register_refs_reversed(std::as_const(register_refs));
-				std::reverse(register_refs_reversed.begin(), register_refs_reversed.end());
-				for (const Storage &register_ref : std::as_const(register_refs_reversed)) {
-					const std::vector<Storage>::size_type register_ref_index  = &register_ref - &register_refs[0];
-					const uint32_t                        register_ref_offset = 4 * register_ref_index;
-					last_call_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, register_ref, Storage("$sp", 4, register_ref_offset, true))}, {}, last_call_index);
-				}
-				if (register_refs.size() > 4) {
-					last_call_index = expression_semantics.instructions.add_instruction({I::AddSp(B(), -4*register_refs.size())}, {}, last_call_index);
-				}
-
-				// Retrieve the output from $v0.
-				const bool output_word = !storage_scope.type(*routine_declaration.output).is_primitive() || storage_scope.type(*routine_declaration.output).get_primitive().is_word();
-				last_call_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), output_word, true, 0, false, true, {}, Storage("$v0"))}, {}, last_call_index);
-				expression_semantics.output_index = last_call_index;
+				// Merge the instructions.  Set the output index to the output of the call.  (Ignore front and back.)
+				expression_semantics.output_type  = call_output_type;
+				expression_semantics.output_index = expression_semantics.instructions.merge(call_block.instructions, call_output_index);
 
 				// We're done.
 				break;
@@ -12607,10 +12277,20 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_begin = lvalue_source_analysis.lexeme_begin;
 				expression_semantics.lexeme_end   = lvalue_source_analysis.lexeme_end;
 				if (lvalue_source_analysis.is_lvalue_fixed_storage) {
-					// No accessors or instructions; just load from the storage.
-					const bool is_word = storage_scope.type(lvalue_source_analysis.lvalue_type).resolve_type(storage_scope).get_primitive().is_word();
-					const Index load_lvalue_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, false, true, Storage(), lvalue_source_analysis.lvalue_fixed_storage)});
-					expression_semantics.output_index = load_lvalue_index;
+					if (!lvalue_source_analysis.is_lvalue_primref) {
+						// No accessors or instructions; just load from the storage.
+						const bool is_word = storage_scope.type(lvalue_source_analysis.lvalue_type).resolve_type(storage_scope).get_primitive().is_word();
+						const Index load_lvalue_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, false, true, Storage(), lvalue_source_analysis.lvalue_fixed_storage)});
+						expression_semantics.output_index = load_lvalue_index;
+					} else {
+						// No accessors or instructions, but it's a reference
+						// (pointer) to a primitive value.  Load the address
+						// and then dereference it.
+						const bool is_resolved_word = storage_scope.type(lvalue_source_analysis.lvalue_type).resolve_type(storage_scope).get_primitive().is_word();
+						const Index load_lvalue_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), lvalue_source_analysis.lvalue_fixed_storage)});
+						const Index dereference_address_index = expression_semantics.instructions.add_instruction(I::LoadFrom({B(), is_word, false, 0, false, false, Storage(), Storage(), false, true}), {load_lvalue_index});
+						expression_semantics.output_index = dereference_address_index;
+					}
 				} else {
 					// Merge the instructions that get us the address of an array or record.
 					const Index load_address_index = expression_semantics.instructions.merge(lvalue_source_analysis.instructions) + lvalue_source_analysis.lvalue_index;
@@ -12674,6 +12354,622 @@ Semantics::Block::Block(MIPSIO &&instructions, MIPSIO::Index front, MIPSIO::Inde
 	, lexeme_end(lexeme_end)
 	{}
 
+// | Analyze a call and return a block that performs a call.  If the
+// function returns a value, return the index to the instruction that
+// retrieves the output too; otherwise, the second value is empty.
+//
+// Note: the caller_routine_declaration is the routine declaration of the
+// caller's context, not of the called function or procedure.
+std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Semantics::TypeIndex>>> Semantics::analyze_call(const IdentifierScope::IdentifierBinding::RoutineDeclaration &caller_routine_declaration, const LexemeIdentifier &routine_identifier, const ExpressionSequenceOpt &expression_sequence_opt, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope) {
+	// Some type aliases to improve readability.
+	using M = Semantics::MIPSIO;
+	using I = Semantics::Instruction;
+	using B = Semantics::Instruction::Base;
+	using Index = M::Index;
+	using IO    = M::IO;
+	using ConstantValue = Semantics::ConstantValue;
+	using Output        = Semantics::Output;
+	using Storage       = Semantics::Storage;
+	using Symbol        = Semantics::Symbol;
+
+	// Unpack the routine identifier.
+	const uint64_t    routine_identifier_index = &routine_identifier - &grammar.lexemes[0];
+	const std::string routine_identifier_text  = std::as_const(routine_identifier.text);
+
+	// Prepare the block.
+	Block block;
+
+	// Make sure front and back are valid by making sure there is at least one instruction.
+	if (block.instructions.instructions.size() <= 0) {
+		block.front = block.back = block.instructions.add_instruction({I::Ignore(B(), false, false)});
+	}
+
+	// Lookup the callee's RoutineDeclaration.
+	if (!combined_scope.has(call_identifier.text)) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::analyze_call: error (line "
+			<< call_identifier.line << " col " << call_identifier.column
+			<< "): identifier out of scope, for call of ``"
+			<< call_identifier.text
+			<< "\"."
+			;
+		throw SemanticsError(sstr.str());
+	}
+	if (!routine_scope.has(call_identifier.text)) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::analyze_call: error (line "
+			<< call_identifier.line << " col " << call_identifier.column
+			<< "): cannot find a function or procedure with the identifier in scope, for call of ``"
+			<< call_identifier.text
+			<< "\"."
+			;
+		throw SemanticsError(sstr.str());
+	}
+
+	const IdentifierScope::IdentifierBinding::RoutineDeclaration &callee_routine_declaration = routine_scope.get(call_identifier.text).get_routine_declaration();
+
+	const std::vector<std::pair<bool, TypeIndex>> &callee_parameters = callee_routine_declaration.parameters;
+	const std::optional<TypeIndex>                &callee_output     = callee_routine_declaration.output;
+	const bool                                     callee_has_output = collee_output.has_value();
+
+	// Before we perform the call, analyze and perform all the arguments.
+
+	// Collect the expressions in the list.
+	std::vector<const ::Expression *> expressions;
+	switch (expression_sequence_opt.branch) {
+		case ExpressionSequenceOpt::empty_branch: {
+			// No need to retrieve the empty value.
+			break;
+		}
+
+		case ExpressionSequenceOpt::value_branch: {
+			const ExpressionSequenceOpt::Value &expression_sequence_opt_value = grammar.expression_sequence_opt_value_storage.at(expression_sequence_opt.data);
+			const ExpressionSequence           &expression_sequence           = grammar.expression_sequence_storage.at(expression_sequence_opt_value.expression_sequence);
+
+			const ::Expression           &first_expression         = grammar.expression_storage.at(expression_sequence.expression);
+			const ExpressionPrefixedList &expression_prefixed_list = grammar.expression_prefixed_list_storage.at(expression_sequence.expression_prefixed_list);
+
+			// Collect the expressions in the list.
+			expressions.push_back(&first_expression);
+			bool reached_end = false;
+			for (const ExpressionPrefixedList *last_list = &expression_prefixed_list; !reached_end; ) {
+				// Unpack the last list encountered.
+				switch(last_list->branch) {
+					case ExpressionPrefixedList::empty_branch: {
+						// We're done.
+						// (No need to unpack the empty branch.)
+						reached_end = true;
+						break;
+					}
+
+					case ExpressionPrefixedList::cons_branch: {
+						// Unpack the list.
+						const ExpressionPrefixedList::Cons &last_expression_prefixed_list_cons = grammar.expression_prefixed_list_cons_storage.at(last_list->data);
+						const ExpressionPrefixedList       &last_expression_prefixed_list      = grammar.expression_prefixed_list_storage.at(last_expression_prefixed_list_cons.expression_prefixed_list);
+						const LexemeOperator               &last_comma_operator0               = grammar.lexemes.at(last_expression_prefixed_list_cons.comma_operator0).get_operator(); (void) last_comma_operator0;
+						const ::Expression                 &last_expression                    = grammar.expression_storage.at(last_expression_prefixed_list_cons.expression);
+
+						// Add the expression.
+						expressions.push_back(&last_expression);
+						last_list = &last_expression_prefixed_list;
+
+						// Loop.
+						break;
+					}
+
+					// Unrecognized branch.
+					default: {
+						std::ostringstream sstr;
+						sstr << "Semantics::analyze_call: internal error: invalid expression_prefixed_list branch at index " << last_list - &grammar.expression_prefixed_list_storage[0] << ": " << last_list->branch;
+						throw SemanticsError(sstr.str());
+					}
+				}
+			}
+
+			// Correct the order of the list.
+			std::reverse(expressions.begin() + 1, expressions.end());
+
+			// We've finished collecting the expressions.
+			break;
+		}
+
+		// Unrecognized branch.
+		default: {
+			std::ostringstream sstr;
+			sstr << "Semantics::analyze_expression: internal error: invalid expression_sequence_opt branch at index " << call.expression_sequence_opt << ": " << expression_sequence_opt.branch;
+			throw SemanticsError(sstr.str());
+		}
+	}
+
+	// Make sure the number of parameters matches the number of expressions.
+	if (expressions.size() != routine_declaration.parameters.size()) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::analyze_call: error (line "
+			<< call_identifier.line << " col " << call_identifier.column
+			<< "): number of arguments provided (" << expressions.size() << ") in call to ``"
+			<< call_identifier.text
+			<< "\" does not match what was expected (" << routine_declaration.parameters.size() << ")."
+			;
+		throw SemanticsError(sstr.str());
+	}
+
+	// Analyze the expressions.
+	std::vector<Expression> argument_expressions;
+	for (const ::Expression &expression : std::as_const(expressions)) {
+		const std::vector<::Expression>::size_type expression_index = &expression - &expressions[0];
+
+		argument_expressions.push_back(analyze_expression(expression, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope));
+	}
+
+	// Make sure the type of each expression matches the parameter.
+	//
+	// While we're at it, copy the parameter types and whether they're
+	// references.
+	std::vector<bool>         parameter_is_refs;
+	std::vector<const Type *> parameter_types;
+	std::vector<bool>         parameter_is_primitive_ref;
+	for (const Expression &argument_expression : std::as_const(argument_expressions)) {
+		const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
+
+		const std::pair<bool, TypeIndex> &parameter        = callee_parameter[argument_expression_index];
+		const bool                        parameter_is_ref = parameters.first;
+		const TypeIndex                   parameter_type   = parameters.second;
+
+		if (!storage_scope.resolve_type(argument_expression.output_type).matches(storage_scope.resolve_type(parameter_type), storage_scope)) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::analyze_call: error (line "
+				<< grammar.lexemes.at(argument_expression.lexeme_begin).get_line() << " col " << grammar.lexemes.at(argument_expression.lexeme_begin).get_column()
+				<< "): type mismatch in argument #" << argument_expression_index + 1 << ": the provided argument type,
+				<< "<" << storage_scope.type(argument_expression.output_type).get_repr(storage_scope) << ">, does not match the expected parameter type, <" << storage_scope.type(parameter_type).get_repr(storage_scope) << ">"
+				;
+			throw SemanticsError(sstr.str());
+		}
+
+		if (!storage_scope.type(argument_expression.output_type).get_fixed_width()) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::analyze_call: error (line "
+				<< grammar.lexemes.at(argument_expression.lexeme_begin).get_line() << " col " << grammar.lexemes.at(argument_expression.lexeme_begin).get_column()
+				<< "): for argument #" << argument_expression_index + 1 << ", variable-width arguments are unsupported, for type "
+				<< "<" << storage_scope.type(argument_expression.output_type).get_repr(storage_scope) << ">"
+				;
+			throw SemanticsError(sstr.str());
+		}
+
+		parameter_is_refs.push_back(parameter_is_ref);
+		parameter_types.push_back(&storage_scope.type(parameter_type));
+		//parameter_is_primitive_refs.push_back(parameter_is_ref && storage_scope.resolve_type(argument_expression.output_type).is_primitive());
+		// Edit: Variables should always have addresses, and never be primitive refs that are direct registers.
+		// Edit: now parameter_is_primitive_refs refers to whether it's a primitive ref for which a direct register is supplied, but this currently doesn't happen.
+		parameter_is_primitive_refs.push_back(false);
+	}
+
+	// Evaluate all arguments.
+	std::vector<Index>                argument_outputs;
+	std::vector<bool>                 is_lvalue;
+	std::vector<Index>                lvalue_outputs;          // Includes the lvalue_index after the merge.  Don't use the lvalue_index value in the lvalue_source_analyses.
+	std::vector<LvalueSourceAnalysis> lvalue_source_analyses;  // Don't use lvalue_index from here; use the post-merged indices from lvalue_outputs.
+	for (const Expression &argument_expression : std::as_const(argument_expressions)) {
+		const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
+
+		const bool &argument_is_ref           = parameter_is_refs[argument_expression_index];
+		const Type &argument_type             = *parameter_types[argument_expression_index];
+		const bool &argument_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
+
+		const Index argument_output_index = block.back = block.instructions.merge(argument_expression.instructions, block.back, argument_expression.output_index);
+		argument_outputs.push_back(argument_output_index);
+
+		// Is this an lvalue?  Get the lvalue analysis if so.
+		const ::Expresion &expression = expressions[argument_expression_index];
+		if (expression.branch != Expression::lvalue_branch) {
+			is_lvalue.push_back(false);
+			lvalue_outputs.push_back(std::numeric_limits<Index>::max());
+			lvalue_source_analyses.push_back(LvalueSourceAnalysis());
+		} else {
+			const ::Expression::Lvalue       &expression_lvalue           = grammar.expression_lvalue_storage.at(expression_symbol.data);
+			const Lvalue                     &lvalue                      = grammar.lvalue_storage.at(expression_lvalue.lvalue);
+			const LexemeIdentifier           &lexeme_identifier           = grammar.lexemes.at(lvalue_symbol.identifier).get_identifier();
+			const LvalueAccessorClauseList   &lvalue_accessor_clause_list = grammar.lvalue_accessor_clause_list_storage.at(lvalue_symbol.lvalue_accessor_clause_list);
+			LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+			const Index lvalue_output_index = block.back = block.instructions.merge(lvalue_source_analysis.instructions, block.back, lvalue_source_analysis.lvalue_index);
+			is_lvalue.push_back(true);
+			lvalue_outputs.push_back(lvalue_output_index);
+			lvalue_source_analyses.push_back(lvalue_source_analysis);
+		}
+	}
+
+	// Our call stack looks like this:
+	// 0. (Argument storages are on the caller routine's stack.)
+	// 1. The return address.
+	// 2. This routine's local variables.
+	// 3. Stack space for extra working storages if needed.  Before any call is made, $sp points here.
+
+	// We'll perform a call, temporarily adding the following to our stack:
+	// 4. Copies of non-Ref arrays and records.  This entire component is 8-byte aligned.
+	// 5. Direct register Ref storages; the register is recovered when the call
+	//    returns.  See #7 for more information.
+	// 6. Saved registers.  This entire component is 8-byte aligned.
+	//    MIPSIO::emit() handles the pseudoinstruction we add.
+	// 7. Arguments.  Array and record arguments will point to the original
+	//    array or record for Ref parameters, or it will point to the copied
+	//    array or record for Var parameters.  For all primitive Var arguments,
+	//    a LoadFrom copies the 4-byte (4-byte alignment) or 1-byte value
+	//    (1-byte alignment) onto the stack.  The stack space allocated for all
+	//    arguments is 8-byte aligned, but individual arguments can aligned to
+	//    fewer bytes, depending on the argument.
+	//
+	//    Finally, there are Ref arguments to primitive variables (these are
+	//    lvalue expressions; non-lvalue expressions are an error for Refs).
+	//    Ultimately, all primitive Ref arguments are put on the stack not as
+	//    primitive copies but as 4-byte pointers.  Variables are typed fixed
+	//    storages, so we know the type of the storage.  All storages except
+	//    for direct registers refer to an address; in this case simply get the
+	//    current address of the storage and copy the address to the stack as
+	//    the argument.
+	//
+	//    If the storage for a variable used as a Ref argument is a fixed
+	//    register, we need to do a little more work: without adding extra
+	//    complexity or encoding, we need an address for the Ref argument to be
+	//    stored to.  So for all direct registers provided as arguments to
+	//    primitive Refs, allocate a new storage in #5 with an address, copy
+	//    the current variable value to it, set the argument to this address,
+	//    and when the call is done, read from this address back into the
+	//    direct register.
+	int32_t stack_allocated            = 0;
+
+	int32_t var_nonprimitive_allocated = 0;
+	int32_t direct_ref_allocated       = 0;
+
+	int32_t pushed_arg_allocated       = 0;
+
+	// Write code to push copies of non-ref arrays and records onto the stack.
+	// Store the base address offsets of these.
+	std::vector<bool>     is_argument_expression_var_nonprimitives;
+	// The offsets are relative to the first var nonprimitive.
+	std::vector<uint32_t> var_nonprimitive_offsets;
+	// First, just get the offsets and sizes.
+	for (const Expression &argument_expression : std::as_const(argument_expressions)) {
+		const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
+
+		const bool &argument_is_ref           = parameter_is_refs[argument_expression_index];
+		const Type &argument_type             = *parameter_types[argument_expression_index];
+		const bool &argument_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
+
+		if (argument_is_ref || argument_type.resolve_type(storage_scope).is_primitive()) {
+			is_argument_expression_var_nonprimitives.push_back(false);
+			var_nonprimitive_offsets.push_back(std::numeric_limits<uint32_t>::max());  // Unused.
+		} else {
+			is_argument_expression_var_nonprimitives.push_back(true);
+			var_nonprimitive_offsets.push_back(var_nonprimitive_allocated);
+			var_nonprimitive_allocated = Instruction::AddSp::round_to_align(var_nonprimitive_allocated + storage_scope.type(argument_type).get_size(), 4);
+		}
+	}
+	// For all combined non-ref array and record copies, align to 8 bytes.
+	var_nonprimitive_allocated = Instruction::AddSp::round_to_align(var_nonprimitive_allocated);
+	stack_allocated += var_nonprimitive_allocated;
+	// Next, write code to allocate var_nonprimitive_allocated and copy the array or record.
+	if (var_nonprimitive_allocated != 0) {
+		block.back = block.instructions.add_instruction({I::AddSp(B(), -var_nonprimitive_allocated)}, {}, {block.back});
+	}
+	// Get 2 temporary fixed Variables for us to use for our manual memmove loop.  4 bytes rounded to 8 bytes.
+	int32_t temporary_variables_allocated = Instruction::AddSp::round_to_align(2 * Type::Primitive::integer_type.get_size());
+	block.back = block.instructions.add_instruction({I::AddSp(B(), -temporary_variables_allocated)}, {}, {block.back});
+	Storage temporary_offset_integer_var = Storage("$sp", Type::Primitive::integer_type.get_size(), 0 * Type::Primitive::integer_type.get_size());
+	Storage temporary_address_var        = Storage("$sp", Type::Primitive::integer_type.get_size(), 1 * Type::Primitive::integer_type.get_size());
+	std::vector<Index> var_nonprimitive_address_indices;
+	for (const Expression &argument_expression : std::as_const(argument_expressions)) {
+		const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
+
+		const Index &argument_output = argument_outputs[argument_expression_index];
+
+		const bool &argument_is_ref           = parameter_is_refs[argument_expression_index];
+		const Type &argument_type             = *parameter_types[argument_expression_index];
+		const bool &argument_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
+
+		const bool     &is_argument_expression_var_nonprimitive = is_argument_expression_var_nonprimitives[argument_expression_index];
+		const uint32_t  var_nonprimitive_offset                 = var_nonprimitive_offsets[argument_expression_index];
+
+		if (!is_argument_expression_var_nonprimitive) {
+			// Nothing to do here other than add a sentinel index to keep things aligned.  (Note: we don't remove these when setting nosaves, so it shouldn't refer to an existing instruction.)
+			var_nonprimitive_address_indices.push_back(std::numeric_limits<Index>::max());
+		} else {
+			// Add a storage that refers to the base address of this copied array or record.
+			//const Storage var_nonprimitive_storage = Storage("$sp", 4, var_nonprimitive_offset);  // Wait...this storage will dereference it!
+			//var_nonprimitive_storages.push_back(var_nonprimitive_storage);
+
+			// memmove for dest < src: equivalent of this:
+			// 	temp0 = dest
+			// 	temp1 = src
+			// 	while (temp0 < dest + argument_type.get_size()) {
+			// 		*temp0++ = *temp1++;
+			// 	}
+			// Get dest and src addresses into dynamically selected storages.  Initialize offset to 0.
+			const Index dest_index             = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, temporary_variables_allocated + var_nonprimitive_offset, false, true, Storage(), Storage("$sp"))}, {}, {block.back});
+			const Index src_index              = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true)}, {argument_output}, {block.back});
+			const Index zero_initialize_offset = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, temporary_offest_integer_var, Storage("$zero"))}, {}, {block.back});
+			var_nonprimitive_address_indices.push_back(dest_index);
+
+			// Manually put in our while loop.
+			// Analyze the "while" block condition.  Don't merge it yet.
+			const Symbol     while_symbol      = Symbol(labelify(lexeme_identifier_text, "memmove_while")     + "_arg_" + std::to_string(argument_expression_index), "", lexeme_identifier_index0);
+			const Symbol     checkwhile_symbol = Symbol(labelify(lexeme_identifier_text, "memmove_checkwhile")+ "_arg_" + std::to_string(argument_expression_index), "", lexeme_identifier_index0);
+			const Symbol     endwhile_symbol   = Symbol(labelify(lexeme_identifier_text, "memmove_endwhile")  + "_arg_" + std::to_string(argument_expression_index), "", lexeme_identifier_index0);
+
+			// Analyze the "while" block.
+			const Block while_block = analyze_statements(routine_declaration, while_statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol);
+
+			// First, jump to "checkwhile" to check the condition for the first time.
+			block.back = block.instructions.add_instruction({I::Jump(B(), checkwhile_symbol)}, {}, {block.back});
+
+			// "while" label.
+			block.back = block.instructions.add_instruction({I::Ignore(B(true, while_symbol), false, false)}, {}, {block.back});
+
+			// "while" block.
+			// ...
+			const Index get_temporary_offset_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), temporary_offset_integer_var)}, {}, {block.back});
+			const Index get_src_byte_address       = block.back = block.instructions.add_instruction({I::AddFrom(B(), true)}, {src_index, get_temporary_offset_index}, {block.back});
+			const Index get_src_byte               = block.back = block.instructions.add_instruction({I::LoadFrom(B(), false, false, 0, false, false, Storage(), Storage(), false, true)}, {get_src_byte_address}, {block.back});
+			const Index get_dest_byte_address      = block.back = block.instructions.add_instruction({I::AddFrom(B(), true)}, {dest_index, get_temporary_offset_index}, {block.back});
+			const Index increment_offset_index     = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 1, true, true, temporary_offset_integer_var, temporary_offset_integer_var)}, {}, {block.back});
+			const Index copy_dest_byte_address     = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, false, temporary_address_var, Storage())}, {get_dest_byte_address}, {block.back});
+			const Index write_byte_index           = block.back = block.instructions.add_instruction({I::LoadFrom(B(), false, false, 0, true, false, temporary_address_var, Storage(), true, false)}, {get_src_byte}, {block.back});
+
+			// "checkwhile" label.
+			block.back = block.instructions.add_instruction({I::Ignore(B(true, checkwhile_symbol), false, false)}, {}, {block.back});
+
+			// "while" condition.  (BranchZero has the branch_non_zero flag set to true.)
+			// ...
+			const Index get_temporary_offset_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), temporary_offset_integer_var)}, {}, {block.back});
+			const Index get_type_size_index        = block.back = block.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(argument_type.get_size()), 0, 0))}, {}, {block.back});
+			const Index while_condition_index      = block.back = block.instructions.add_instruction({I::LessThanFrom(B(), true)}, {}, {block.back});
+			block.back = block.instructions.add_instruction({I::BranchZero(B(), false, while_symbol, true)}, {get_temporary_offset_index, get_type_size_index}, {block.back});
+
+			// "endwhile label".  We don't need the endwhile label, and it is unused, but emit it anyway for readability.
+			if (emit_extra_redundant_labels) {
+				block.back = block.instructions.add_instruction({I::Ignore(B(true, endwhile_symbol), false, false)}, {}, {block.back});
+			}
+		}
+	}
+	// Free our temporary variables.
+	block.back = block.instructions.add_instruction({I::AddSp(B(), temporary_variables_allocated)}, {}, {block.back});
+
+	// Next up, direct register ref storages.
+
+	// Store the base address offsets of these.
+	std::vector<bool>     is_argument_direct_register_ref;
+	// The offsets are relative to the first direct register ref.
+	std::vector<uint32_t> direct_register_ref_offsets;
+	// First, just get the offsets and sizes.
+	for (const Expression &argument_expression : std::as_const(argument_expressions)) {
+		const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
+
+		const bool &argument_is_ref           = parameter_is_refs[argument_expression_index];
+		const Type &argument_type             = *parameter_types[argument_expression_index];
+		const bool &argument_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
+
+		if (argument_is_ref || argument_type.resolve_type(storage_scope).is_primitive()) {
+			is_argument_direct_register_ref.push_back(false);
+			direct_register_ref_offsets.push_back(std::numeric_limits<uint32_t>::max());  // Unused.
+		} else {
+			is_argument_direct_register_ref.push_back(true);
+			direct_register_ref_offsets.push_back(direct_register_ref_offsets);
+			direct_register_ref_offsets = Instruction::AddSp::round_to_align(direct_register_ref_offsets + storage_scope.type(argument_type).get_size(), storage_scope.type(argument_type).get_size());
+		}
+	}
+	// For all combined direct register ref storages, align to 8 bytes.
+	direct_ref_allocated = Instruction::AddSp::round_to_align(direct_ref_allocated);
+	stack_allocated += direct_ref_allocated;
+	// Next, write code to copy these values to the ref storages.  After the call returns, we will put what's in these storages back in the Variable.
+	if (direct_ref_allocated != 0) {
+		block.back = block.instructions.add_instruction({I::AddSp(B(), -direct_ref_allocated)}, {}, {block.back});
+	}
+	for (const Expression &argument_expression : std::as_const(argument_expressions)) {
+		const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
+
+		const Index &argument_output = argument_outputs[argument_expression_index];
+
+		const bool &argument_is_ref           = parameter_is_refs[argument_expression_index];
+		const Type &argument_type             = *parameter_types[argument_expression_index];
+		const bool &argument_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
+
+		if (!argument_is_primitive_ref) {
+			// Nothing to do here.
+		} else {
+			// Load the value into the ref storage.
+			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), argument_type.get_primitive().is_word(), argument_type.get_primitive().is_word(), 0, true, false, Storage("$sp", argument_type.get_primitive().is_word() ? 4 : 1, direct_register_ref_offsets[argument_expression_index]), Storage())}, {argument_output}, {block.back});
+		}
+	}
+
+	// Next, push registers that need to be saved onto the stack.
+	std::vector<Index> nosaves(std::as_const(argument_outputs));
+	nosaves.insert(nosaves.end(), var_nonprimitive_address_indices.cbegin(), var_nonprimitive_address_indices.cend());
+	const Index save_registers = block.back = block.instructions.add_instruction({I::Call(B(), Symbol(), true, false, nosaves)}, {}, {block.back});
+
+	// Next, put the first 4 arguments in $a0-$a3, and push the rest.
+
+	// Sizes first.
+
+	// Store the base address offsets of these.
+	std::vector<bool>     is_argument_pushed;
+	// The offsets are relative to the first pushed argument.
+	std::vector<uint32_t> pushed_argument_offsets;
+	// First, just get the offsets and sizes.
+	for (const Expression &argument_expression : std::as_const(argument_expressions)) {
+		const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
+
+		const bool &argument_is_ref           = parameter_is_refs[argument_expression_index];
+		const Type &argument_type             = *parameter_types[argument_expression_index];
+		const bool &argument_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
+
+		//const bool is_word = !argument_type.resolve_type(storage_scope).is_primitive() || argument_type.resolve_type(storage_scope).get_primitive().is_word() || (!argument_is_var_nonprimitive && !argument_is_primitive_ref);
+		const bool is_word = !argument_type.resolve_type(storage_scope).is_primitive() || argument_type.resolve_type(storage_scope).get_primitive().is_word() || (!argument_is_var_nonprimitive && !argument_is_primitive_ref) || argument_is_ref;
+
+		if (argument_expression_index < 4) {
+			is_argument_pushed.push_back(false);
+			pushed_argument_offsets.push_back(std::numeric_limits<uint32_t>::max());  // Unused.
+		} else {
+			is_argument_pushed.push_back(true);
+			pushed_argument_offsets.push_back(pushed_argument_offsets);
+			pushed_argument_offsets = Instruction::AddSp::round_to_align(pushed_argument_offsets + (is_word ? 4 : 1), is_word ? 4 : 1);
+		}
+	}
+	// For all combined direct register ref storages, align to 8 bytes.
+	pushed_arg_allocated = Instruction::AddSp::round_to_align(pushed_arg_allocated);
+	stack_allocated += pushed_arg_allocated;
+	// Next, write code to copy these values to the ref storages.  After the call returns, we will put what's in these storages back in the Variable.
+	if (pushed_arg_allocated != 0) {
+		block.back = block.instructions.add_instruction({I::AddSp(B(), -pushed_arg_allocated)}, {}, {block.back});
+	}
+
+	// Now code.
+	for (const Expression &argument_expression : std::as_const(argument_expressions)) {
+		const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
+
+		const Index &argument_output = argument_outputs[argument_expression_index];
+
+		const bool &argument_is_ref              = parameter_is_refs[argument_expression_index];
+		const Type &argument_type                = *parameter_types[argument_expression_index];
+		const bool &argument_is_var_nonprimitive = is_argument_expression_var_nonprimitives[argument_expression_index];
+		const bool &argument_is_primitive_ref    = parameter_is_primitive_refs[argument_expression_index];
+
+		//const bool is_word = !argument_type.resolve_type(storage_scope).is_primitive() || argument_type.resolve_type(storage_scope).get_primitive().is_word() || (!argument_is_var_nonprimitive && !argument_is_primitive_ref);
+		const bool is_word = !argument_type.resolve_type(storage_scope).is_primitive() || argument_type.resolve_type(storage_scope).get_primitive().is_word() || !argument_is_var_nonprimitive || argument_is_ref;
+		const Storage argument_storage
+			//= argument_expression_index < 4
+			= !is_argument_pushed[argument_expression_index]
+			? Storage(is_word ? 4 : 1, false, Symbol(), "$a" + std::to_string(argument_expression_index), false, 0)
+			: Storage("$sp", is_word ? 4 : 1, pushed_argument_offsets[argument_expression_index])
+			;
+
+		if (!argument_is_var_nonprimitive && !argument_is_primitive_ref) {
+			// It's not a direct register primitive ref.  But is it a primitive ref?
+			if (!(argument_is_ref && storage_scope.resolve_type(argument_type).is_primitive())) {
+				const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {argument_output}, {block.back});
+			} else {
+				// We have to push the address of what the Variable refers to instead of copying the value.
+				// Callees, when reading arguments, can read from them
+				// directly, and need to be concerned only with primitive ref
+				// types, whether they ultimately come from a direct register
+				// or not.  Primitive refs are addresses to the primitive location.
+
+				if (!is_lvalue[argument_expression_index]) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_call: error (line "
+						<< grammar.lexemes.at(argument_expression.lexeme_begin).get_line() << " col " << grammar.lexemes.at(argument_expression.lexeme_begin).get_column()
+						<< "): for argument #" << argument_expression_index + 1 << ", an lvalue Ref argument was expected for a primitive Ref parameter, but the expression is not an lvalue, for type "
+						<< "<" << storage_scope.type(argument_expression.output_type).get_repr(storage_scope) << ">"
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				const Index                &lvalue_output_index    = lvalue_outputs[argument_expression_index];
+				const LvalueSourceAnalysis &lvalue_source_analysis = lvalue_source_analyses[argument_expression_index];
+
+				// If it's not a fixed storage (e.g. for the Ref the caller provides an index into an array), we can just copy the reference.
+				if (!lvalue_source_analysis.is_lvalue_fixed_storage) {
+					const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {lvalue_output_index}, {block.back});
+				} else {
+					// It's a primitive, and we have the storage.
+					const Storage &primitive_storage = lvalue_source_analysis.lvalue_fixed_storage;
+
+					// See if the lvalue is not itself a primref (pointer).
+					if (!lvalue_source_analysis.is_lvalue_primref {
+						// The storage refers to the base primitive.
+						if (!primitive_storage.is_register_direct()) {
+							std::ostringstream sstr;
+							sstr
+								<< "Semantics::analyze_call: internal error (line "
+								<< grammar.lexemes.at(argument_expression.lexeme_begin).get_line() << " col " << grammar.lexemes.at(argument_expression.lexeme_begin).get_column()
+								<< "): for argument #" << argument_expression_index + 1 << ", currently, Variables are never implemented as direct registers, but somehow this was case, for type "
+								<< "<" << storage_scope.type(argument_expression.output_type).get_repr(storage_scope) << ">"
+								;
+							throw SemanticsError(sstr.str());
+						} else if (primitive_storage.is_register_dereference()) {
+							const Index copy_address_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, primitive_storage.offset, true, true, argument_storage, Storage(primitive_storage.register_))}, {}, {block.back});
+						} else if (primitive_storage.is_global_address()) {
+							std::ostringstream sstr;
+							sstr
+								<< "Semantics::analyze_call: internal error (line "
+								<< grammar.lexemes.at(argument_expression.lexeme_begin).get_line() << " col " << grammar.lexemes.at(argument_expression.lexeme_begin).get_column()
+								<< "): for argument #" << argument_expression_index + 1 << " an undereferenced global address cannot be provided as a primitive Ref, for type "
+								<< "<" << storage_scope.type(argument_expression.output_type).get_repr(storage_scope) << ">"
+								;
+							throw SemanticsError(sstr.str());
+						} else {  // primitive_storage.is_global_dereference()
+							const Storage ref_var_storage = Storage(primitive_storage.global_address, false, 4, primitive_storage.offset);
+							const Index copy_address_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, primitive_storage.offset, true, true, argument_storage, ref_var_storage)}, {}, {block.back});
+						}
+					} else {
+						// The storage contains the address of the base primitive.  Just copy the address as if it were an array.
+						const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, argument_storage, lvalue_source_analysis.lvalue_fixed_storage)}, {}, {block.back});
+					}
+				}
+			}
+		} else if (argument_is_var_nonprimitive) {
+			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, true, argument_storage, Storage("$sp", is_word ? 4 : 1, pushed_arg_allocated + direct_ref_allocated + var_nonprimitive_offsets[argument_expression_index]))}, {}, {block.back});
+		} else {  // argument_is_primitive_ref
+			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, true, argument_storage, Storage("$sp", is_word ? 4 : 1, pushed_arg_allocated + direct_register_ref_offsets[argument_expression_index]))}, {}, {block.back});
+		}
+	}
+
+	// Call the function.
+	const Index call_index = block.back = block.instructions.add_instruction({I::Call(B(), callee_routine_declaration.location)}, {}, block.back);
+
+	// Now we can reverse what we pushed.
+
+	// Pop arguments and discard them.
+	if (pushed_arg_allocated != 0) {
+		block.back = block.instructions.add_instruction({I::AddSp(B(), pushed_arg_allocated)}, {}, {block.back});
+	}
+
+	// Pop registers that were saved onto the stack.
+	const Index restore_registers = block.back = block.instructions.add_instruction({I::Call(B(), Symbol(), false, true, nosaves)}, {}, {block.back});
+
+	// Pop direct refs
+
+	// Restore the direct refs.
+	// Edit: Currently, Variables are never implement as direct registers, so pushed direct refs should be empty right now.
+	if (direct_ref_allocated != 0) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::analyze_call: internal error (line "
+			<< call_identifier.line << " col " << call_identifier.column
+			<< "): restoring refs to direct register Variable is currently not supported, and currently Variables aren't implemented as direct registers, for call of ``"
+			<< call_identifier.text
+			<< "\"."
+			;
+		throw SemanticsError(sstr.str());
+	}
+	if (direct_ref_allocated != 0) {
+		block.back = block.instructions.add_instruction({I::AddSp(B(), direct_ref_allocated)}, {}, {block.back});
+	}
+
+	// Pop array copies and discard them.
+	if (var_nonprimitive_allocated != 0) {
+		block.back = block.instructions.add_instruction({I::AddSp(B(), var_nonprimitive_allocated)}, {}, {block.back});
+	}
+
+	// Retrieve the output from $v0, if the callee returns output.
+	Index callee_output_index = std::numeric_limits<Index>::max();
+	if (callee_has_output) {
+		const Type &callee_output_resolved_type = storage_scope.resolve_type(*collee_output);
+		const bool is_word = callee_output_resolved_type.in_primitive() || callee_output_resolved_type.get_primitive().is_word();
+		callee_output_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, true, 0, false, true {}, Storage("$v0"))}, {}, block.back);
+	}
+
+	// We're done.
+	if (callee_has_output) {
+		return {block, {{callee_output_index, *callee_output}}};
+	} else {
+		return {block, {}};
+	}
+}
+
 // | Analyze a sequence of statements.
 //
 // Note: this does not need to necessarily correspond to a ::Block in the
@@ -12712,7 +13008,9 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				const LexemeOperator &colonequals_operator0 = grammar.lexemes.at(assignment.colonequals_operator0).get_operator(); (void) colonequals_operator0;
 				const ::Expression   &expression0           = grammar.expression_storage.at(assignment.expression);
 
-				block.lexeme_begin = lvalue.identifier;
+				if (block.instructions.instructions.size() <= 1) {
+					block.lexeme_begin = lvalue.identifier;
+				}
 
 				// Lookup the lvalue.
 				LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
@@ -12749,22 +13047,84 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				block.instructions.add_sequence_connection(block.back, value_index);
 				block.back = value_index;
 
-				// Writing arrays and records (copying them) is currently unimplemented.
-				if (storage_scope.type(value.output_type).resolve_type(storage_scope).is_record() || storage_scope.type(value.output_type).resolve_type(storage_scope).is_array()) {
-					std::ostringstream sstr;
-					sstr
-						<< "Semantics::analyze_statements: error (line "
-						<< lvalue_source_analysis.lvalue_identifier->line << " col " << lvalue_source_analysis.lvalue_identifier->column
-						<< "): assignment of an array or record is currently unimplemented.  TODO: copy array or record."
-						;
-					throw SemanticsError(sstr.str());
-				}
+				// Are we writing a primitive?
+				if (storage_scope.type(value.output_type).resolve_type(storage_scope).is_primitive()) {
+					// Yep.
 
-				// Write to the lvalue.
-				if (!lvalue_source_analysis.is_lvalue_fixed_storage) {
-					block.back = block.instructions.add_instruction({I::LoadFrom(B(), storage_scope.type(value.output_type).resolve_type(storage_scope).get_primitive().is_word())}, {lvalue_index, value_index}, {block.back});
+					// Write to the lvalue.
+					if (!lvalue_source_analysis.is_lvalue_fixed_storage) {
+						block.back = block.instructions.add_instruction({I::LoadFrom(B(), storage_scope.type(value.output_type).resolve_type(storage_scope).get_primitive().is_word())}, {lvalue_index, value_index}, {block.back});
+					} else {
+						// It's a primitive.  Write to it directly if it isn't a pointer; otherwise, dereference it (check is_lvalue_primref).
+						block.back = block.instructions.add_instruction({I::LoadFrom(B(), lvalue_source_analysis.lvalue_fixed_storage.max_size == 4, storage_scope.type(value.output_type).resolve_type(storage_scope).get_primitive().is_word(), 0, true, false, lvalue_source_analysis.lvalue_fixed_storage, Storage(), lvalue_source_analysis.is_lvalue_primref, false)}, {value_index}, {block.back});
+					}
 				} else {
-					block.back = block.instructions.add_instruction({I::LoadFrom(B(), lvalue_source_analysis.lvalue_fixed_storage.max_size == 4, storage_scope.type(value.output_type).resolve_type(storage_scope).get_primitive().is_word(), 0, true, false, lvalue_source_analysis.lvalue_fixed_storage, Storage(), false, false)}, {value_index}, {block.back});
+					// Nope.  We're writing an array or record.  Copy all the bytes.
+
+					// Get 2 temporary fixed Variables for us to use for our manual memmove loop.  4 bytes rounded to 8 bytes.
+					const int32_t temporary_variables_allocated = Instruction::AddSp::round_to_align(2 * Type::Primitive::integer_type.get_size());
+					block.back = block.instructions.add_instruction({I::AddSp(B(), -temporary_variables_allocated)}, {}, {block.back});
+					const Storage temporary_offset_integer_var = Storage("$sp", Type::Primitive::integer_type.get_size(), 0 * Type::Primitive::integer_type.get_size());
+					const Storage temporary_address_var        = Storage("$sp", Type::Primitive::integer_type.get_size(), 1 * Type::Primitive::integer_type.get_size());
+
+					// Add a storage that refers to the base address of this copied array or record.
+					//const Storage var_nonprimitive_storage = Storage("$sp", 4, var_nonprimitive_offset);  // Wait...this storage will dereference it!
+					//var_nonprimitive_storages.push_back(var_nonprimitive_storage);
+
+					// memmove for dest < src: equivalent of this:
+					// 	temp0 = dest
+					// 	temp1 = src
+					// 	while (temp0 < dest + argument_type.get_size()) {
+					// 		*temp0++ = *temp1++;
+					// 	}
+					// Get dest and src addresses into dynamically selected storages.  Initialize offset to 0.
+					const Index dest_index             = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), lvalue_source_analysis.lvalue_fixed_storage)}, {}, {block.back});
+					const Index src_index              = value_index;
+					const Index zero_initialize_offset = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, temporary_offest_integer_var, Storage("$zero"))}, {}, {block.back});
+					var_nonprimitive_address_indices.push_back(dest_index);
+
+					// Manually put in our while loop.
+					// Analyze the "while" block condition.  Don't merge it yet.
+					const Symbol     while_symbol      = Symbol(labelify(lexeme_identifier_text, "memmove_while")     + "_arg_" + std::to_string(argument_expression_index), "", lexeme_identifier_index0);
+					const Symbol     checkwhile_symbol = Symbol(labelify(lexeme_identifier_text, "memmove_checkwhile")+ "_arg_" + std::to_string(argument_expression_index), "", lexeme_identifier_index0);
+					const Symbol     endwhile_symbol   = Symbol(labelify(lexeme_identifier_text, "memmove_endwhile")  + "_arg_" + std::to_string(argument_expression_index), "", lexeme_identifier_index0);
+
+					// Analyze the "while" block.
+					const Block while_block = analyze_statements(routine_declaration, while_statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol);
+
+					// First, jump to "checkwhile" to check the condition for the first time.
+					block.back = block.instructions.add_instruction({I::Jump(B(), checkwhile_symbol)}, {}, {block.back});
+
+					// "while" label.
+					block.back = block.instructions.add_instruction({I::Ignore(B(true, while_symbol), false, false)}, {}, {block.back});
+
+					// "while" block.
+					// ...
+					const Index get_temporary_offset_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), temporary_offset_integer_var)}, {}, {block.back});
+					const Index get_src_byte_address       = block.back = block.instructions.add_instruction({I::AddFrom(B(), true)}, {src_index, get_temporary_offset_index}, {block.back});
+					const Index get_src_byte               = block.back = block.instructions.add_instruction({I::LoadFrom(B(), false, false, 0, false, false, Storage(), Storage(), false, true)}, {get_src_byte_address}, {block.back});
+					const Index get_dest_byte_address      = block.back = block.instructions.add_instruction({I::AddFrom(B(), true)}, {dest_index, get_temporary_offset_index}, {block.back});
+					const Index increment_offset_index     = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 1, true, true, temporary_offset_integer_var, temporary_offset_integer_var)}, {}, {block.back});
+					const Index copy_dest_byte_address     = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, false, temporary_address_var, Storage())}, {get_dest_byte_address}, {block.back});
+					const Index write_byte_index           = block.back = block.instructions.add_instruction({I::LoadFrom(B(), false, false, 0, true, false, temporary_address_var, Storage(), true, false)}, {get_src_byte}, {block.back});
+
+					// "checkwhile" label.
+					block.back = block.instructions.add_instruction({I::Ignore(B(true, checkwhile_symbol), false, false)}, {}, {block.back});
+
+					// "while" condition.  (BranchZero has the branch_non_zero flag set to true.)
+					// ...
+					const Index get_temporary_offset_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), temporary_offset_integer_var)}, {}, {block.back});
+					const Index get_type_size_index        = block.back = block.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(argument_type.get_size()), 0, 0))}, {}, {block.back});
+					const Index while_condition_index      = block.back = block.instructions.add_instruction({I::LessThanFrom(B(), true)}, {}, {block.back});
+					block.back = block.instructions.add_instruction({I::BranchZero(B(), false, while_symbol, true)}, {get_temporary_offset_index, get_type_size_index}, {block.back});
+
+					// "endwhile label".  We don't need the endwhile label, and it is unused, but emit it anyway for readability.
+					if (emit_extra_redundant_labels) {
+						block.back = block.instructions.add_instruction({I::Ignore(B(true, endwhile_symbol), false, false)}, {}, {block.back});
+					}
+
+					// Free our temporary variables.
+					block.back = block.instructions.add_instruction({I::AddSp(B(), temporary_variables_allocated)}, {}, {block.back});
 				}
 
 				// We're done.
@@ -13151,6 +13511,34 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				const ExpressionSequenceOpt &expression_sequence_opt    = grammar.expression_sequence_opt_storage.at(procedure_call.expression_sequence_opt);
 				const LexemeOperator        &rightparenthesis_operator0 = grammar.lexemes.at(procedure_call.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
 
+				if (block.instructions.instructions.size() <= 1) {
+					block.lexeme_begin = call.identifier;
+				}
+				block.lexeme_end = call.rightparenthesis_operator0 + 1;
+
+				// Analyze the call.
+				std::pair<Block, std::optional<std::pair<Index, TypeIndex>>> call_analysis = analyze_call(routine_declaration, call_identifier, expression_sequence_opt, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Block &call_block        = call_analysis.first;
+				const bool   call_has_output   = call_analysis.second.has_value();
+				const Index  call_output_index = call_has_output ? std::numeric_limits<Index>::max() : call_analysis.second->first;
+
+				// Fail if unused function outputs are prohibited.
+				if (!permit_unused_function_outputs) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_expression: error (line "
+						<< call_identifier.line << " col " << call_identifier.column
+						<< "): permit_unused_function_outputs is configured to false (set to true to permit this and prevent this error), but the output of a function call was ignored for a call to ``"
+						<< call_identifier.text
+						<< "\"."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				// Merge the instructions.  Set the output index to the output of the call.  (Ignore front and back.)
+				const Index call_block_index = block.back = block.instructions.merge(call_block.instructions, block.back, call_block.front, call_block.back);
+
+				// We're done.
 				break;
 			} case Statement::null__branch: {
 				const Statement::Null_ &statement_null_ = grammar.statement_null__storage.at(statement.data);
@@ -13353,35 +13741,29 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			throw SemanticsError(sstr.str());
 		}
 
+		const bool is_primitive_and_ref  = parameter_is_ref && storage_scope.resolved_type(parameter_index).is_primitive();
+		const bool is_resolved_type_word = !storage_scope.resolved_type(parameter_index).is_primitive() || storage_scope.resolved_type(parameter_index).is_primitive().is_word();
 		if (parameter_index < 4) {
-			Storage parameter_storage("$a" + std::to_string(parameter_index));
+			const Storage parameter_storage
+				= !is_primitive_and_ref
+				? parameter_storage("$a" + std::to_string(parameter_index));                                 // Just use $a directly; don't dereference.
+				: parameter_storage("$a" + std::to_string(parameter_index), is_resolved_type_word ? 4 : 1);  // The variable should dereference an address.
+				;
 
 			local_var_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
 			local_combined_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
 		} else {
-			if        (!all_arrays_records_are_refs && !parameter_is_ref && !storage_scope.type(parameter_type).resolve_type(storage_scope).is_primitive()) {
-				// TODO: copy arrays and records.
-				std::ostringstream sstr;
-				sstr << "Semantics::analyze_block: error: copying of arrays and records for non-Ref vars in arguments is currently not supported.";
-				throw SemanticsError(sstr.str());
-			} else if (!parameter_is_ref && !storage_scope.type(parameter_type).get_fixed_width()) {
-				std::ostringstream sstr;
-				sstr << "Semantics::analyze_block: error: loading non-fixed-width arguments is not supported.";
-				throw SemanticsError(sstr.str());
-			} else if (!parameter_is_ref && storage_scope.type(parameter_type).get_size() != 4 && storage_scope.type(parameter_type).get_size() != 1) {
-				std::ostringstream sstr;
-				sstr << "Semantics::analyze_block: error: loading fixed-width variable non-array/non-record arguments of size neither 4 nor 1 is currently not supported.";
-				throw SemanticsError(sstr.str());
-			} else {
-				const bool is_word = !storage_scope.type(parameter_type).is_primitive() || storage_scope.type(parameter_type).get_primitive().is_word();
+			const bool is_word = is_resolved_type_word || parameter_is_ref;
+			const Storage parameter_storage
+				= !is_primitive_and_ref
+				? Storage(is_word ? 4 : 1, false, Symbol(), "$sp", true, stack_argument_total_size, false, false);
+				: Storage(is_word ? 4 : 1, false, Symbol(), "$sp", true, stack_argument_total_size, false, false);
+				;
 
-				stack_argument_total_size += Instruction::AddSp::round_to_align(is_word ? 4 : 1);
+				stack_argument_total_size = Instruction::AddSp::round_to_align(stack_argument_total_size  + (is_word ? 4 : 1), is_word ? 4 : 1);
 
-				// Note: "no_sp_adjust" is "false" here, and "stack_allocated" and the $ra push is removed.
-				Storage parameter_storage(is_word ? 4 : 1, false, Symbol(), "$sp", true, stack_argument_total_size, false, false);
-
-				local_var_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
-				local_combined_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
+				local_var_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage, is_primitive_and_ref))});
+				local_combined_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage, is_primitive_and_ref))});
 			}
 		}
 	}

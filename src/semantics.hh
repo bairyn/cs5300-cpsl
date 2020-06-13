@@ -43,6 +43,7 @@ public:
 #define CPSL_CC_SEMANTICS_PERMIT_SHADOWING                         true
 #define CPSL_CC_SEMANTICS_EMIT_SOME_REDUNDANT_LABELS               true
 #define CPSL_CC_SEMANTICS_EMIT_EXTRA_REDUNDANT_LABELS              false
+#define CPSL_CC_SEMANTICS_PERMIT_UNUSED_FUNCTION_OUTPUTS           true
 
 // TODO: remove these redefinitions; they're only here to let me know when
 //       sequence connection delays and shadowing happen during development.
@@ -55,6 +56,7 @@ public:
 	static const bool permit_shadowing;
 	static const bool emit_some_redundant_labels;
 	static const bool emit_extra_redundant_labels;
+	static const bool permit_unused_function_outputs;
 
 	// | In the assembled output, locations marked as symbols will be replaced
 	// with a unique and consistent substring.
@@ -584,9 +586,10 @@ public:
 			class Var {
 			public:
 				Var();
-				Var(TypeIndex type, const Storage &storage);
+				Var(TypeIndex type, const Storage &storage, bool is_primitive_and_ref = false);
 				TypeIndex type;
-				Storage storage;
+				Storage   storage;
+				bool      is_primitive_and_ref;
 			};
 
 			// | Inputs and output.
@@ -1439,6 +1442,7 @@ public:
 		MIPSIO::Index           lvalue_index = 0;
 		Storage                 lvalue_fixed_storage;
 		bool                    is_lvalue_fixed_storage = false;  // If it's fixed storage, the type resolves to a primitive.  If it's not fixed storage, the type may or may not resolve to a primitive.  It's fixed storage only if there are no accessors.  If there are accessors, this is not a fixed storage.
+		bool                    is_lvalue_primref = false;  // Ignored if !is_value_fixed_storage.  If is_lvalue_primref, then the fixed storage refers not to base primref, but to the address of the base primref.
 		uint64_t                lexeme_begin = 0;
 		uint64_t                lexeme_end   = 0;
 	};
@@ -1532,6 +1536,14 @@ public:
 		Block(const MIPSIO  &instructions, MIPSIO::Index front, MIPSIO::Index back, const std::map<std::string, TypeIndex> &local_variables, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
 		Block(      MIPSIO &&instructions, MIPSIO::Index front, MIPSIO::Index back, const std::map<std::string, TypeIndex> &local_variables, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
 	};
+
+	// | Analyze a call and return a block that performs a call.  If the
+	// function returns a value, return the index to the instruction that
+	// retrieves the output too; otherwise, the second value is empty.
+	//
+	// Note: the caller_routine_declaration is the routine declaration of the
+	// caller's context, not of the called function or procedure.
+	std::pair<Block, std::optional<std::pair<Index, TypeIndex>>> analyze_call(const IdentifierScope::IdentifierBinding::RoutineDeclaration &caller_routine_declaration, const LexemeIdentifier &routine_identifier, const ExpressionSequenceOpt &expression_sequence_opt, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope);
 
 	// | Analyze a sequence of statements.
 	//
