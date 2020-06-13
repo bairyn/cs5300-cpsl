@@ -184,7 +184,11 @@ std::vector<Lexeme> scanlines(const std::vector<std::string> &lines) {
 
 	std::ostringstream sconcatenated;
 	for (const std::string &line : lines) {
-		sconcatenated << line << std::endl;
+		//sconcatenated << line << std::endl;
+		// TODO: FIXME: a line that contained only "$" seemed to confuse the
+		// lexer and extend the comment to the next line.  Fix this, but until
+		// then just add an extra space to each line as a workaround.
+		sconcatenated << line << " " << std::endl;
 	}
 	std::string concatenated = sconcatenated.str();
 
