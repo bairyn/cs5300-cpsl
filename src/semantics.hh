@@ -497,7 +497,7 @@ public:
 	class Storage {
 	public:
 		Storage();
-		Storage(uint32_t max_size, bool is_global, Symbol global_address, const std::string &register_, bool dereference, int32_t offset, bool no_sp_adjust = false, bool is_caller_preserved = false);
+		Storage(uint32_t max_size, bool is_global, Symbol global_address, const std::string &register_, bool dereference, int32_t offset, bool no_sp_adjust = true, bool is_caller_preserved = false);
 		// Specialized storage constructors.
 		// | Storage type #1: (&global) + x, and
 		// | Storage type #2: ((uint8_t *) &global)[x];  -- if global is already a byte pointer/array, global[x].
@@ -523,7 +523,7 @@ public:
 		int32_t     offset = 0;
 
 		// | If this is a dereferenced SP, adjust offset according to AddSp instructions?
-		bool no_sp_adjust = false;
+		bool no_sp_adjust = true;
 
 		// | If this is a register, does the caller preserve it?
 		bool is_caller_preserved = false;
