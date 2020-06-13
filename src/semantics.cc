@@ -13743,8 +13743,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			throw SemanticsError(sstr.str());
 		}
 
-		const bool is_primitive_and_ref  = parameter_is_ref && storage_scope.resolve_type(parameter_index).is_primitive();
-		const bool is_resolved_type_word = !storage_scope.resolve_type(parameter_index).is_primitive() || storage_scope.resolve_type(parameter_index).get_primitive().is_word();
+		const bool is_primitive_and_ref  = parameter_is_ref && storage_scope.resolve_type(parameter_type).is_primitive();
+		const bool is_resolved_type_word = !storage_scope.resolve_type(parameter_type).is_primitive() || storage_scope.resolve_type(parameter_type).get_primitive().is_word();
 		if (parameter_index < 4) {
 			const Storage parameter_storage
 				= !is_primitive_and_ref
