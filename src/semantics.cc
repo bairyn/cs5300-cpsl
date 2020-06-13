@@ -12911,7 +12911,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 					// See if the lvalue is not itself a primref (pointer).
 					if (!lvalue_source_analysis.is_lvalue_primref) {
 						// The storage refers to the base primitive.
-						if (!primitive_storage.is_register_direct()) {
+						if (primitive_storage.is_register_direct()) {
 							std::ostringstream sstr;
 							sstr
 								<< "Semantics::analyze_call: internal error (line "
