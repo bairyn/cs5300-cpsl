@@ -14120,6 +14120,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 		}
 	}
 
+	stack_allocated = Instruction::AddSp::round_to_align(stack_allocated);
+
 	// Start our chain of sequenced intro instructions.
 	Index last_intro_index = block_semantics.instructions.add_instruction({I::Ignore(B(), false, false)});
 	const Index first_intro_index = last_intro_index;
