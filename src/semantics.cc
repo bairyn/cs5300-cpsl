@@ -10739,7 +10739,7 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 
 			// It's a variable.
 			lvalue_source_analysis.lvalue_type             = type;
-			lvalue_source_analysis.lvalue_index            = 0;
+			lvalue_source_analysis.lvalue_index            = std::numeric_limits<Index>::max();
 			lvalue_source_analysis.lvalue_fixed_storage    = var.storage;
 			lvalue_source_analysis.is_lvalue_fixed_storage = true;
 			lvalue_source_analysis.is_lvalue_primref       = var.is_primitive_and_ref;
@@ -12599,7 +12599,11 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			const LexemeIdentifier           &lexeme_identifier           = grammar.lexemes.at(lvalue.identifier).get_identifier();
 			const LvalueAccessorClauseList   &lvalue_accessor_clause_list = grammar.lvalue_accessor_clause_list_storage.at(lvalue.lvalue_accessor_clause_list);
 			LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
-			const Index lvalue_output_index = block.back = block.instructions.merge(lvalue_source_analysis.instructions, block.back, lvalue_source_analysis.lvalue_index);
+			const Index lvalue_output_index
+				= lvalue_source_analysis.is_lvalue_fixed_storage
+				? std::numeric_limits<Index>::max()
+				: (block.back = block.instructions.merge(lvalue_source_analysis.instructions, block.back, lvalue_source_analysis.lvalue_index))
+				;
 			is_lvalue.push_back(true);
 			lvalue_outputs.push_back(lvalue_output_index);
 			lvalue_source_analyses.push_back(lvalue_source_analysis);
