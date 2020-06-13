@@ -4833,7 +4833,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadImmediate::emit
 Semantics::Instruction::LoadFrom::LoadFrom()
 	{}
 
-Semantics::Instruction::LoadFrom::LoadFrom(const Base &base, bool is_word_save, bool is_word_load, int32_t addition, bool is_save_fixed, bool is_load_fixed, const Storage &fixed_save_storage, const Storage &fixed_load_storage, bool dereference_save, bool dereference_load)
+Semantics::Instruction::LoadFrom::LoadFrom(const Base &base, bool is_word_save, bool is_word_load, int32_t addition, bool is_save_fixed, bool is_load_fixed, const Storage &fixed_save_storage, const Storage &fixed_load_storage, bool dereference_save, bool dereference_load, bool get_dest_address_from_input )
 	: Base(base)
 	, is_word_save(is_word_save)
 	, is_word_load(is_word_load)
@@ -4844,6 +4844,7 @@ Semantics::Instruction::LoadFrom::LoadFrom(const Base &base, bool is_word_save, 
 	, fixed_load_storage(fixed_load_storage)
 	, dereference_save(dereference_save)
 	, dereference_load(dereference_load)
+	, get_dest_address_from_input(get_dest_address_from_input)
 	{}
 
 Semantics::Instruction::LoadFrom::LoadFrom(const Base &base, bool is_word_save, bool is_word_load, int32_t addition)
@@ -4860,12 +4861,15 @@ Semantics::Instruction::LoadFrom::LoadFrom(const Base &base, bool is_word, int32
 	, addition(addition)
 	{}
 
-std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_input_sizes() const { if (is_load_fixed) { return {}; } else { return {static_cast<uint32_t>(is_word_load || dereference_load ? 4 : 1)}; } }
+std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_input_sizes() const { if (is_load_fixed && !get_dest_address_from_input) { return {}; } else if (is_load_fixed != !get_dest_address_from_input) { return {static_cast<uint32_t>(is_word_load || dereference_load ? 4 : 1)}; } else { return {static_cast<uint32_t>(is_word_load || dereference_load ? 4 : 1), static_cast<uint32_t>(is_word_load || dereference_load ? 4 : 1)}; } }
 std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_working_sizes() const { return {}; }
-std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_output_sizes() const { if (is_save_fixed) { return {}; } else { return {static_cast<uint32_t>(is_word_save || dereference_save ? 4 : 1)}; } }
+std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_output_sizes() const { if (is_save_fixed || get_dest_address_from_input) { return {}; } else { return {static_cast<uint32_t>(is_word_save || dereference_save ? 4 : 1)}; } }
 std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
 
 std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(const std::vector<Storage> &storages) const {
+	const bool post_dereference_save = dereference_save || get_dest_address_from_input;
+	const bool post_dereference_load = dereference_load;
+
 	// Check sizes.
 	if (Storage::get_sizes(storages) != get_all_sizes()) {
 		std::ostringstream sstr;
@@ -4874,7 +4878,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 	}
 	std::vector<Storage>::size_type next_storage_index = 0;
 	const Storage &source_storage      = is_load_fixed ? fixed_load_storage : storages[next_storage_index++];
-	const Storage &destination_storage = is_save_fixed ? fixed_save_storage : storages[next_storage_index++];
+	const Storage &destination_storage = is_save_fixed ? fixed_save_storage : storages[next_storage_index++];  // Note: can be either in input or output.
 	if (source_storage.max_size != 1 && source_storage.max_size != 4) {
 		std::ostringstream sstr;
 		sstr << "Semantics::Instruction::LoadFrom::emit: error: LoadFrom currently only supports source storages of size 4 or 1, not " << source_storage.max_size << ".";
@@ -4885,7 +4889,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 		sstr << "Semantics::Instruction::LoadFrom::emit: error: LoadFrom currently only supports source storages of size 4 or 1, not " << destination_storage.max_size << ".";
 		throw SemanticsError(sstr.str());
 	}
-	if ((source_storage.max_size == 4) != (dereference_load || is_word_load)) {
+	if ((source_storage.max_size == 4) != (post_dereference_load || is_word_load)) {
 		std::ostringstream sstr;
 		sstr
 			<< "Semantics::Instruction::LoadFrom::emit: error: LoadFrom was constructed with "
@@ -4896,7 +4900,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 			;
 		throw SemanticsError(sstr.str());
 	}
-	if ((destination_storage.max_size == 4) != (dereference_save || is_word_save)) {
+	if ((destination_storage.max_size == 4) != (post_dereference_save || is_word_save)) {
 		std::ostringstream sstr;
 		sstr
 			<< "Semantics::Instruction::LoadFrom::emit: error: LoadFrom was constructed with "
@@ -4935,32 +4939,32 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 	// Part 1: load/read into $t9 unless it's a non-dereferenced direct register.
 	std::string source_register = "$t9";
 	bool is_t9_free = false;
-	if (destination_storage.is_register_direct() && !dereference_save && destination_storage.register_ != source_storage.register_) {
+	if (destination_storage.is_register_direct() && !post_dereference_save && destination_storage.register_ != source_storage.register_) {
 		source_register = destination_storage.register_;
 		is_t9_free = true;
 	}
 	bool addition_pending = false;
 	if        (source_storage.is_register_direct()) {
-		if (!dereference_load && (addition == 0 || (destination_storage.is_register_direct() && !dereference_save))) {
+		if (!post_dereference_load && (addition == 0 || (destination_storage.is_register_direct() && !post_dereference_save))) {
 			is_t9_free = true;
 			source_register = source_storage.register_;
 			if (addition != 0) {
 				addition_pending = true;
 			}
 		} else {
-			if (dereference_load) {
+			if (post_dereference_load) {
 				lines.push_back(sized_load + source_register + ", (" + source_storage.register_ + ")");
 				if (addition != 0) {
 					lines.push_back("\tla    " + source_register + ", " + std::to_string(addition) + "(" + source_register + ")");
 				}
 			} else {
-				// addition != 0 && !dereference_load
+				// addition != 0 && !post_dereference_load
 				lines.push_back("\tla    " + source_register + ", " + std::to_string(addition) + "(" + source_storage.register_ + ")");
 			}
 		}
 	} else if (source_storage.is_register_dereference()) {
 		std::string offset_string = source_storage.offset == 0 ? "" : std::to_string(source_storage.offset);
-		if (!dereference_load) {
+		if (!post_dereference_load) {
 			lines.push_back(sized_load + source_register + ", " + offset_string + "(" + source_storage.register_ + ")");
 		} else {
 			lines.push_back("\tlw    " + source_register + ", " + offset_string + "(" + source_storage.register_ + ")");
@@ -4971,7 +4975,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 		}
 	} else if (source_storage.is_global_address()) {
 		lines.push_back("\tla    " + source_register + ", " + source_storage.global_address);
-		if (dereference_load) {
+		if (post_dereference_load) {
 			lines.push_back(sized_load + source_register + ", (" + source_register + ")");
 		}
 		if (addition != 0) {
@@ -4983,7 +4987,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 			lines.push_back("\tla    " + source_register + ", " + std::to_string(source_storage.offset) + "(" + source_register + ")");
 		}
 		std::string offset_string = source_storage.offset == 0 ? "" : std::to_string(source_storage.offset);
-		if (!dereference_load) {
+		if (!post_dereference_load) {
 			lines.push_back(sized_load + source_register + ", " + offset_string + "(" + source_register + ")");
 		} else {
 			lines.push_back("\tlw    " + source_register + ", " + offset_string + "(" + source_register + ")");
@@ -4997,7 +5001,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 	// Part 2: write/save.
 	std::string free_register = is_t9_free ? "$t9" : "$t8";
 	if        (destination_storage.is_register_direct()) {
-		if (!dereference_save) {
+		if (!post_dereference_save) {
 			if (source_register != destination_storage.register_) {
 				if (!addition_pending) {
 					lines.push_back("\tla    " + destination_storage.register_ + ", (" + source_register + ")");
@@ -5011,14 +5015,14 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 		}
 	} else if (destination_storage.is_register_dereference()) {
 		std::string offset_string = destination_storage.offset == 0 ? "" : std::to_string(destination_storage.offset);
-		if (!dereference_save) {
+		if (!post_dereference_save) {
 			lines.push_back(sized_save + source_register + ", " + offset_string + "(" + destination_storage.register_ + ")");
 		} else {
 			lines.push_back("\tlw    " + free_register + ", " + offset_string + "(" + destination_storage.register_ + ")");
 			lines.push_back(sized_save + source_register + ", (" + free_register + ")");
 		}
 	} else if (destination_storage.is_global_address()) {
-		if (!dereference_save) {
+		if (!post_dereference_save) {
 			std::ostringstream sstr;
 			sstr << "Semantics::Instruction::LoadFrom::emit: error: cannot save to a global address without dereferencing it.";
 			throw SemanticsError(sstr.str());
@@ -5030,7 +5034,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 	} else { //destination_storage.is_global_dereference()
 		lines.push_back("\tla    " + free_register + ", " + destination_storage.global_address);
 		std::string offset_string = destination_storage.offset == 0 ? "" : std::to_string(destination_storage.offset);
-		if (!dereference_save) {
+		if (!post_dereference_save) {
 			lines.push_back(sized_save + source_register + ", " + offset_string + "(" + free_register + ")");
 		} else {
 			lines.push_back("\tlw    " + free_register + ", " + offset_string + "(" +  free_register+ ")");
@@ -13221,7 +13225,9 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 
 					// Write to the lvalue.
 					if (!lvalue_source_analysis.is_lvalue_fixed_storage) {
-						block.back = block.instructions.add_instruction({I::LoadFrom(B(), storage_scope.type(value.output_type).resolve_type(storage_scope).get_primitive().is_word())}, {lvalue_index, value_index}, {block.back});
+						// We're writing a primitive value inside an array or record.
+						const bool is_word = storage_scope.type(value.output_type).resolve_type(storage_scope).get_primitive().is_word();
+						block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, false, false, Storage(), Storage(), false, false, true)}, {value_index, lvalue_index}, {block.back});
 					} else {
 						// It's a primitive.  Write to it directly if it isn't a pointer; otherwise, dereference it (check is_lvalue_primref).
 						block.back = block.instructions.add_instruction({I::LoadFrom(B(), lvalue_source_analysis.lvalue_fixed_storage.max_size == 4, storage_scope.type(value.output_type).resolve_type(storage_scope).get_primitive().is_word(), 0, true, false, lvalue_source_analysis.lvalue_fixed_storage, Storage(), lvalue_source_analysis.is_lvalue_primref, false)}, {value_index}, {block.back});

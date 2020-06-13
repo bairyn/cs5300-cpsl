@@ -872,7 +872,7 @@ public:
 		class LoadFrom : public Base {
 		public:
 			LoadFrom();
-			LoadFrom(const Base &base, bool is_word_save, bool is_word_load, int32_t addition, bool is_save_fixed, bool is_load_fixed, const Storage &fixed_save_storage, const Storage &fixed_load_storage, bool dereference_save = false, bool dereference_load = false);
+			LoadFrom(const Base &base, bool is_word_save, bool is_word_load, int32_t addition, bool is_save_fixed, bool is_load_fixed, const Storage &fixed_save_storage, const Storage &fixed_load_storage, bool dereference_save = false, bool dereference_load = false, bool get_dest_address_from_input = false);
 			// Specialized constructors: load from and save to dynamic storage units.
 			LoadFrom(const Base &base, bool is_word_save, bool is_word_load, int32_t addition = 0);
 			LoadFrom(const Base &base, bool is_word, int32_t addition = 0);
@@ -888,9 +888,18 @@ public:
 			Storage fixed_save_storage = Storage();
 			Storage fixed_load_storage = Storage();
 			// | Instead of saving to the storage unit, save to what the storage unit points to?
+			// Ignored if get_dest_address_from_input, which implies this is true.
 			bool dereference_save = false;
 			// | Instead of loading from the storage unit, load from what the storage unit points to?
 			bool dereference_load = false;
+			// | Instead of getting the destination from an output storage
+			// unit, dereference the address from the second input to get the
+			// actual destination?
+			//
+			// Implies dereference_save.
+			//
+			// Ignored if is_saved_fixed is true.
+			bool get_dest_address_from_input = false;
 
 			std::vector<uint32_t> get_input_sizes() const;
 			std::vector<uint32_t> get_working_sizes() const;
