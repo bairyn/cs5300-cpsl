@@ -13713,6 +13713,11 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 					: block.merge_append(call_block)
 					;
 
+				// The block has output, be sure to tell MIPSIO::emit() we're ignoring it.
+				if (call_has_output) {
+					const Index ignore_index = block.back = block.instructions.add_instruction({I::Ignore(B())}, {call_block_index}, {block.back}); (void) ignore_index;
+				}
+
 				// We're done.
 				break;
 			} case Statement::null__branch: {
