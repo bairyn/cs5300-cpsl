@@ -13726,7 +13726,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 }
 
 // | Analyze a BEGIN [statement]... END block.
-std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, const std::map<std::string, TypeIndex> &local_variables, bool is_main) {
+std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, IdentifierScope &var_scope, IdentifierScope &combined_scope, IdentifierScope &storage_scope, const std::map<std::string, TypeIndex> &local_variables, bool is_main) {
 	// Some type aliases to improve readability.
 	using M = Semantics::MIPSIO;
 	using I = Semantics::Instruction;
@@ -14245,7 +14245,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 // | Analyze a routine definition.
 //
 // "analyze_block" but look for additional types, constants, and variables.
-std::vector<Semantics::Output::Line> Semantics::analyze_routine(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const Body &body, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, IdentifierScope &storage_scope) {
+std::vector<Semantics::Output::Line> Semantics::analyze_routine(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const Body &body, IdentifierScope &constant_scope, IdentifierScope &type_scope, const IdentifierScope &routine_scope, IdentifierScope &var_scope, IdentifierScope &combined_scope, IdentifierScope &storage_scope) {
 	IdentifierScope local_constant_scope(constant_scope);
 	IdentifierScope local_type_scope(type_scope);
 	//IdentifierScope local_var_scope(var_scope);

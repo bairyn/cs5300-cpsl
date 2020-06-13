@@ -1580,12 +1580,12 @@ public:
 	Block analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const StatementSequence &statement_sequence, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, const Symbol &cleanup_symbol);
 
 	// | Analyze a BEGIN [statement]... END block.
-	std::vector<Output::Line> analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, const std::map<std::string, TypeIndex> &local_variables = {}, bool is_main = false);
+	std::vector<Output::Line> analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, IdentifierScope &var_scope, IdentifierScope &combined_scope, IdentifierScope &storage_scope, const std::map<std::string, TypeIndex> &local_variables = {}, bool is_main = false);
 
 	// | Analyze a routine definition.
 	//
 	// "analyze_block" but look for additional types, constants, and variables.
-	std::vector<Output::Line> analyze_routine(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const Body &body, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, IdentifierScope &storage_scope);
+	std::vector<Output::Line> analyze_routine(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const Body &body, IdentifierScope &constant_scope, IdentifierScope &type_scope, const IdentifierScope &routine_scope, IdentifierScope &var_scope, IdentifierScope &combined_scope, IdentifierScope &storage_scope);
 
 	// | Get the symbol to a string literal, tracking it if this is the first time encountering it.
 	Symbol string_literal(const std::string &string);
