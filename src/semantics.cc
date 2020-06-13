@@ -12070,8 +12070,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				std::pair<Block, std::optional<std::pair<Index, TypeIndex>>> call_analysis = analyze_call(call_identifier, expression_sequence_opt, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				const Block &call_block                = call_analysis.first;
 				const bool      call_has_output        = call_analysis.second.has_value();
-				const Index     call_output_index      = call_has_output ? std::numeric_limits<Index>::max() : call_analysis.second->first;
-				const TypeIndex call_output_type_index = call_has_output ? std::numeric_limits<Index>::max() : call_analysis.second->second;
+				const Index     call_output_index      = !call_has_output ? std::numeric_limits<Index>::max() : call_analysis.second->first;
+				const TypeIndex call_output_type_index = !call_has_output ? std::numeric_limits<Index>::max() : call_analysis.second->second;
 
 				// This is an expression, so we should have output.
 				if (!call_has_output) {
@@ -13604,7 +13604,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				std::pair<Block, std::optional<std::pair<Index, TypeIndex>>> call_analysis = analyze_call(identifier, expression_sequence_opt, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				const Block &call_block        = call_analysis.first;
 				const bool   call_has_output   = call_analysis.second.has_value();
-				const Index  call_output_index = call_has_output ? std::numeric_limits<Index>::max() : call_analysis.second->first;
+				const Index  call_output_index = !call_has_output ? std::numeric_limits<Index>::max() : call_analysis.second->first;
 
 				// Fail if unused function outputs are prohibited.
 				if (!permit_unused_function_outputs) {
