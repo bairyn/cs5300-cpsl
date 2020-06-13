@@ -11995,10 +11995,11 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = call.rightparenthesis_operator0 + 1;
 
 				// Analyze the call.
-				std::pair<Block, std::optional<std::pair<Index, TypeIndex>>> call_analysis = analyze_call(routine_declaration, call_identifier, expression_sequence_opt, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
-				const Block &call_block        = call_analysis.first;
-				const bool   call_has_output   = call_analysis.second.has_value();
-				const Index  call_output_index = call_has_output ? std::numeric_limits<Index>::max() : call_analysis.second->first;
+				std::pair<Block, std::optional<std::pair<Index, TypeIndex>>> call_analysis = analyze_call(call_identifier, expression_sequence_opt, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Block &call_block                = call_analysis.first;
+				const bool      call_has_output        = call_analysis.second.has_value();
+				const Index     call_output_index      = call_has_output ? std::numeric_limits<Index>::max() : call_analysis.second->first;
+				const TypeIndex call_output_type_index = call_has_output ? std::numeric_limits<Index>::max() : call_analysis.second->second;
 
 				// This is an expression, so we should have output.
 				if (!call_has_output) {
@@ -12013,11 +12014,11 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 					throw SemanticsError(sstr.str());
 				}
 
-				const Type &call_output_type = &storage_scope.type(call_analysis.second->second);
+				const Type &call_output_type = storage_scope.type(call_output_type_index);
 
 				// Merge the instructions.  Set the output index to the output of the call.  (Ignore front and back.)
-				expression_semantics.output_type  = call_output_type;
-				expression_semantics.output_index = expression_semantics.instructions.merge(call_block.instructions, call_output_index);
+				expression_semantics.output_type  = call_output_type_index;
+				expression_semantics.output_index = expression_semantics.instructions.merge(call_block.instructions) + call_output_index;
 
 				// We're done.
 				break;
@@ -12288,7 +12289,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						// and then dereference it.
 						const bool is_resolved_word = storage_scope.type(lvalue_source_analysis.lvalue_type).resolve_type(storage_scope).get_primitive().is_word();
 						const Index load_lvalue_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), lvalue_source_analysis.lvalue_fixed_storage)});
-						const Index dereference_address_index = expression_semantics.instructions.add_instruction(I::LoadFrom({B(), is_word, false, 0, false, false, Storage(), Storage(), false, true}), {load_lvalue_index});
+						const Index dereference_address_index = expression_semantics.instructions.add_instruction(I::LoadFrom({B(), is_resolved_word, false, 0, false, false, Storage(), Storage(), false, true}), {load_lvalue_index});
 						expression_semantics.output_index = dereference_address_index;
 					}
 				} else {
@@ -12357,10 +12358,7 @@ Semantics::Block::Block(MIPSIO &&instructions, MIPSIO::Index front, MIPSIO::Inde
 // | Analyze a call and return a block that performs a call.  If the
 // function returns a value, return the index to the instruction that
 // retrieves the output too; otherwise, the second value is empty.
-//
-// Note: the caller_routine_declaration is the routine declaration of the
-// caller's context, not of the called function or procedure.
-std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Semantics::TypeIndex>>> Semantics::analyze_call(const IdentifierScope::IdentifierBinding::RoutineDeclaration &caller_routine_declaration, const LexemeIdentifier &routine_identifier, const ExpressionSequenceOpt &expression_sequence_opt, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope) {
+std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Semantics::TypeIndex>>> Semantics::analyze_call(const LexemeIdentifier &routine_identifier, const ExpressionSequenceOpt &expression_sequence_opt, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope) {
 	// Some type aliases to improve readability.
 	using M = Semantics::MIPSIO;
 	using I = Semantics::Instruction;
@@ -12373,7 +12371,8 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	using Symbol        = Semantics::Symbol;
 
 	// Unpack the routine identifier.
-	const uint64_t    routine_identifier_index = &routine_identifier - &grammar.lexemes[0];
+	//const uint64_t    routine_identifier_index = ...;
+	const uint64_t    expression_sequence_opt_index = &expression_sequence_opt - &grammar.expression_sequence_opt_storage[0];
 	const std::string routine_identifier_text  = std::as_const(routine_identifier.text);
 
 	// Prepare the block.
@@ -12385,34 +12384,34 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	}
 
 	// Lookup the callee's RoutineDeclaration.
-	if (!combined_scope.has(call_identifier.text)) {
+	if (!combined_scope.has(routine_identifier.text)) {
 		std::ostringstream sstr;
 		sstr
 			<< "Semantics::analyze_call: error (line "
-			<< call_identifier.line << " col " << call_identifier.column
+			<< routine_identifier.line << " col " << routine_identifier.column
 			<< "): identifier out of scope, for call of ``"
-			<< call_identifier.text
+			<< routine_identifier.text
 			<< "\"."
 			;
 		throw SemanticsError(sstr.str());
 	}
-	if (!routine_scope.has(call_identifier.text)) {
+	if (!routine_scope.has(routine_identifier.text)) {
 		std::ostringstream sstr;
 		sstr
 			<< "Semantics::analyze_call: error (line "
-			<< call_identifier.line << " col " << call_identifier.column
+			<< routine_identifier.line << " col " << routine_identifier.column
 			<< "): cannot find a function or procedure with the identifier in scope, for call of ``"
-			<< call_identifier.text
+			<< routine_identifier.text
 			<< "\"."
 			;
 		throw SemanticsError(sstr.str());
 	}
 
-	const IdentifierScope::IdentifierBinding::RoutineDeclaration &callee_routine_declaration = routine_scope.get(call_identifier.text).get_routine_declaration();
+	const IdentifierScope::IdentifierBinding::RoutineDeclaration &callee_routine_declaration = routine_scope.get(routine_identifier.text).get_routine_declaration();
 
 	const std::vector<std::pair<bool, TypeIndex>> &callee_parameters = callee_routine_declaration.parameters;
 	const std::optional<TypeIndex>                &callee_output     = callee_routine_declaration.output;
-	const bool                                     callee_has_output = collee_output.has_value();
+	const bool                                     callee_has_output = callee_output.has_value();
 
 	// Before we perform the call, analyze and perform all the arguments.
 
@@ -12478,30 +12477,30 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 		// Unrecognized branch.
 		default: {
 			std::ostringstream sstr;
-			sstr << "Semantics::analyze_expression: internal error: invalid expression_sequence_opt branch at index " << call.expression_sequence_opt << ": " << expression_sequence_opt.branch;
+			sstr << "Semantics::analyze_call: internal error: invalid expression_sequence_opt branch at index " << expression_sequence_opt_index << ": " << expression_sequence_opt.branch;
 			throw SemanticsError(sstr.str());
 		}
 	}
 
 	// Make sure the number of parameters matches the number of expressions.
-	if (expressions.size() != routine_declaration.parameters.size()) {
+	if (expressions.size() != callee_routine_declaration.parameters.size()) {
 		std::ostringstream sstr;
 		sstr
 			<< "Semantics::analyze_call: error (line "
-			<< call_identifier.line << " col " << call_identifier.column
+			<< routine_identifier.line << " col " << routine_identifier.column
 			<< "): number of arguments provided (" << expressions.size() << ") in call to ``"
-			<< call_identifier.text
-			<< "\" does not match what was expected (" << routine_declaration.parameters.size() << ")."
+			<< routine_identifier.text
+			<< "\" does not match what was expected (" << callee_routine_declaration.parameters.size() << ")."
 			;
 		throw SemanticsError(sstr.str());
 	}
 
 	// Analyze the expressions.
 	std::vector<Expression> argument_expressions;
-	for (const ::Expression &expression : std::as_const(expressions)) {
+	for (const ::Expression * const &expression : std::as_const(expressions)) {
 		const std::vector<::Expression>::size_type expression_index = &expression - &expressions[0];
 
-		argument_expressions.push_back(analyze_expression(expression, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope));
+		argument_expressions.push_back(analyze_expression(*expression, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope));
 	}
 
 	// Make sure the type of each expression matches the parameter.
@@ -12509,21 +12508,22 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	// While we're at it, copy the parameter types and whether they're
 	// references.
 	std::vector<bool>         parameter_is_refs;
+	std::vector<TypeIndex>    parameter_type_indices;
 	std::vector<const Type *> parameter_types;
-	std::vector<bool>         parameter_is_primitive_ref;
+	std::vector<bool>         parameter_is_primitive_refs;
 	for (const Expression &argument_expression : std::as_const(argument_expressions)) {
 		const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
 
-		const std::pair<bool, TypeIndex> &parameter        = callee_parameter[argument_expression_index];
-		const bool                        parameter_is_ref = parameters.first;
-		const TypeIndex                   parameter_type   = parameters.second;
+		const std::pair<bool, TypeIndex> &parameter        = callee_parameters[argument_expression_index];
+		const bool                        parameter_is_ref = parameter.first;
+		const TypeIndex                   parameter_type   = parameter.second;
 
 		if (!storage_scope.resolve_type(argument_expression.output_type).matches(storage_scope.resolve_type(parameter_type), storage_scope)) {
 			std::ostringstream sstr;
 			sstr
 				<< "Semantics::analyze_call: error (line "
 				<< grammar.lexemes.at(argument_expression.lexeme_begin).get_line() << " col " << grammar.lexemes.at(argument_expression.lexeme_begin).get_column()
-				<< "): type mismatch in argument #" << argument_expression_index + 1 << ": the provided argument type,
+				<< "): type mismatch in argument #" << argument_expression_index + 1 << ": the provided argument type, "
 				<< "<" << storage_scope.type(argument_expression.output_type).get_repr(storage_scope) << ">, does not match the expected parameter type, <" << storage_scope.type(parameter_type).get_repr(storage_scope) << ">"
 				;
 			throw SemanticsError(sstr.str());
@@ -12541,6 +12541,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 		}
 
 		parameter_is_refs.push_back(parameter_is_ref);
+		parameter_type_indices.push_back(parameter_type);
 		parameter_types.push_back(&storage_scope.type(parameter_type));
 		//parameter_is_primitive_refs.push_back(parameter_is_ref && storage_scope.resolve_type(argument_expression.output_type).is_primitive());
 		// Edit: Variables should always have addresses, and never be primitive refs that are direct registers.
@@ -12564,16 +12565,17 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 		argument_outputs.push_back(argument_output_index);
 
 		// Is this an lvalue?  Get the lvalue analysis if so.
-		const ::Expresion &expression = expressions[argument_expression_index];
-		if (expression.branch != Expression::lvalue_branch) {
+		const ::Expression * const &expression        = expressions[argument_expression_index];
+		const ::Expression         &expression_symbol = *expression;
+		if (expression_symbol.branch != ::Expression::lvalue_branch) {
 			is_lvalue.push_back(false);
 			lvalue_outputs.push_back(std::numeric_limits<Index>::max());
 			lvalue_source_analyses.push_back(LvalueSourceAnalysis());
 		} else {
 			const ::Expression::Lvalue       &expression_lvalue           = grammar.expression_lvalue_storage.at(expression_symbol.data);
 			const Lvalue                     &lvalue                      = grammar.lvalue_storage.at(expression_lvalue.lvalue);
-			const LexemeIdentifier           &lexeme_identifier           = grammar.lexemes.at(lvalue_symbol.identifier).get_identifier();
-			const LvalueAccessorClauseList   &lvalue_accessor_clause_list = grammar.lvalue_accessor_clause_list_storage.at(lvalue_symbol.lvalue_accessor_clause_list);
+			const LexemeIdentifier           &lexeme_identifier           = grammar.lexemes.at(lvalue.identifier).get_identifier();
+			const LvalueAccessorClauseList   &lvalue_accessor_clause_list = grammar.lvalue_accessor_clause_list_storage.at(lvalue.lvalue_accessor_clause_list);
 			LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 			const Index lvalue_output_index = block.back = block.instructions.merge(lvalue_source_analysis.instructions, block.back, lvalue_source_analysis.lvalue_index);
 			is_lvalue.push_back(true);
@@ -12635,17 +12637,18 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	for (const Expression &argument_expression : std::as_const(argument_expressions)) {
 		const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
 
-		const bool &argument_is_ref           = parameter_is_refs[argument_expression_index];
-		const Type &argument_type             = *parameter_types[argument_expression_index];
-		const bool &argument_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
+		const bool      &argument_is_ref           = parameter_is_refs[argument_expression_index];
+		const TypeIndex &argument_type_index       = parameter_type_indices[argument_expression_index];
+		const Type      &argument_type             = *parameter_types[argument_expression_index];
+		const bool      &argument_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
 
-		if (argument_is_ref || argument_type.resolve_type(storage_scope).is_primitive()) {
+		if (argument_is_ref || storage_scope.resolve_type(argument_type_index).is_primitive()) {
 			is_argument_expression_var_nonprimitives.push_back(false);
 			var_nonprimitive_offsets.push_back(std::numeric_limits<uint32_t>::max());  // Unused.
 		} else {
 			is_argument_expression_var_nonprimitives.push_back(true);
 			var_nonprimitive_offsets.push_back(var_nonprimitive_allocated);
-			var_nonprimitive_allocated = Instruction::AddSp::round_to_align(var_nonprimitive_allocated + storage_scope.type(argument_type).get_size(), 4);
+			var_nonprimitive_allocated = Instruction::AddSp::round_to_align(var_nonprimitive_allocated + storage_scope.type(argument_type_index).get_size(), 4);
 		}
 	}
 	// For all combined non-ref array and record copies, align to 8 bytes.
@@ -12690,17 +12693,14 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			// Get dest and src addresses into dynamically selected storages.  Initialize offset to 0.
 			const Index dest_index             = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, temporary_variables_allocated + var_nonprimitive_offset, false, true, Storage(), Storage("$sp"))}, {}, {block.back});
 			const Index src_index              = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true)}, {argument_output}, {block.back});
-			const Index zero_initialize_offset = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, temporary_offest_integer_var, Storage("$zero"))}, {}, {block.back});
+			const Index zero_initialize_offset = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, temporary_offset_integer_var, Storage("$zero"))}, {}, {block.back});
 			var_nonprimitive_address_indices.push_back(dest_index);
 
 			// Manually put in our while loop.
 			// Analyze the "while" block condition.  Don't merge it yet.
-			const Symbol     while_symbol      = Symbol(labelify(lexeme_identifier_text, "memmove_while")     + "_arg_" + std::to_string(argument_expression_index), "", lexeme_identifier_index0);
-			const Symbol     checkwhile_symbol = Symbol(labelify(lexeme_identifier_text, "memmove_checkwhile")+ "_arg_" + std::to_string(argument_expression_index), "", lexeme_identifier_index0);
-			const Symbol     endwhile_symbol   = Symbol(labelify(lexeme_identifier_text, "memmove_endwhile")  + "_arg_" + std::to_string(argument_expression_index), "", lexeme_identifier_index0);
-
-			// Analyze the "while" block.
-			const Block while_block = analyze_statements(routine_declaration, while_statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol);
+			const Symbol     while_symbol      = Symbol(labelify(routine_identifier.text, "memmove_while")     + "_arg_" + std::to_string(argument_expression_index), "", expression_sequence_opt_index);
+			const Symbol     checkwhile_symbol = Symbol(labelify(routine_identifier.text, "memmove_checkwhile")+ "_arg_" + std::to_string(argument_expression_index), "", expression_sequence_opt_index);
+			const Symbol     endwhile_symbol   = Symbol(labelify(routine_identifier.text, "memmove_endwhile")  + "_arg_" + std::to_string(argument_expression_index), "", expression_sequence_opt_index);
 
 			// First, jump to "checkwhile" to check the condition for the first time.
 			block.back = block.instructions.add_instruction({I::Jump(B(), checkwhile_symbol)}, {}, {block.back});
@@ -12723,10 +12723,10 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 
 			// "while" condition.  (BranchZero has the branch_non_zero flag set to true.)
 			// ...
-			const Index get_temporary_offset_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), temporary_offset_integer_var)}, {}, {block.back});
-			const Index get_type_size_index        = block.back = block.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(argument_type.get_size()), 0, 0))}, {}, {block.back});
-			const Index while_condition_index      = block.back = block.instructions.add_instruction({I::LessThanFrom(B(), true)}, {}, {block.back});
-			block.back = block.instructions.add_instruction({I::BranchZero(B(), false, while_symbol, true)}, {get_temporary_offset_index, get_type_size_index}, {block.back});
+			const Index get_temporary_offset_index2 = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), temporary_offset_integer_var)}, {}, {block.back});
+			const Index get_type_size_index         = block.back = block.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(argument_type.get_size()), 0, 0))}, {}, {block.back});
+			const Index while_condition_index       = block.back = block.instructions.add_instruction({I::LessThanFrom(B(), true)}, {}, {block.back});
+			block.back = block.instructions.add_instruction({I::BranchZero(B(), false, while_symbol, true)}, {get_temporary_offset_index2, get_type_size_index}, {block.back});
 
 			// "endwhile label".  We don't need the endwhile label, and it is unused, but emit it anyway for readability.
 			if (emit_extra_redundant_labels) {
@@ -12747,17 +12747,18 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	for (const Expression &argument_expression : std::as_const(argument_expressions)) {
 		const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
 
-		const bool &argument_is_ref           = parameter_is_refs[argument_expression_index];
-		const Type &argument_type             = *parameter_types[argument_expression_index];
-		const bool &argument_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
+		const bool      &argument_is_ref           = parameter_is_refs[argument_expression_index];
+		const TypeIndex &argument_type_index       = parameter_type_indices[argument_expression_index];
+		const Type      &argument_type             = *parameter_types[argument_expression_index];
+		const bool      &argument_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
 
-		if (argument_is_ref || argument_type.resolve_type(storage_scope).is_primitive()) {
+		if (argument_is_ref || storage_scope.resolve_type(argument_type_index).is_primitive()) {
 			is_argument_direct_register_ref.push_back(false);
 			direct_register_ref_offsets.push_back(std::numeric_limits<uint32_t>::max());  // Unused.
 		} else {
 			is_argument_direct_register_ref.push_back(true);
-			direct_register_ref_offsets.push_back(direct_register_ref_offsets);
-			direct_register_ref_offsets = Instruction::AddSp::round_to_align(direct_register_ref_offsets + storage_scope.type(argument_type).get_size(), storage_scope.type(argument_type).get_size());
+			direct_register_ref_offsets.push_back(direct_ref_allocated);
+			direct_ref_allocated = Instruction::AddSp::round_to_align(direct_ref_allocated + storage_scope.type(argument_type_index).get_size(), storage_scope.type(argument_type_index).get_size());
 		}
 	}
 	// For all combined direct register ref storages, align to 8 bytes.
@@ -12801,20 +12802,22 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	for (const Expression &argument_expression : std::as_const(argument_expressions)) {
 		const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
 
-		const bool &argument_is_ref           = parameter_is_refs[argument_expression_index];
-		const Type &argument_type             = *parameter_types[argument_expression_index];
-		const bool &argument_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
+		const bool      &argument_is_ref              = parameter_is_refs[argument_expression_index];
+		const TypeIndex &argument_type_index          = parameter_type_indices[argument_expression_index];
+		const Type      &argument_type                = *parameter_types[argument_expression_index];
+		const bool      &argument_is_var_nonprimitive = is_argument_expression_var_nonprimitives[argument_expression_index];
+		const bool      &argument_is_primitive_ref    = parameter_is_primitive_refs[argument_expression_index];
 
-		//const bool is_word = !argument_type.resolve_type(storage_scope).is_primitive() || argument_type.resolve_type(storage_scope).get_primitive().is_word() || (!argument_is_var_nonprimitive && !argument_is_primitive_ref);
-		const bool is_word = !argument_type.resolve_type(storage_scope).is_primitive() || argument_type.resolve_type(storage_scope).get_primitive().is_word() || (!argument_is_var_nonprimitive && !argument_is_primitive_ref) || argument_is_ref;
+		//const bool is_word = !storage_scope.resolve_type(argument_type_index).is_primitive() || storage_scope.resolve_type(argument_type_index).get_primitive().is_word() || (!argument_is_var_nonprimitive && !argument_is_primitive_ref);
+		const bool is_word = !storage_scope.resolve_type(argument_type_index).is_primitive() || storage_scope.resolve_type(argument_type_index).get_primitive().is_word() || (!argument_is_var_nonprimitive && !argument_is_primitive_ref) || argument_is_ref;
 
 		if (argument_expression_index < 4) {
 			is_argument_pushed.push_back(false);
 			pushed_argument_offsets.push_back(std::numeric_limits<uint32_t>::max());  // Unused.
 		} else {
 			is_argument_pushed.push_back(true);
-			pushed_argument_offsets.push_back(pushed_argument_offsets);
-			pushed_argument_offsets = Instruction::AddSp::round_to_align(pushed_argument_offsets + (is_word ? 4 : 1), is_word ? 4 : 1);
+			pushed_argument_offsets.push_back(pushed_arg_allocated);
+			pushed_arg_allocated = Instruction::AddSp::round_to_align(pushed_arg_allocated + (is_word ? 4 : 1), is_word ? 4 : 1);
 		}
 	}
 	// For all combined direct register ref storages, align to 8 bytes.
@@ -12831,13 +12834,14 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 
 		const Index &argument_output = argument_outputs[argument_expression_index];
 
-		const bool &argument_is_ref              = parameter_is_refs[argument_expression_index];
-		const Type &argument_type                = *parameter_types[argument_expression_index];
-		const bool &argument_is_var_nonprimitive = is_argument_expression_var_nonprimitives[argument_expression_index];
-		const bool &argument_is_primitive_ref    = parameter_is_primitive_refs[argument_expression_index];
+		const bool      &argument_is_ref              = parameter_is_refs[argument_expression_index];
+		const TypeIndex &argument_type_index          = parameter_type_indices[argument_expression_index];
+		const Type      &argument_type                = *parameter_types[argument_expression_index];
+		const bool      &argument_is_var_nonprimitive = is_argument_expression_var_nonprimitives[argument_expression_index];
+		const bool      &argument_is_primitive_ref    = parameter_is_primitive_refs[argument_expression_index];
 
-		//const bool is_word = !argument_type.resolve_type(storage_scope).is_primitive() || argument_type.resolve_type(storage_scope).get_primitive().is_word() || (!argument_is_var_nonprimitive && !argument_is_primitive_ref);
-		const bool is_word = !argument_type.resolve_type(storage_scope).is_primitive() || argument_type.resolve_type(storage_scope).get_primitive().is_word() || !argument_is_var_nonprimitive || argument_is_ref;
+		//const bool is_word = !storage_scope.resolve_type(argument_type_index).is_primitive() || storage_scope.resolve_type(argument_type_index).get_primitive().is_word() || (!argument_is_var_nonprimitive && !argument_is_primitive_ref);
+		const bool is_word = !storage_scope.resolve_type(argument_type_index).is_primitive() || storage_scope.resolve_type(argument_type_index).get_primitive().is_word() || !argument_is_var_nonprimitive || argument_is_ref;
 		const Storage argument_storage
 			//= argument_expression_index < 4
 			= !is_argument_pushed[argument_expression_index]
@@ -12847,7 +12851,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 
 		if (!argument_is_var_nonprimitive && !argument_is_primitive_ref) {
 			// It's not a direct register primitive ref.  But is it a primitive ref?
-			if (!(argument_is_ref && storage_scope.resolve_type(argument_type).is_primitive())) {
+			if (!(argument_is_ref && storage_scope.resolve_type(argument_type_index).is_primitive())) {
 				const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {argument_output}, {block.back});
 			} else {
 				// We have to push the address of what the Variable refers to instead of copying the value.
@@ -12878,7 +12882,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 					const Storage &primitive_storage = lvalue_source_analysis.lvalue_fixed_storage;
 
 					// See if the lvalue is not itself a primref (pointer).
-					if (!lvalue_source_analysis.is_lvalue_primref {
+					if (!lvalue_source_analysis.is_lvalue_primref) {
 						// The storage refers to the base primitive.
 						if (!primitive_storage.is_register_direct()) {
 							std::ostringstream sstr;
@@ -12938,9 +12942,9 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 		std::ostringstream sstr;
 		sstr
 			<< "Semantics::analyze_call: internal error (line "
-			<< call_identifier.line << " col " << call_identifier.column
+			<< routine_identifier.line << " col " << routine_identifier.column
 			<< "): restoring refs to direct register Variable is currently not supported, and currently Variables aren't implemented as direct registers, for call of ``"
-			<< call_identifier.text
+			<< routine_identifier.text
 			<< "\"."
 			;
 		throw SemanticsError(sstr.str());
@@ -12957,9 +12961,9 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	// Retrieve the output from $v0, if the callee returns output.
 	Index callee_output_index = std::numeric_limits<Index>::max();
 	if (callee_has_output) {
-		const Type &callee_output_resolved_type = storage_scope.resolve_type(*collee_output);
-		const bool is_word = callee_output_resolved_type.in_primitive() || callee_output_resolved_type.get_primitive().is_word();
-		callee_output_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, true, 0, false, true {}, Storage("$v0"))}, {}, block.back);
+		const Type &callee_output_resolved_type = storage_scope.resolve_type(*callee_output);
+		const bool is_word = callee_output_resolved_type.is_primitive() || callee_output_resolved_type.get_primitive().is_word();
+		callee_output_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, true, 0, false, true, {}, Storage("$v0"))}, {}, {block.back});
 	}
 
 	// We're done.
@@ -13011,6 +13015,8 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				if (block.instructions.instructions.size() <= 1) {
 					block.lexeme_begin = lvalue.identifier;
 				}
+
+				const std::string lexeme_identifier_text = grammar.lexemes.at(lvalue.identifier).get_identifier().text;
 
 				// Lookup the lvalue.
 				LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
@@ -13080,17 +13086,13 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 					// Get dest and src addresses into dynamically selected storages.  Initialize offset to 0.
 					const Index dest_index             = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), lvalue_source_analysis.lvalue_fixed_storage)}, {}, {block.back});
 					const Index src_index              = value_index;
-					const Index zero_initialize_offset = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, temporary_offest_integer_var, Storage("$zero"))}, {}, {block.back});
-					var_nonprimitive_address_indices.push_back(dest_index);
+					const Index zero_initialize_offset = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, temporary_offset_integer_var, Storage("$zero"))}, {}, {block.back});
 
 					// Manually put in our while loop.
 					// Analyze the "while" block condition.  Don't merge it yet.
-					const Symbol     while_symbol      = Symbol(labelify(lexeme_identifier_text, "memmove_while")     + "_arg_" + std::to_string(argument_expression_index), "", lexeme_identifier_index0);
-					const Symbol     checkwhile_symbol = Symbol(labelify(lexeme_identifier_text, "memmove_checkwhile")+ "_arg_" + std::to_string(argument_expression_index), "", lexeme_identifier_index0);
-					const Symbol     endwhile_symbol   = Symbol(labelify(lexeme_identifier_text, "memmove_endwhile")  + "_arg_" + std::to_string(argument_expression_index), "", lexeme_identifier_index0);
-
-					// Analyze the "while" block.
-					const Block while_block = analyze_statements(routine_declaration, while_statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol);
+					const Symbol     while_symbol      = Symbol(labelify(lexeme_identifier_text, "memmove_while"),      "", assignment.lvalue);
+					const Symbol     checkwhile_symbol = Symbol(labelify(lexeme_identifier_text, "memmove_checkwhile"), "", assignment.lvalue);
+					const Symbol     endwhile_symbol   = Symbol(labelify(lexeme_identifier_text, "memmove_endwhile"),   "", assignment.lvalue);
 
 					// First, jump to "checkwhile" to check the condition for the first time.
 					block.back = block.instructions.add_instruction({I::Jump(B(), checkwhile_symbol)}, {}, {block.back});
@@ -13113,10 +13115,10 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 
 					// "while" condition.  (BranchZero has the branch_non_zero flag set to true.)
 					// ...
-					const Index get_temporary_offset_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), temporary_offset_integer_var)}, {}, {block.back});
-					const Index get_type_size_index        = block.back = block.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(argument_type.get_size()), 0, 0))}, {}, {block.back});
-					const Index while_condition_index      = block.back = block.instructions.add_instruction({I::LessThanFrom(B(), true)}, {}, {block.back});
-					block.back = block.instructions.add_instruction({I::BranchZero(B(), false, while_symbol, true)}, {get_temporary_offset_index, get_type_size_index}, {block.back});
+					const Index get_temporary_offset_index2 = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), temporary_offset_integer_var)}, {}, {block.back});
+					const Index get_type_size_index         = block.back = block.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(storage_scope.type(lvalue_source_analysis.lvalue_type).get_size()), 0, 0))}, {}, {block.back});
+					const Index while_condition_index       = block.back = block.instructions.add_instruction({I::LessThanFrom(B(), true)}, {}, {block.back});
+					block.back = block.instructions.add_instruction({I::BranchZero(B(), false, while_symbol, true)}, {get_temporary_offset_index2, get_type_size_index}, {block.back});
 
 					// "endwhile label".  We don't need the endwhile label, and it is unused, but emit it anyway for readability.
 					if (emit_extra_redundant_labels) {
@@ -13512,12 +13514,12 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				const LexemeOperator        &rightparenthesis_operator0 = grammar.lexemes.at(procedure_call.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
 
 				if (block.instructions.instructions.size() <= 1) {
-					block.lexeme_begin = call.identifier;
+					block.lexeme_begin = procedure_call.identifier;
 				}
-				block.lexeme_end = call.rightparenthesis_operator0 + 1;
+				block.lexeme_end = procedure_call.rightparenthesis_operator0 + 1;
 
 				// Analyze the call.
-				std::pair<Block, std::optional<std::pair<Index, TypeIndex>>> call_analysis = analyze_call(routine_declaration, call_identifier, expression_sequence_opt, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				std::pair<Block, std::optional<std::pair<Index, TypeIndex>>> call_analysis = analyze_call(identifier, expression_sequence_opt, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
 				const Block &call_block        = call_analysis.first;
 				const bool   call_has_output   = call_analysis.second.has_value();
 				const Index  call_output_index = call_has_output ? std::numeric_limits<Index>::max() : call_analysis.second->first;
@@ -13526,10 +13528,10 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				if (!permit_unused_function_outputs) {
 					std::ostringstream sstr;
 					sstr
-						<< "Semantics::analyze_expression: error (line "
-						<< call_identifier.line << " col " << call_identifier.column
+						<< "Semantics::analyze_statements: error (line "
+						<< identifier.line << " col " << identifier.column
 						<< "): permit_unused_function_outputs is configured to false (set to true to permit this and prevent this error), but the output of a function call was ignored for a call to ``"
-						<< call_identifier.text
+						<< identifier.text
 						<< "\"."
 						;
 					throw SemanticsError(sstr.str());
@@ -13741,13 +13743,13 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			throw SemanticsError(sstr.str());
 		}
 
-		const bool is_primitive_and_ref  = parameter_is_ref && storage_scope.resolved_type(parameter_index).is_primitive();
-		const bool is_resolved_type_word = !storage_scope.resolved_type(parameter_index).is_primitive() || storage_scope.resolved_type(parameter_index).is_primitive().is_word();
+		const bool is_primitive_and_ref  = parameter_is_ref && storage_scope.resolve_type(parameter_index).is_primitive();
+		const bool is_resolved_type_word = !storage_scope.resolve_type(parameter_index).is_primitive() || storage_scope.resolve_type(parameter_index).get_primitive().is_word();
 		if (parameter_index < 4) {
 			const Storage parameter_storage
 				= !is_primitive_and_ref
-				? parameter_storage("$a" + std::to_string(parameter_index));                                 // Just use $a directly; don't dereference.
-				: parameter_storage("$a" + std::to_string(parameter_index), is_resolved_type_word ? 4 : 1);  // The variable should dereference an address.
+				? Storage("$a" + std::to_string(parameter_index))                                    // Just use $a directly; don't dereference.
+				: Storage("$a" + std::to_string(parameter_index), is_resolved_type_word ? 4 : 1, 0)  // The variable should dereference an address.
 				;
 
 			local_var_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
@@ -13756,15 +13758,14 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			const bool is_word = is_resolved_type_word || parameter_is_ref;
 			const Storage parameter_storage
 				= !is_primitive_and_ref
-				? Storage(is_word ? 4 : 1, false, Symbol(), "$sp", true, stack_argument_total_size, false, false);
-				: Storage(is_word ? 4 : 1, false, Symbol(), "$sp", true, stack_argument_total_size, false, false);
+				? Storage(is_word ? 4 : 1, false, Symbol(), "$sp", true, stack_argument_total_size, false, false)
+				: Storage(is_word ? 4 : 1, false, Symbol(), "$sp", true, stack_argument_total_size, false, false)
 				;
 
-				stack_argument_total_size = Instruction::AddSp::round_to_align(stack_argument_total_size  + (is_word ? 4 : 1), is_word ? 4 : 1);
+			stack_argument_total_size = Instruction::AddSp::round_to_align(stack_argument_total_size  + (is_word ? 4 : 1), is_word ? 4 : 1);
 
-				local_var_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage, is_primitive_and_ref))});
-				local_combined_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage, is_primitive_and_ref))});
-			}
+			local_var_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage, is_primitive_and_ref))});
+			local_combined_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage, is_primitive_and_ref))});
 		}
 	}
 

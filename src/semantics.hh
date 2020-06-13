@@ -1543,7 +1543,7 @@ public:
 	//
 	// Note: the caller_routine_declaration is the routine declaration of the
 	// caller's context, not of the called function or procedure.
-	std::pair<Block, std::optional<std::pair<Index, TypeIndex>>> analyze_call(const IdentifierScope::IdentifierBinding::RoutineDeclaration &caller_routine_declaration, const LexemeIdentifier &routine_identifier, const ExpressionSequenceOpt &expression_sequence_opt, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope);
+	std::pair<Block, std::optional<std::pair<MIPSIO::Index, TypeIndex>>> analyze_call(const LexemeIdentifier &routine_identifier, const ExpressionSequenceOpt &expression_sequence_opt, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope);
 
 	// | Analyze a sequence of statements.
 	//
