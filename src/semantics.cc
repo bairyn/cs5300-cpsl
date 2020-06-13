@@ -12441,8 +12441,10 @@ Semantics::MIPSIO::Index Semantics::Block::merge_prepend(const Block &other) {
 }
 
 Semantics::MIPSIO::Index Semantics::Block::merge_append(const Block &other, MIPSIO::Index other_output_index) {
-	const MIPSIO::Index new_output_index = back = instructions.merge(other.instructions, back, other_output_index);
-	return new_output_index;
+	const MIPSIO::Index addition = instructions.merge(other.instructions);
+	instructions.add_sequence_connection(back, other.front + addition);
+	back = other.back + addition;
+	return addition + other_output_index;
 }
 
 Semantics::MIPSIO::Index Semantics::Block::merge_prepend(const Block &other, MIPSIO::Index other_output_index) {
@@ -12668,7 +12670,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 		const Index argument_output_index = block.merge_expression(argument_expression);
 		argument_outputs.push_back(argument_output_index);
 		// Permit the expression output to be ignored.  TODO: only merge expressions that are used to avoid inefficiency and fragility.
-		const Index expression_ignore_index = block.instructions.add_instruction({I::Ignore(B())}, {argument_output_index}, {block.back}); (void) expression_ignore_index;
+		const Index expression_ignore_index = block.back = block.instructions.add_instruction({I::Ignore(B())}, {argument_output_index}, {block.back}); (void) expression_ignore_index;
 
 		// Is this an lvalue?  Get the lvalue analysis if so.
 		const ::Expression * const &expression        = expressions[argument_expression_index];
@@ -12694,7 +12696,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			lvalue_source_analyses.push_back(lvalue_source_analysis);
 			if (!lvalue_source_analysis.is_lvalue_fixed_storage) {
 				// Permit the output of the lvalue source analysis to be ignored.  TODO: for lvalue analyses with outputs, only merge those that are used to avoid inefficiency and fragility.
-				const Index lvalue_ignore_index = block.instructions.add_instruction({I::Ignore(B())}, {lvalue_output_index}, {block.back}); (void) lvalue_ignore_index;
+				const Index lvalue_ignore_index = block.back = block.instructions.add_instruction({I::Ignore(B())}, {lvalue_output_index}, {block.back}); (void) lvalue_ignore_index;
 			}
 		}
 	}
