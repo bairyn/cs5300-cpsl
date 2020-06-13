@@ -5593,23 +5593,26 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::Jump::emit(const st
 Semantics::Instruction::Call::Call()
 	{}
 
-Semantics::Instruction::Call::Call(const Base &base, const Symbol &jump_destination, bool push_saved_registers, bool pop_saved_registers, const std::vector<uint64_t> &nosaves_)
+Semantics::Instruction::Call::Call(const Base &base, const Symbol &jump_destination, bool push_saved_registers, bool pop_saved_registers, const std::vector<uint64_t> &nosaves_, const std::set<std::string> &nosave_registers)
 	: Base(base)
 	, jump_destination(jump_destination)
 	, push_saved_registers(push_saved_registers)
 	, pop_saved_registers(pop_saved_registers)
+	// nosaves_
+	, nosave_registers(nosave_registers)
 {
 	for (const uint64_t &nosave_index : std::as_const(nosaves_)) {
 		nosaves.push_back({nosave_index, 0});
 	}
 }
 
-Semantics::Instruction::Call::Call(const Base &base, const Symbol &jump_destination, bool push_saved_registers, bool pop_saved_registers, const std::vector<std::pair<uint64_t, uint64_t>> &nosaves)
+Semantics::Instruction::Call::Call(const Base &base, const Symbol &jump_destination, bool push_saved_registers, bool pop_saved_registers, const std::vector<std::pair<uint64_t, uint64_t>> &nosaves, const std::set<std::string> &nosave_registers)
 	: Base(base)
 	, jump_destination(jump_destination)
 	, push_saved_registers(push_saved_registers)
 	, pop_saved_registers(pop_saved_registers)
 	, nosaves(nosaves)
+	, nosave_registers(nosave_registers)
 	{}
 
 std::vector<uint32_t> Semantics::Instruction::Call::get_input_sizes() const { return {}; }
@@ -10195,19 +10198,21 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 				// writeable.
 #if 0
 				for (const std::map<IO, Storage>::value_type &input_storage_pair : std::as_const(input_storages)) {
-					const Storage &input_storage_unit = input_storage_pair.second;
-					if ((input_storage_unit.is_register_direct() || input_storage_unit.is_register_dereference()) && input_storage_unit.is_caller_preserved) {
-						if (in_pushed_registers.find(input_storage_unit) == in_pushed_registers.cend()) {
-							in_pushed_registers.insert(input_storage_unit);
-							pushed_registers.push_back(input_storage_unit);
+					if (in_nosaves.find(output_storage_pair.first) == in_nosaves.cend() && call.nosave_registers(output_storage_pair.second.register_) == call.nosave_registers.cend()) {
+						const Storage &input_storage_unit = input_storage_pair.second;
+						if ((input_storage_unit.is_register_direct() || input_storage_unit.is_register_dereference()) && input_storage_unit.is_caller_preserved) {
+							if (in_pushed_registers.find(input_storage_unit) == in_pushed_registers.cend()) {
+								in_pushed_registers.insert(input_storage_unit);
+								pushed_registers.push_back(input_storage_unit);
+							}
 						}
 					}
 				}
 #endif /* #if 0 */
 				// Note: this doesn't check if we will be overwriting output_storage_pair's storage again if it gets clobbered; it just saves it regardless.
 				for (const std::map<IO, Storage>::value_type &output_storage_pair : std::as_const(capture_outputs)) {
-					if (in_nosaves.find(output_storage_pair.first) == in_nosaves.cend()) {
-						const Storage &output_storage_unit = output_storage_pair.second;
+					const Storage &output_storage_unit = output_storage_pair.second;
+					if (in_nosaves.find(output_storage_pair.first) == in_nosaves.cend() && call.nosave_registers.find(output_storage_unit.register_) == call.nosave_registers.cend()) {
 						if ((output_storage_unit.is_register_direct() || output_storage_unit.is_register_dereference()) && output_storage_unit.is_caller_preserved) {
 							if (in_pushed_registers.find(output_storage_unit) == in_pushed_registers.cend()) {
 								in_pushed_registers.insert(output_storage_unit);
@@ -10221,8 +10226,8 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 				// is no need to push these arguments twice when they won't be
 				// re-used afterward.
 				for (const std::map<Storage::Index, IO>::value_type &working_storage_pair : std::as_const(claimed_working_storages)) {
-					if (in_nosaves.find(working_storage_pair.second) == in_nosaves.cend()) {
-						const Storage &working_storage_unit = working_storages[working_storage_pair.first];
+					const Storage &working_storage_unit = working_storages[working_storage_pair.first];
+					if (in_nosaves.find(working_storage_pair.second) == in_nosaves.cend() && call.nosave_registers.find(working_storage_unit.register_) == call.nosave_registers.cend()) {
 						if ((working_storage_unit.is_register_direct() || working_storage_unit.is_register_dereference()) && working_storage_unit.is_caller_preserved) {
 							if (in_pushed_registers.find(working_storage_unit) == in_pushed_registers.cend()) {
 								in_pushed_registers.insert(working_storage_unit);
@@ -10233,7 +10238,9 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 				}
 				// Save "preserved_regs" too.
 				for (const std::string &preserved_reg : std::as_const(preserved_regs)) {
-					pushed_registers.push_back(Storage(preserved_reg));
+					if (call.nosave_registers.find(preserved_reg) == call.nosave_registers.cend()) {
+						pushed_registers.push_back(Storage(preserved_reg));
+					}
 				}
 
 				// Emit code to push these registers.
@@ -12643,10 +12650,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 		parameter_is_refs.push_back(parameter_is_ref);
 		parameter_type_indices.push_back(parameter_type);
 		parameter_types.push_back(&storage_scope.type(parameter_type));
-		//parameter_is_primitive_refs.push_back(parameter_is_ref && storage_scope.resolve_type(argument_expression.output_type).is_primitive());
-		// Edit: Variables should always have addresses, and never be primitive refs that are direct registers.
-		// Edit: now parameter_is_primitive_refs refers to whether it's a primitive ref for which a direct register is supplied, but this currently doesn't happen.
-		parameter_is_primitive_refs.push_back(false);
+		parameter_is_primitive_refs.push_back(parameter_is_ref && storage_scope.resolve_type(argument_expression.output_type).is_primitive());
 	}
 
 	// Evaluate all arguments.
@@ -12657,9 +12661,9 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	for (const Expression &argument_expression : std::as_const(argument_expressions)) {
 		const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
 
-		const bool &argument_is_ref           = parameter_is_refs[argument_expression_index];
-		const Type &argument_type             = *parameter_types[argument_expression_index];
-		const bool &argument_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
+		const bool &parameter_is_ref           = parameter_is_refs[argument_expression_index];
+		const Type &argument_type              = *parameter_types[argument_expression_index];
+		const bool &parameter_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
 
 		const Index argument_output_index = block.merge_expression(argument_expression);
 		argument_outputs.push_back(argument_output_index);
@@ -12742,12 +12746,12 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	for (const Expression &argument_expression : std::as_const(argument_expressions)) {
 		const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
 
-		const bool      &argument_is_ref           = parameter_is_refs[argument_expression_index];
-		const TypeIndex &argument_type_index       = parameter_type_indices[argument_expression_index];
-		const Type      &argument_type             = *parameter_types[argument_expression_index];
-		const bool      &argument_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
+		const bool      &parameter_is_ref           = parameter_is_refs[argument_expression_index];
+		const TypeIndex &argument_type_index        = parameter_type_indices[argument_expression_index];
+		const Type      &argument_type              = *parameter_types[argument_expression_index];
+		const bool      &parameter_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
 
-		if (argument_is_ref || storage_scope.resolve_type(argument_type_index).is_primitive()) {
+		if (parameter_is_ref || storage_scope.resolve_type(argument_type_index).is_primitive()) {
 			is_argument_expression_var_nonprimitives.push_back(false);
 			var_nonprimitive_offsets.push_back(std::numeric_limits<uint32_t>::max());  // Unused.
 		} else {
@@ -12774,9 +12778,9 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 
 		const Index &argument_output = argument_outputs[argument_expression_index];
 
-		const bool &argument_is_ref           = parameter_is_refs[argument_expression_index];
-		const Type &argument_type             = *parameter_types[argument_expression_index];
-		const bool &argument_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
+		const bool &parameter_is_ref           = parameter_is_refs[argument_expression_index];
+		const Type &argument_type              = *parameter_types[argument_expression_index];
+		const bool &parameter_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
 
 		const bool     &is_argument_expression_var_nonprimitive = is_argument_expression_var_nonprimitives[argument_expression_index];
 		const uint32_t  var_nonprimitive_offset                 = var_nonprimitive_offsets[argument_expression_index];
@@ -12852,15 +12856,24 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	for (const Expression &argument_expression : std::as_const(argument_expressions)) {
 		const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
 
-		const bool      &argument_is_ref           = parameter_is_refs[argument_expression_index];
-		const TypeIndex &argument_type_index       = parameter_type_indices[argument_expression_index];
-		const Type      &argument_type             = *parameter_types[argument_expression_index];
-		const bool      &argument_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
+		const bool      &parameter_is_ref           = parameter_is_refs[argument_expression_index];
+		const TypeIndex &argument_type_index        = parameter_type_indices[argument_expression_index];
+		const Type      &argument_type              = *parameter_types[argument_expression_index];
+		const bool      &parameter_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
 
-		if (argument_is_ref || storage_scope.resolve_type(argument_type_index).is_primitive()) {
+		const bool argument_is_primref = lvalue_source_analyses[argument_expression_index].is_lvalue_primref;
+
+		// Only handle this if the argument is a prim Var and the parameter is a ref Var.
+
+		// The argument has to be a Var; if it's a primitive ref, we just copy
+		// the address, since the Ref is already a pointer, and we have no need
+		// to create a new pointer.
+
+		if (!parameter_is_ref || !storage_scope.resolve_type(argument_type_index).is_primitive() || argument_is_primref) {
 			is_argument_direct_register_ref.push_back(false);
 			direct_register_ref_offsets.push_back(std::numeric_limits<uint32_t>::max());  // Unused.
 		} else {
+			// primref parameter; varref argument.
 			is_argument_direct_register_ref.push_back(true);
 			direct_register_ref_offsets.push_back(direct_ref_allocated);
 			direct_ref_allocated = Instruction::AddSp::round_to_align(direct_ref_allocated + storage_scope.type(argument_type_index).get_size(), storage_scope.type(argument_type_index).get_size());
@@ -12873,27 +12886,36 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	if (direct_ref_allocated != 0) {
 		block.back = block.instructions.add_instruction({I::AddSp(B(), -direct_ref_allocated)}, {}, {block.back});
 	}
+	std::set<std::string> nosave_registers;
 	for (const Expression &argument_expression : std::as_const(argument_expressions)) {
 		const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
 
 		const Index &argument_output = argument_outputs[argument_expression_index];
 
-		const bool &argument_is_ref           = parameter_is_refs[argument_expression_index];
-		const Type &argument_type             = *parameter_types[argument_expression_index];
-		const bool &argument_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
+		const bool &parameter_is_ref           = parameter_is_refs[argument_expression_index];
+		const Type &argument_type              = *parameter_types[argument_expression_index];
+		const bool &parameter_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
+		const bool &is_direct_register         = is_argument_direct_register_ref[argument_expression_index];
 
-		if (!argument_is_primitive_ref) {
+		const LvalueSourceAnalysis &argument_lvalue_source_analysis = lvalue_source_analyses[argument_expression_index];
+
+		if (!is_direct_register) {
 			// Nothing to do here.
 		} else {
 			// Load the value into the ref storage.
-			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), argument_type.get_primitive().is_word(), argument_type.get_primitive().is_word(), 0, true, false, Storage("$sp", argument_type.get_primitive().is_word() ? 4 : 1, direct_register_ref_offsets[argument_expression_index]), Storage())}, {argument_output}, {block.back});
+			//const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {load_lvalue_index}, {block.back});
+			assert(argument_lvalue_source_analysis.is_lvalue_fixed_storage);
+			const Index load_lvalue_index = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), argument_lvalue_source_analysis.lvalue_fixed_storage)});
+			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), argument_type.resolve_type(storage_scope).get_primitive().is_word(), argument_type.get_primitive().is_word(), 0, true, false, Storage("$sp", argument_type.get_primitive().is_word() ? 4 : 1, direct_register_ref_offsets[argument_expression_index]), Storage())}, {load_lvalue_index}, {block.back});
+			// Since we'll be restoring this register ourselves, there is no need to preserve this register.
+			nosave_registers.insert(argument_lvalue_source_analysis.lvalue_fixed_storage.register_);
 		}
 	}
 
 	// Next, push registers that need to be saved onto the stack.
 	std::vector<Index> nosaves(std::as_const(argument_outputs));
 	nosaves.insert(nosaves.end(), var_nonprimitive_address_indices.cbegin(), var_nonprimitive_address_indices.cend());
-	const Index save_registers = block.back = block.instructions.add_instruction({I::Call(B(), Symbol(), true, false, nosaves)}, {}, {block.back});
+	const Index save_registers = block.back = block.instructions.add_instruction({I::Call(B(), Symbol(), true, false, nosaves, nosave_registers)}, {}, {block.back});
 
 	// Next, put the first 4 arguments in $a0-$a3, and push the rest.
 
@@ -12907,14 +12929,14 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	for (const Expression &argument_expression : std::as_const(argument_expressions)) {
 		const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
 
-		const bool      &argument_is_ref              = parameter_is_refs[argument_expression_index];
-		const TypeIndex &argument_type_index          = parameter_type_indices[argument_expression_index];
-		const Type      &argument_type                = *parameter_types[argument_expression_index];
-		const bool      &argument_is_var_nonprimitive = is_argument_expression_var_nonprimitives[argument_expression_index];
-		const bool      &argument_is_primitive_ref    = parameter_is_primitive_refs[argument_expression_index];
+		const bool      &parameter_is_ref              = parameter_is_refs[argument_expression_index];
+		const TypeIndex &argument_type_index           = parameter_type_indices[argument_expression_index];
+		const Type      &argument_type                 = *parameter_types[argument_expression_index];
+		const bool      &argument_is_var_nonprimitive  = is_argument_expression_var_nonprimitives[argument_expression_index];
+		const bool      &parameter_is_primitive_ref    = parameter_is_primitive_refs[argument_expression_index];
 
-		//const bool is_word = !storage_scope.resolve_type(argument_type_index).is_primitive() || storage_scope.resolve_type(argument_type_index).get_primitive().is_word() || (!argument_is_var_nonprimitive && !argument_is_primitive_ref);
-		const bool is_word = !storage_scope.resolve_type(argument_type_index).is_primitive() || storage_scope.resolve_type(argument_type_index).get_primitive().is_word() || (!argument_is_var_nonprimitive && !argument_is_primitive_ref) || argument_is_ref;
+		//const bool is_word = !storage_scope.resolve_type(argument_type_index).is_primitive() || storage_scope.resolve_type(argument_type_index).get_primitive().is_word() || (!argument_is_var_nonprimitive && !parameter_is_primitive_ref);
+		const bool is_word = !storage_scope.resolve_type(argument_type_index).is_primitive() || storage_scope.resolve_type(argument_type_index).get_primitive().is_word() || (!argument_is_var_nonprimitive && !parameter_is_primitive_ref) || parameter_is_ref;
 
 		if (argument_expression_index < 4) {
 			is_argument_pushed.push_back(false);
@@ -12940,14 +12962,18 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 
 		const Index &argument_output = argument_outputs[argument_expression_index];
 
-		const bool      &argument_is_ref              = parameter_is_refs[argument_expression_index];
-		const TypeIndex &argument_type_index          = parameter_type_indices[argument_expression_index];
-		const Type      &argument_type                = *parameter_types[argument_expression_index];
-		const bool      &argument_is_var_nonprimitive = is_argument_expression_var_nonprimitives[argument_expression_index];
-		const bool      &argument_is_primitive_ref    = parameter_is_primitive_refs[argument_expression_index];
+		const bool      &parameter_is_ref              = parameter_is_refs[argument_expression_index];
+		const TypeIndex &argument_type_index           = parameter_type_indices[argument_expression_index];
+		const Type      &argument_type                 = *parameter_types[argument_expression_index];
+		const bool      &argument_is_var_nonprimitive  = is_argument_expression_var_nonprimitives[argument_expression_index];
+		const bool      &parameter_is_primitive_ref    = parameter_is_primitive_refs[argument_expression_index];
 
-		//const bool is_word = !storage_scope.resolve_type(argument_type_index).is_primitive() || storage_scope.resolve_type(argument_type_index).get_primitive().is_word() || (!argument_is_var_nonprimitive && !argument_is_primitive_ref);
-		const bool is_word = !storage_scope.resolve_type(argument_type_index).is_primitive() || storage_scope.resolve_type(argument_type_index).get_primitive().is_word() || !argument_is_var_nonprimitive || argument_is_ref;
+		const bool &is_direct_register = is_argument_direct_register_ref[argument_expression_index];
+
+		const LvalueSourceAnalysis &argument_lvalue_source_analysis = lvalue_source_analyses[argument_expression_index];
+
+		//const bool is_word = !storage_scope.resolve_type(argument_type_index).is_primitive() || storage_scope.resolve_type(argument_type_index).get_primitive().is_word() || (!argument_is_var_nonprimitive && !parameter_is_primitive_ref);
+		const bool is_word = !storage_scope.resolve_type(argument_type_index).is_primitive() || storage_scope.resolve_type(argument_type_index).get_primitive().is_word() || !argument_is_var_nonprimitive || parameter_is_ref;
 		const Storage argument_storage
 			//= argument_expression_index < 4
 			= !is_argument_pushed[argument_expression_index]
@@ -12955,75 +12981,22 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			: Storage("$sp", is_word ? 4 : 1, pushed_argument_offsets[argument_expression_index])
 			;
 
-		if (!argument_is_var_nonprimitive && !argument_is_primitive_ref) {
-			// It's not a direct register primitive ref.  But is it a primitive ref?
-			if (!(argument_is_ref && storage_scope.resolve_type(argument_type_index).is_primitive())) {
-				const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {argument_output}, {block.back});
-			} else {
-				// We have to push the address of what the Variable refers to instead of copying the value.
-				// Callees, when reading arguments, can read from them
-				// directly, and need to be concerned only with primitive ref
-				// types, whether they ultimately come from a direct register
-				// or not.  Primitive refs are addresses to the primitive location.
-
-				if (!is_lvalue[argument_expression_index]) {
-					std::ostringstream sstr;
-					sstr
-						<< "Semantics::analyze_call: error (line "
-						<< grammar.lexemes.at(argument_expression.lexeme_begin).get_line() << " col " << grammar.lexemes.at(argument_expression.lexeme_begin).get_column()
-						<< "): for argument #" << argument_expression_index + 1 << ", an lvalue Ref argument was expected for a primitive Ref parameter, but the expression is not an lvalue, for type "
-						<< "<" << storage_scope.type(argument_expression.output_type).get_repr(storage_scope) << ">"
-						;
-					throw SemanticsError(sstr.str());
-				}
-
-				const Index                &lvalue_output_index    = lvalue_outputs[argument_expression_index];
-				const LvalueSourceAnalysis &lvalue_source_analysis = lvalue_source_analyses[argument_expression_index];
-
-				// If it's not a fixed storage (e.g. for the Ref the caller provides an index into an array), we can just copy the reference.
-				if (!lvalue_source_analysis.is_lvalue_fixed_storage) {
-					const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {lvalue_output_index}, {block.back});
-				} else {
-					// It's a primitive, and we have the storage.
-					const Storage &primitive_storage = lvalue_source_analysis.lvalue_fixed_storage;
-
-					// See if the lvalue is not itself a primref (pointer).
-					if (!lvalue_source_analysis.is_lvalue_primref) {
-						// The storage refers to the base primitive.
-						if (primitive_storage.is_register_direct()) {
-							std::ostringstream sstr;
-							sstr
-								<< "Semantics::analyze_call: internal error (line "
-								<< grammar.lexemes.at(argument_expression.lexeme_begin).get_line() << " col " << grammar.lexemes.at(argument_expression.lexeme_begin).get_column()
-								<< "): for argument #" << argument_expression_index + 1 << ", currently, Variables are never implemented as direct registers, but somehow this was case, for type "
-								<< "<" << storage_scope.type(argument_expression.output_type).get_repr(storage_scope) << ">"
-								;
-							throw SemanticsError(sstr.str());
-						} else if (primitive_storage.is_register_dereference()) {
-							const Index copy_address_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, primitive_storage.offset, true, true, argument_storage, Storage(primitive_storage.register_))}, {}, {block.back});
-						} else if (primitive_storage.is_global_address()) {
-							std::ostringstream sstr;
-							sstr
-								<< "Semantics::analyze_call: internal error (line "
-								<< grammar.lexemes.at(argument_expression.lexeme_begin).get_line() << " col " << grammar.lexemes.at(argument_expression.lexeme_begin).get_column()
-								<< "): for argument #" << argument_expression_index + 1 << " an undereferenced global address cannot be provided as a primitive Ref, for type "
-								<< "<" << storage_scope.type(argument_expression.output_type).get_repr(storage_scope) << ">"
-								;
-							throw SemanticsError(sstr.str());
-						} else {  // primitive_storage.is_global_dereference()
-							const Storage ref_var_storage = Storage(primitive_storage.global_address, false, 4, primitive_storage.offset);
-							const Index copy_address_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, primitive_storage.offset, true, true, argument_storage, ref_var_storage)}, {}, {block.back});
-						}
-					} else {
-						// The storage contains the address of the base primitive.  Just copy the address as if it were an array.
-						const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, argument_storage, lvalue_source_analysis.lvalue_fixed_storage)}, {}, {block.back});
-					}
-				}
-			}
-		} else if (argument_is_var_nonprimitive) {
+		if (argument_is_var_nonprimitive) {
 			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, true, argument_storage, Storage("$sp", is_word ? 4 : 1, pushed_arg_allocated + direct_ref_allocated + var_nonprimitive_offsets[argument_expression_index]))}, {}, {block.back});
-		} else {  // argument_is_primitive_ref
+		} else if (is_direct_register) {
 			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, true, argument_storage, Storage("$sp", is_word ? 4 : 1, pushed_arg_allocated + direct_register_ref_offsets[argument_expression_index]))}, {}, {block.back});
+		} else if (!parameter_is_ref || !storage_scope.resolve_type(argument_type_index).is_primitive()) {
+			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {argument_output}, {block.back});
+		} else {
+			// primref parameter.  If it were a primvar argument, is_direct_register would be true, but it isn't.
+			// primref parameter and primref argument.
+			//
+			// The expression index refers to the dereferenced prim, and the
+			// lvalue storage is the storage that contains the address.  Don't
+			// use argument_output, which would dereference; just copy the
+			// contents of the storage.
+			const Index load_lvalue_index = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), argument_lvalue_source_analysis.lvalue_fixed_storage)});
+			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {load_lvalue_index}, {block.back});
 		}
 	}
 
@@ -13043,17 +13016,26 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	// Pop direct refs
 
 	// Restore the direct refs.
-	// Edit: Currently, Variables are never implement as direct registers, so pushed direct refs should be empty right now.
-	if (direct_ref_allocated != 0) {
-		std::ostringstream sstr;
-		sstr
-			<< "Semantics::analyze_call: internal error (line "
-			<< routine_identifier.line << " col " << routine_identifier.column
-			<< "): restoring refs to direct register Variable is currently not supported, and currently Variables aren't implemented as direct registers, for call of ``"
-			<< routine_identifier.text
-			<< "\"."
-			;
-		throw SemanticsError(sstr.str());
+	for (const Expression &argument_expression : std::as_const(argument_expressions)) {
+		const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
+
+		const Index &argument_output = argument_outputs[argument_expression_index];
+
+		const bool &parameter_is_ref           = parameter_is_refs[argument_expression_index];
+		const Type &argument_type              = *parameter_types[argument_expression_index];
+		const bool &parameter_is_primitive_ref = parameter_is_primitive_refs[argument_expression_index];
+		const bool &is_direct_register         = is_argument_direct_register_ref[argument_expression_index];
+
+		const LvalueSourceAnalysis &argument_lvalue_source_analysis = lvalue_source_analyses[argument_expression_index];
+
+		if (!is_direct_register) {
+			// Nothing to do here.
+		} else {
+			// Load the value into the ref storage.
+			//const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {load_lvalue_index}, {block.back});
+			assert(argument_lvalue_source_analysis.is_lvalue_fixed_storage);
+			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), argument_type.resolve_type(storage_scope).get_primitive().is_word(), argument_type.get_primitive().is_word(), 0, true, true, argument_lvalue_source_analysis.lvalue_fixed_storage, Storage("$sp", argument_type.get_primitive().is_word() ? 4 : 1, direct_register_ref_offsets[argument_expression_index]))}, {}, {block.back});
+		}
 	}
 	if (direct_ref_allocated != 0) {
 		block.back = block.instructions.add_instruction({I::AddSp(B(), direct_ref_allocated)}, {}, {block.back});
