@@ -13174,6 +13174,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 	using Output        = Semantics::Output;
 	using Storage       = Semantics::Storage;
 	using Symbol        = Semantics::Symbol;
+	using Var = Semantics::IdentifierScope::IdentifierBinding::Var;
 
 	// Prepare the block.
 	Block block;
@@ -13658,6 +13659,180 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				const StatementSequence &statement_sequence    = grammar.statement_sequence_storage.at(for_statement.statement_sequence);
 				const LexemeKeyword     &end_keyword0          = grammar.lexemes.at(for_statement.end_keyword0).get_keyword(); (void) end_keyword0;
 
+				// Basically, a while loop with an initializer and increment.
+
+#if 0
+				// First, handle the identifier.  It must be of integer type.
+				LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+
+				// Merge the lvalue lookup instructions if there was not a fixed storage found.
+				Index lvalue_index;
+				lvalue_index = block.merge_lvalue_source_analysis(lvalue_source_analysis);
+#endif /* #if 0 */
+				// lvalue would be more expressive.  The specification notes identifiers, however.
+
+				// Lookup the lvalue.
+				if (!combined_scope.has(identifier.text)) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_statements: error (line "
+						<< identifier.line << " col " << identifier.column
+						<< "): identifier not found; it is out of scope: "
+						<< identifier.text
+						<< ".  In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				if (!var_scope.has(identifier.text)) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_statements: error (line "
+						<< identifier.line << " col " << identifier.column
+						<< "): variable identifier not found; it is out of variable scope: "
+						<< identifier.text
+						<< ".  In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				const Var       &var           = var_scope.get(identifier.text).get_var();
+				const TypeIndex  type_index    = var.type;
+				const Type      &type          = storage_scope.type(type_index);
+				const Type      &resolved_type = storage_scope.resolve_type(type_index);
+
+				// Make sure the variable is an integer.
+				if (!resolved_type.is_primitive()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_statements: error (line "
+						<< identifier.line << " col " << identifier.column
+						<< "): the identifier must refer to an integer variable, not to a variable of non-primitive type ``" << type.get_repr(storage_scope) << "\": "
+						<< identifier.text
+						<< ".  In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				const Type::Primitive &resolved_primitive_type = resolved_type.get_primitive();
+				if (!resolved_primitive_type.is_integer()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_statements: error (line "
+						<< identifier.line << " col " << identifier.column
+						<< "): the identifier must refer to an integer variable, not to a variable of type ``" << type.get_repr(storage_scope) << "\": "
+						<< identifier.text
+						<< ".  In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				const bool is_word = resolved_primitive_type.is_word();
+
+				// Are we increasing or decreasing?
+				bool increasing;
+				switch (to_or_downto.branch) {
+					case ToOrDownto::to_branch: {
+						// No need to unpack this value.
+						increasing = true;
+						break;
+					}
+
+					case ToOrDownto::downto_branch: {
+						// No need to unpack this value.
+						increasing = false;
+						break;
+					}
+
+					default: {
+						std::ostringstream sstr;
+						sstr << "Semantics::analyze_statements: internal error: invalid to_or_downto branch at index " << &to_or_downto - &grammar.to_or_downto_storage[0] << ": " << to_or_downto.branch;
+						throw SemanticsError(sstr.str());
+					}
+				}
+
+				// Analyze the first and last number expressions.  We can also merge them now.
+				const Expression first_expression = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Expression last_expression  = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				const Index      first_index      = block.merge_expression(first_expression);
+				const Index      last_index       = block.merge_expression(last_expression);
+
+				if (!storage_scope.resolve_type(first_expression.output_type).is_primitive() || !storage_scope.resolve_type(first_expression.output_type).get_primitive().is_integer()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_statements: error (line "
+						<< grammar.lexemes.at(first_expression.lexeme_begin).get_line() << " col " << grammar.lexemes.at(first_expression.lexeme_begin).get_column()
+						<< "): the ``first\" value in the for statement range must be an integer, not to a value of type ``" << storage_scope.type(first_expression.output_type).get_repr(storage_scope)
+						<< "\".  In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				if (!storage_scope.resolve_type(last_expression.output_type).is_primitive() || !storage_scope.resolve_type(last_expression.output_type).get_primitive().is_integer()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze_statements: error (line "
+						<< grammar.lexemes.at(last_expression.lexeme_begin).get_line() << " col " << grammar.lexemes.at(last_expression.lexeme_begin).get_column()
+						<< "): the ``last\" value in the for statement range must be an integer, not to a value of type ``" << storage_scope.type(last_expression.output_type).get_repr(storage_scope)
+						<< "\".  In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible."
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				const int32_t addition = increasing ? 1 : -1;
+
+				const Index near_last_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, addition, false, false, Storage(), Storage())}, {last_index}, {block.back});
+
+				// Get the symbols.
+				const Symbol     for_symbol      = Symbol(labelify(grammar.lexemes_text(for_statement.identifier, for_statement.expression1), "for"), "", for_statement.for_keyword0);
+				const Symbol     checkfor_symbol = Symbol(labelify(grammar.lexemes_text(for_statement.identifier, for_statement.expression1), "checkfor"), "", for_statement.end_keyword0);
+				const Symbol     endfor_symbol   = Symbol(labelify(grammar.lexemes_text(for_statement.identifier, for_statement.expression1), "endfor"), "", for_statement.end_keyword0);
+
+				// Analyze the "for" block.
+				const Block for_block = analyze_statements(routine_declaration, statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol);
+
+				// First, initialize the iterator variable.
+				if (!var.is_primitive_and_ref) {
+					// Set the storage to first.
+					const Index initialize_iterator_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, var.storage, Storage(), false, false)}, {first_index}, {block.back}); (void) initialize_iterator_index;
+				} else {
+					// Set the dereferenced storage's address to first.
+					const Index initialize_iterator_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, var.storage, Storage(), true, false)}, {first_index}, {block.back}); (void) initialize_iterator_index;
+				}
+
+				// Jump to "checkfor" to check the condition for the first time.
+				block.back = block.instructions.add_instruction({I::Jump(B(), checkfor_symbol)}, {}, {block.back});
+
+				// "for" label.
+				block.back = block.instructions.add_instruction({I::Ignore(B(true, for_symbol), false, false)}, {}, {block.back});
+
+				// "for" block.
+				const Index for_block_index = block.merge_append(for_block);
+
+				// Increment or decrement the iterator variable.
+				if (!var.is_primitive_and_ref) {
+					// Set the storage to first.
+					const Index initialize_iterator_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, addition, true, true, var.storage, var.storage, true, true)}, {}, {block.back}); (void) initialize_iterator_index;
+				} else {
+					// Set the dereferenced storage's address to first.
+					const Index initialize_iterator_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, addition, true, true, var.storage, var.storage, true, false)}, {}, {block.back}); (void) initialize_iterator_index;
+				}
+
+				// "checkfor" label.
+				block.back = block.instructions.add_instruction({I::Ignore(B(true, checkfor_symbol), false, false)}, {}, {block.back});
+
+				// "for" condition.  (BranchZero has the branch_non_zero flag set to true.)
+				// If increasing, branch to repeat the loop if the iterator variable is < last_index + 1.
+				// If decreasing, branch to repeat the loop if the iterator variable is > last_index - 1, i.e. last_index - 1 < the iterator variable.
+				const Index get_iterator_value_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, false, true, Storage(), var.storage, false, var.is_primitive_and_ref)}, {}, {block.back});
+				const Index for_condition_index      = block.back
+					= increasing
+					? block.instructions.add_instruction({I::LessThanFrom(B(), is_word, true)}, {get_iterator_value_index, near_last_index}, {block.back})
+					: block.instructions.add_instruction({I::LessThanFrom(B(), is_word, true)}, {near_last_index, get_iterator_value_index}, {block.back})
+					;
+				const Index for_branch_index         = block.back = block.instructions.add_instruction({I::BranchZero(B(), false, for_symbol, true)}, {for_condition_index}, {block.back});
+
+				// "endfor label".  We don't need the endfor label, and it is unused, but emit it anyway for readability.
+				if (emit_extra_redundant_labels) {
+					block.back = block.instructions.add_instruction({I::Ignore(B(true, endfor_symbol), false, false)}, {}, {block.back});
+				}
+
+				// We're done.
 				break;
 			} case Statement::stop_branch: {
 				const Statement::Stop &statement_stop = grammar.statement_stop_storage.at(statement.data);
