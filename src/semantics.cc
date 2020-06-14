@@ -10314,7 +10314,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 				}
 
 				// Emit code to push these registers.
-				const int32_t addition = -4*(pushed_registers.size() % 2 == 0 ? pushed_registers.size() : pushed_registers.size() + 1);
+				const int32_t addition = Instruction::AddSp::round_to_align(-4*pushed_registers.size());
 				add_sp_total += addition;
 				pushed_sp_total += addition;
 				if (addition != 0) {
@@ -10330,7 +10330,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 					const int32_t saved_storage_index = static_cast<int32_t>(&saved_storage - &pushed_registers[0]);
 					instruction_output.push_back("\tlw    " + saved_storage.register_ + ", " + std::to_string(4*saved_storage_index) + "($sp)");
 				}
-				const int32_t addition = 4*(pushed_registers.size() % 2 == 0 ? pushed_registers.size() : pushed_registers.size() + 1);
+				const int32_t addition = Instruction::AddSp::round_to_align(4*pushed_registers.size());
 				add_sp_total += addition;
 				pushed_sp_total += addition;
 				if (addition != 0) {
@@ -13965,7 +13965,9 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 
 	// Assign variables and working storage units to Storages and allocate
 	// sufficient space on the stack.
-	int32_t stack_allocated = 0;
+	//
+	// Take into account that we will first push the return address.
+	int32_t stack_allocated = Instruction::AddSp::round_to_align(4);
 
 	// Commented out: these are already copied on a call!  Instead, just add a binding to the appropriate storage.  We do that here.
 #if 0
@@ -14323,7 +14325,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 
 	// Allocate space on the stack.
 	if (stack_allocated > 0) {
-		last_intro_index = block_semantics.instructions.add_instruction({I::AddSp(B(), -stack_allocated)}, {}, last_intro_index);
+		last_intro_index = block_semantics.instructions.add_instruction({I::AddSp(B(), -(stack_allocated - Instruction::AddSp::round_to_align(4)))}, {}, last_intro_index);
 	}
 
 	// Commented out: these are already copied on a call!  Instead, just add a binding to the appropriate storage.  We do that above.
