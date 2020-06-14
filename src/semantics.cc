@@ -5489,7 +5489,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::DivFrom::emit(const
 
 	// Get sized save and load operations.
 	Output::Line sized_save = is_save_word ? "\tsw    " : "\tsb    ";
-	Output::Line sized_load = is_save_word ? "\tlw    " : "\tlb    ";
+	Output::Line sized_load = is_load_word ? "\tlw    " : "\tlb    ";
 
 	// Part 1: load right_storage.
 	std::string right_register = temporaries[0];
