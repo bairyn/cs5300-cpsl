@@ -118,6 +118,7 @@ const std::map<std::string, keyword_t> LexemeKeyword::keyword_map {
 	{"until",     until_keyword},
 	{"var",       var_keyword},
 	{"while",     while_keyword},
+	{"write",     write_keyword},
 };
 std::pair<keyword_t, bool> LexemeKeyword::get_keyword(std::string text) {
 	std::string key;
