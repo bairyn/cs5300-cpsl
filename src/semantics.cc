@@ -12880,9 +12880,9 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 
 			// Manually put in our while loop.
 			// Analyze the "while" block condition.  Don't merge it yet.
-			const Symbol     while_symbol      = Symbol(labelify(routine_identifier.text, "memmove_while")     + "_arg_" + std::to_string(argument_expression_index), "", expression_sequence_opt_index);
-			const Symbol     checkwhile_symbol = Symbol(labelify(routine_identifier.text, "memmove_checkwhile")+ "_arg_" + std::to_string(argument_expression_index), "", expression_sequence_opt_index);
-			const Symbol     endwhile_symbol   = Symbol(labelify(routine_identifier.text, "memmove_endwhile")  + "_arg_" + std::to_string(argument_expression_index), "", expression_sequence_opt_index);
+			const Symbol     while_symbol      = Symbol(labelify(routine_identifier.text, "memmove_while")     + "_arg_" + std::to_string(argument_expression_index + 1), "", expression_sequence_opt_index);
+			const Symbol     checkwhile_symbol = Symbol(labelify(routine_identifier.text, "memmove_checkwhile")+ "_arg_" + std::to_string(argument_expression_index + 1), "", expression_sequence_opt_index);
+			const Symbol     endwhile_symbol   = Symbol(labelify(routine_identifier.text, "memmove_endwhile")  + "_arg_" + std::to_string(argument_expression_index + 1), "", expression_sequence_opt_index);
 
 			// First, jump to "checkwhile" to check the condition for the first time.
 			block.back = block.instructions.add_instruction({I::Jump(B(), checkwhile_symbol)}, {}, {block.back});
@@ -14292,13 +14292,13 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			working_storages.push_back(temporary_storage);
 		} else {
 			const uint32_t size = working_storage_requirement;
+			stack_allocated = Instruction::AddSp::round_to_align(stack_allocated + size, size);
 			Storage stack_storage;
 			if (true) {
-				stack_storage = Storage(size, false, Symbol(), "$sp", true, stack_allocated, false, false);
+				stack_storage = Storage(size, false, Symbol(), "$sp", true, -stack_allocated, false, false);
 			} else {
-				stack_storage = Storage(4, false, Symbol(), "$sp", false, stack_allocated, false, false);
+				stack_storage = Storage(4, false, Symbol(), "$sp", false, -stack_allocated, false, false);
 			}
-			stack_allocated += Instruction::AddSp::round_to_align(size);
 			working_storages.push_back(stack_storage);
 		}
 	}
