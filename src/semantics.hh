@@ -555,6 +555,9 @@ public:
 		static std::string escape_char(char char_);
 		static std::string quote_char(char char_);
 		static std::string quote_string(const std::string &string);
+		// | Emit MIPS assembly appropriate for a data section after a string label for
+		// a null-terminated string.
+		static std::vector<Output::Line> data_string(const std::string &string);
 	};
 
 	// | Objects represent a collection of identifiers in scope and what they refer to.

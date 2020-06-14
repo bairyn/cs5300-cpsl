@@ -2271,6 +2271,32 @@ std::string Semantics::ConstantValue::quote_string(const std::string &string) {
 	return std::move(quoted);
 }
 
+// | Emit MIPS assembly appropriate for a data section after a string label for
+// a null-terminated string.
+std::vector<Semantics::Output::Line> Semantics::ConstantValue::data_string(const std::string &string) {
+	std::vector<Output::Line> data_lines;
+
+	std::string printable_queued;
+	for (const char &char_ : std::as_const(string)) {
+		if (isprint(char_)) {
+			printable_queued.push_back(char_);
+		} else {
+			if (printable_queued.size() > 0) {
+				data_lines.push_back("\t.ascii           " + quote_string(printable_queued));
+				printable_queued.clear();
+			}
+
+			std::ostringstream sline;
+			sline << "\t.byte  " << std::right << std::setw(11) << static_cast<int32_t>(static_cast<uint8_t>(char_));
+			data_lines.push_back(sline.str());
+		}
+	}
+
+	data_lines.push_back("\t.asciiz          " + quote_string(printable_queued));
+
+	return data_lines;
+}
+
 Semantics::IdentifierScope::IdentifierBinding::Static::Static()
 	{}
 
@@ -17267,10 +17293,12 @@ void Semantics::analyze() {
 	for (const std::pair<std::string, Symbol> &string_symbol_pair : std::as_const(string_constants)) {
 		const std::string &string        = string_symbol_pair.first;
 		const Symbol      &symbol        = string_symbol_pair.second;
-		std::string        quoted_string = ConstantValue::quote_string(string);
+		//std::string        quoted_string = ConstantValue::quote_string(string);
 
 		output.add_line(Output::global_vars_section, ":", symbol);
-		output.add_line(Output::global_vars_section, "\t.asciiz          " + quoted_string);
+		//output.add_line(Output::global_vars_section, "\t.asciiz          " + quoted_string);
+		// MARS MIPS didn't read \x00 correctly.  So instead, emit a sequence of printable strings and .byte s.
+		output.add_lines(Output::global_vars_section, ConstantValue::data_string(string));
 	}
 }
 
