@@ -11063,9 +11063,9 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 	} else if (constant_scope.has(lvalue_identifier.text)) {
 		std::ostringstream sstr;
 		sstr
-			<< "Semantics::analyze_lvalue_source: internal error (line "
+			<< "Semantics::analyze_lvalue_source: error (line "
 			<< lvalue_identifier.line << " col " << lvalue_identifier.column
-			<< "): identifier refers to a constant and should have been detected as such but wasn't: "
+			<< "): the lvalue identifier refers to a constant, not a mutable location: "
 			<< lvalue_identifier.text
 			<< "."
 			;
