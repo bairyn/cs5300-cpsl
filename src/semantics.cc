@@ -5819,34 +5819,32 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::BranchZero::emit(co
 		lines.push_back({":", symbol});
 	}
 
+	// Get sized load operation.
+	Output::Line sized_load = is_word_load ? "\tlw    " : "\tlb    ";
+
 	// Get the branch operator.
 	Output::Line branch_operator = !branch_non_zero ? "\tbeq   " : "\tbne   ";
 
-	// Part 1: get source address.
-	if           (source_storage.is_global_address()) {
-		lines.push_back("\tla    $t8, " + source_storage.global_address);
+	// Part 1: load source_storage.
+	std::string source_register = "$t9";
+	if        (source_storage.is_register_direct()) {
+		source_register = source_storage.register_;
+	} else if (source_storage.is_register_dereference()) {
+		std::string offset_string = source_storage.offset == 0 ? "" : std::to_string(source_storage.offset);
+		lines.push_back(sized_load + source_register + ", " + offset_string + "(" + source_storage.register_ + ")");
+	} else if (source_storage.is_global_address()) {
+		lines.push_back("\tla    " + source_register + ", " + source_storage.global_address);
 		if (source_storage.offset != 0) {
-			lines.push_back("\tla    $t8, " + std::to_string(source_storage.offset) + "($t8)");
+			lines.push_back("\tla    " + source_register + ", " + std::to_string(source_storage.offset) + "(" + source_register + ")");
 		}
-	} else if    (source_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t8, " + source_storage.global_address);
-		lines.push_back("\tlw    $t8, " + std::to_string(source_storage.offset) + "($t8)");
-	} else if    (source_storage.is_register_direct()) {
-	} else {  // (source_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t8, " + std::to_string(source_storage.offset) + "(" + source_storage.register_ + ")");
+	} else { //source_storage.is_global_dereference)
+		lines.push_back("\tla    " + source_register + ", " + source_storage.global_address);
+		std::string offset_string = source_storage.offset == 0 ? "" : std::to_string(source_storage.offset);
+		lines.push_back(sized_load + "" + source_register + ", " + offset_string + "(" + source_register + ")");
 	}
 
-	// Part 2: load source (4-bytes).
-	if (!source_storage.is_register_direct()) {
-		lines.push_back("\tlw    $t8, ($t8)");
-	}
-
-	// Part 3: jump.
-	if (!source_storage.is_register_direct()) {
-		lines.push_back(branch_operator + "$t8, $zero, " + branch_destination);
-	} else {
-		lines.push_back(branch_operator + source_storage.register_ + ", $zero, " + branch_destination);
-	}
+	// Part 2: jump.
+	lines.push_back(branch_operator + source_register + ", $zero, " + branch_destination);
 
 	// Return the output.
 	return lines;
@@ -5883,31 +5881,32 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::BranchNonnegative::
 		lines.push_back({":", symbol});
 	}
 
-	// Part 1: get source address.
-	if           (source_storage.is_global_address()) {
-		lines.push_back("\tla    $t8, " + source_storage.global_address);
+	// Get sized load operation.
+	Output::Line sized_load = is_word_load ? "\tlw    " : "\tlb    ";
+
+	// Get the branch operator.
+	Output::Line branch_operator = "\tbge   ";
+
+	// Part 1: load source_storage.
+	std::string source_register = "$t9";
+	if        (source_storage.is_register_direct()) {
+		source_register = source_storage.register_;
+	} else if (source_storage.is_register_dereference()) {
+		std::string offset_string = source_storage.offset == 0 ? "" : std::to_string(source_storage.offset);
+		lines.push_back(sized_load + source_register + ", " + offset_string + "(" + source_storage.register_ + ")");
+	} else if (source_storage.is_global_address()) {
+		lines.push_back("\tla    " + source_register + ", " + source_storage.global_address);
 		if (source_storage.offset != 0) {
-			lines.push_back("\tla    $t8, " + std::to_string(source_storage.offset) + "($t8)");
+			lines.push_back("\tla    " + source_register + ", " + std::to_string(source_storage.offset) + "(" + source_register + ")");
 		}
-	} else if    (source_storage.is_global_dereference()) {
-		lines.push_back("\tla    $t8, " + source_storage.global_address);
-		lines.push_back("\tlw    $t8, " + std::to_string(source_storage.offset) + "($t8)");
-	} else if    (source_storage.is_register_direct()) {
-	} else {  // (source_storage.is_register_dereference()) {
-		lines.push_back("\tla    $t8, " + std::to_string(source_storage.offset) + "(" + source_storage.register_ + ")");
+	} else { //source_storage.is_global_dereference)
+		lines.push_back("\tla    " + source_register + ", " + source_storage.global_address);
+		std::string offset_string = source_storage.offset == 0 ? "" : std::to_string(source_storage.offset);
+		lines.push_back(sized_load + "" + source_register + ", " + offset_string + "(" + source_register + ")");
 	}
 
-	// Part 2: load source (4-bytes).
-	if (!source_storage.is_register_direct()) {
-		lines.push_back("\tlw    $t8, ($t8)");
-	}
-
-	// Part 3: jump.
-	if (!source_storage.is_register_direct()) {
-		lines.push_back("\tbge   $t8, $zero, " + branch_destination);
-	} else {
-		lines.push_back("\tbge   " + source_storage.register_ + ", $zero, " + branch_destination);
-	}
+	// Part 2: jump.
+	lines.push_back(branch_operator + source_register + ", $zero, " + branch_destination);
 
 	// Return the output.
 	return lines;
