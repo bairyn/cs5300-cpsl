@@ -13253,6 +13253,8 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 					const Storage temporary_offset_integer_var = Storage("$sp", Type::Primitive::integer_type.get_size(), 0 * Type::Primitive::integer_type.get_size(), true);
 					const Storage temporary_address_var        = Storage("$sp", Type::Primitive::integer_type.get_size(), 1 * Type::Primitive::integer_type.get_size(), true);
 
+					assert(!lvalue_source_analysis.is_lvalue_fixed_storage);
+
 					// Add a storage that refers to the base address of this copied array or record.
 					//const Storage var_nonprimitive_storage = Storage("$sp", 4, var_nonprimitive_offset, true);  // Wait...this storage will dereference it!
 					//var_nonprimitive_storages.push_back(var_nonprimitive_storage);
@@ -13264,7 +13266,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 					// 		*temp0++ = *temp1++;
 					// 	}
 					// Get dest and src addresses into dynamically selected storages.  Initialize offset to 0.
-					const Index dest_index             = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), lvalue_source_analysis.lvalue_fixed_storage)}, {}, {block.back});
+					const Index dest_index             = lvalue_index;
 					const Index src_index              = value_index;
 					const Index zero_initialize_offset = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, temporary_offset_integer_var, Storage("$zero"))}, {}, {block.back});
 
@@ -13662,6 +13664,13 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				const StopStatement   &stop_statement = grammar.stop_statement_storage.at(statement_stop.stop_statement);
 
 				const LexemeKeyword &stop_keyword0 = grammar.lexemes.at(stop_statement.stop_keyword0).get_keyword(); (void) stop_keyword;
+
+				// Syscall exit2(0).
+				//const Index load_17 = block.back = block.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(17), 0, 0), Symbol())}, {}, {block.back});
+				//const Index set_v0  = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, false, Storage("$v0"), Storage())}, {load_17}, {block.back});
+				const Index set_v0  = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 17, true, true, Storage("$v0"), Storage("$zero"))}, {}, {block.back});
+				const Index set_a0  = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, Storage("$a0"), Storage("$zero"))}, {}, {block.back});
+				const Index syscall = block.back = block.instructions.add_instruction({I::Syscall(B())}, {}, {block.back});
 
 				break;
 			} case Statement::return_branch: {
@@ -14391,7 +14400,6 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 		exit_lines.push_back("\t# exit2(0)");
 		exit_lines.push_back("\tli    $v0, 17");
 		exit_lines.push_back("\tli    $a0, 0");
-		exit_lines.push_back("\tli    $a0, ($a0)");
 		exit_lines.push_back("\tsyscall");
 		block_semantics.back = block_semantics.instructions.add_instruction({I::Custom(B(), std::as_const(exit_lines))}, {}, block_semantics.back);
 	}
