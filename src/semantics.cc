@@ -13392,7 +13392,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 
 				// First, collect all the elseif clauses.
 
-				// Collect the lvalue accessor clauses in the list.
+				// Collect the elseif clauses in the list.
 				std::vector<const ElseifClause *> elseif_clauses;
 				bool reached_end = false;
 				for (const ElseifClauseList *last_list = &elseif_clause_list; !reached_end; ) {
@@ -14005,6 +14005,143 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				const LvalueSequence &lvalue_sequence            = grammar.lvalue_sequence_storage.at(read_statement.lvalue_sequence);
 				const LexemeOperator &rightparenthesis_operator0 = grammar.lexemes.at(read_statement.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
 
+				const Lvalue             &first_lvalue         = grammar.lvalue_storage.at(lvalue_sequence.lvalue);
+				const LvaluePrefixedList &lvalue_prefixed_list = grammar.lvalue_prefixed_list_storage.at(lvalue_sequence.lvalue_prefixed_list);
+
+				// First, collect the lvalues.
+
+				// Collect the lvalues in the list.
+				std::vector<const Lvalue *> lvalues;
+				lvalues.push_back(&first_lvalue);
+				bool reached_end = false;
+				for (const LvaluePrefixedList *last_list = &lvalue_prefixed_list; !reached_end; ) {
+					// Unpack the last list encountered.
+					switch(last_list->branch) {
+						case LvaluePrefixedList::empty_branch: {
+							// We're done.
+							// (No need to unpack the empty branch.)
+							reached_end = true;
+							break;
+						}
+
+						case LvaluePrefixedList::cons_branch: {
+							// Unpack the list.
+							const LvaluePrefixedList::Cons &last_lvalue_prefixed_list_cons = grammar.lvalue_prefixed_list_cons_storage.at(last_list->data);
+							const LvaluePrefixedList       &last_lvalue_prefixed_list      = grammar.lvalue_prefixed_list_storage.at(last_lvalue_prefixed_list_cons.lvalue_prefixed_list);
+							const LexemeKeyword            &last_comma_operator0           = grammar.lexemes.at(last_lvalue_prefixed_list_cons.comma_operator0).get_keyword(); (void) last_comma_operator0;
+							const Lvalue                   &last_lvalue                    = grammar.lvalue_storage.at(last_lvalue_prefixed_list_cons.lvalue);
+
+							// Add the lvalue.
+							lvalues.push_back(&last_lvalue);
+							last_list = &last_lvalue_prefixed_list;
+
+							// Loop.
+							break;
+						}
+
+						// Unrecognized branch.
+						default: {
+							std::ostringstream sstr;
+							sstr << "Semantics::analyze_statements: internal error: invalid lvalue_prefixed_list branch at index " << last_list - &grammar.lvalue_prefixed_list_storage[0] << ": " << last_list->branch;
+							throw SemanticsError(sstr.str());
+						}
+					}
+				}
+
+				// Correct the order of the list.
+				std::reverse(lvalues.begin() + 1, lvalues.end());
+
+				// Next, analyze the lvalues.
+				std::vector<Index>                lvalue_output_indices;
+				std::vector<LvalueSourceAnalysis> lvalue_source_analyses;
+				for (const Lvalue * const &lvalue : std::as_const(lvalues)) {
+					const std::vector<const Lvalue *>::size_type lvalue_index = &lvalue - &lvalues[0]; (void) lvalue_index;
+
+					LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(*lvalue, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+					lvalue_source_analyses.push_back(lvalue_source_analysis);
+					const Index lvalue_output_index = block.merge_lvalue_source_analysis(lvalue_source_analysis);
+					lvalue_output_indices.push_back(lvalue_output_index);
+				}
+
+				// From left to right, emit a syscall that will read a value, and then store the value.
+				for (const Lvalue * const &lvalue : std::as_const(lvalues)) {
+					const std::vector<const Lvalue *>::size_type lvalue_index = &lvalue - &lvalues[0];
+
+					const Index                &lvalue_output_index    = lvalue_output_indices[lvalue_index];
+					const LvalueSourceAnalysis &lvalue_source_analysis = lvalue_source_analyses[lvalue_index];
+
+					const Type &lvalue_type          = storage_scope.type(lvalue_source_analysis.lvalue_type);
+					const Type &lvalue_resolved_type = lvalue_type.resolve_type(storage_scope);
+					if (!lvalue_resolved_type.is_primitive()) {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze_statements: error (line "
+							<< grammar.lexemes.at(lvalue_source_analysis.lexeme_begin).get_line() << " col " << grammar.lexemes.at(lvalue_source_analysis.lexeme_begin).get_column()
+							<< "): all arguments to ``read\" must be of types that resolve to primitives, but argument #"
+							<< lvalue_index + 1
+							<< "is of type <"
+							<< lvalue_type.get_repr(storage_scope)
+							<< ">"
+							;
+						if (lvalue_type.matches(lvalue_resolved_type, storage_scope)) {
+							sstr
+								<< "."
+								;
+						} else {
+							sstr
+								<< ", which resolves to non-primitive type <"
+								<< lvalue_resolved_type.get_repr(storage_scope)
+								<< ">."
+								;
+						}
+						throw SemanticsError(sstr.str());
+					}
+					const Type::Primitive &lvalue_resolved_primitive_type = lvalue_resolved_type.get_primitive();
+
+					const bool is_word = lvalue_resolved_primitive_type.is_word();
+
+					if        (lvalue_resolved_primitive_type.is_string()) {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze_statements: error (line "
+							<< grammar.lexemes.at(lvalue_source_analysis.lexeme_begin).get_line() << " col " << grammar.lexemes.at(lvalue_source_analysis.lexeme_begin).get_column()
+							<< "): reading into string lvalues is not support.  The lvalue type must be a non-string primitive, not one of type <" << lvalue_type.get_repr(storage_scope)
+							<< ">."
+							;
+						throw SemanticsError(sstr.str());
+					} else if (lvalue_resolved_primitive_type.is_integer()) {
+						const Index syscall_code_read_integer_5_index = block.add_instruction(I::LoadFrom(B(), true, true, 5, true, true, Storage("$v0"), Storage("$zero")), {}); (void) syscall_code_read_integer_5_index;
+						const Index syscall_index                     = block.add_instruction(I::Syscall(B()), {}); (void) syscall_index;
+						if (lvalue_source_analysis.is_lvalue_fixed_storage) {
+							const Index copy_read_result_index = block.add_instruction(I::LoadFrom(B(), is_word, true, 0, true, true, lvalue_source_analysis.lvalue_fixed_storage, Storage("$v0"), lvalue_source_analysis.is_lvalue_primref, false), {}); (void) copy_read_result_index;
+						} else {
+							const Index copy_read_result_index = block.add_instruction(I::LoadFrom(B(), is_word, true, 0, false, true, Storage(), Storage("$v0"), true, false, true), {lvalue_output_index}); (void) copy_read_result_index;
+						}
+					} else if (lvalue_resolved_primitive_type.is_char()) {
+						const Index syscall_code_read_char_12_index = block.add_instruction(I::LoadFrom(B(), true, true, 12, true, true, Storage("$v0"), Storage("$zero")), {}); (void) syscall_code_read_char_12_index;
+						const Index syscall_index                   = block.add_instruction(I::Syscall(B()), {}); (void) syscall_index;
+						if (lvalue_source_analysis.is_lvalue_fixed_storage) {
+							const Index copy_read_result_index = block.add_instruction(I::LoadFrom(B(), is_word, true, 0, true, true, lvalue_source_analysis.lvalue_fixed_storage, Storage("$v0"), lvalue_source_analysis.is_lvalue_primref, false), {}); (void) copy_read_result_index;
+						} else {
+							const Index copy_read_result_index = block.add_instruction(I::LoadFrom(B(), is_word, true, 0, false, true, Storage(), Storage("$v0"), true, false, true), {lvalue_output_index}); (void) copy_read_result_index;
+						}
+					} else { //lvalue_resolved_primitive_type.is_boolean()
+						const Index syscall_code_read_integer_5_index = block.add_instruction(I::LoadFrom(B(), true, true, 5, true, true, Storage("$v0"), Storage("$zero")), {}); (void) syscall_code_read_integer_5_index;
+						const Index syscall_index                     = block.add_instruction(I::Syscall(B()), {}); (void) syscall_index;
+						const Index read_result_index                 = block.add_instruction(I::LoadFrom(B(), is_word, true, 0, false, true, Storage(), Storage("$v0")), {}); (void) read_result_index;
+						const Index load_1_index                      = block.add_instruction({I::LoadImmediate(B(), is_word, ConstantValue(static_cast<int32_t>(1), 0, 0))});
+						const Index not_index                         = block.add_instruction({I::LessThanFrom(B(), is_word)}, {read_result_index, load_1_index});
+						const Index load_1_byte_index                 = is_word == false ? load_1_index : block.add_instruction({I::LoadImmediate(B(), false, ConstantValue(static_cast<int32_t>(1), 0, 0))});
+						const Index not_not_index                     = block.add_instruction({I::LessThanFrom(B(), false)}, {not_index, load_1_byte_index});
+						if (lvalue_source_analysis.is_lvalue_fixed_storage) {
+							const Index copy_read_result_index = block.add_instruction(I::LoadFrom(B(), is_word, false, 0, true, false, lvalue_source_analysis.lvalue_fixed_storage, Storage(), lvalue_source_analysis.is_lvalue_primref, false), {not_not_index}); (void) copy_read_result_index;
+						} else {
+							const Index copy_read_result_index = block.add_instruction(I::LoadFrom(B(), is_word, false, 0, false, false, Storage(), Storage("$v0"), true, false, true), {not_not_index, lvalue_output_index}); (void) copy_read_result_index;
+						}
+					}
+				}
+
+				// We're done.
 				break;
 			} case Statement::write_branch: {
 				const Statement::Write &statement_write = grammar.statement_write_storage.at(statement.data);

@@ -1083,7 +1083,7 @@ DEFINE_SYMBOL_2(ReturnStatement, return_statement, return_keyword0, expression_o
 DEFINE_SYMBOL_0_1(ExpressionOpt, expression_opt, Empty, Value, empty, value, expression)
 DEFINE_SYMBOL_4(ReadStatement, read_statement, read_keyword0, leftparenthesis_operator0, lvalue_sequence, rightparenthesis_operator0)
 DEFINE_SYMBOL_2(LvalueSequence, lvalue_sequence, lvalue, lvalue_prefixed_list)
-DEFINE_SYMBOL_0_3(LvaluePrefixedList, lvalue_prefixed_list, Empty, Cons, empty, cons, lvalue_prefixed_list, comman_operator0, lvalue)
+DEFINE_SYMBOL_0_3(LvaluePrefixedList, lvalue_prefixed_list, Empty, Cons, empty, cons, lvalue_prefixed_list, comma_operator0, lvalue)
 DEFINE_SYMBOL_4(WriteStatement, write_statement, write_keyword0, leftparenthesis_operator0, expression_sequence, rightparenthesis_operator0)
 DEFINE_SYMBOL_2(ExpressionSequence, expression_sequence, expression, expression_prefixed_list)
 DEFINE_SYMBOL_0_3(ExpressionPrefixedList, expression_prefixed_list, Empty, Cons, empty, cons, expression_prefixed_list, comma_operator0, expression)
