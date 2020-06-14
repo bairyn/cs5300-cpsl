@@ -9897,6 +9897,20 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 	int32_t add_sp_total    = 0;  // Includes pushed_sp_total.
 	int32_t pushed_sp_total = 0;  // Applied even if no_sp_adjust.
 
+	// Except for nosave_registers, only allow nosaves corresponding to these
+	// nodes.  This should only be storages used between "push_registers" and
+	// "jal" (TODO: double check this) that aren't re-used later on; only
+	// instructions between pushing saved registers and the jal that are *not*
+	// re-used later on.
+	//
+	// TODO: implement!  For now, just leave this empty to disable it, because
+	// nosaves is broken, and is unnecessary but prevents unnecessary saves.
+	//
+	// For calls, the arguments were being added to nosaves unconditionally,
+	// but this is only correct when the arguments are not used *after* the
+	// call.
+	std::set<Storage::Index> nosave_allowed;
+
 	// DFS from each output vertex.  Don't revisit instructions.  Write outputs
 	// to available working storage units.  After all of a given node's output
 	// index's connected input nodes are emitted, mark the working storage unit
@@ -10332,7 +10346,9 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 				// Get IOs for which we'll skip the save.
 				std::set<IO> in_nosaves;
 				for (const std::pair<uint64_t, uint64_t> &nosave_pair : std::as_const(call.nosaves)) {
-					in_nosaves.insert({nosave_pair.first, nosave_pair.second});
+					if (nosave_allowed.find(nosave_pair.first) != nosave_allowed.cend()) {
+						in_nosaves.insert({nosave_pair.first, nosave_pair.second});
+					}
 				}
 
 				// Get storages we need to save.
