@@ -1,7 +1,7 @@
 #ifndef CPSL_CC_SEMANTICS_HH
 #define CPSL_CC_SEMANTICS_HH
 
-#include <cstdint>    // int32_t, uint32_t, uint64_t
+#include <cstdint>    // uint8_t, int32_t, uint32_t, uint64_t
 #include <map>        // std::map
 #include <memory>     // std::shared_ptr
 #include <optional>   // std::optional

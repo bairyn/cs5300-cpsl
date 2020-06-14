@@ -2,6 +2,7 @@
 #include <cassert>       // assert
 #include <cctype>        // isalnum, isprint, tolower
 #include <cstddef>       // std::size_t
+#include <cstdint>       // uint8_t, int32_t, uint32_t, uint64_t
 #include <iomanip>       // std::fill, std::left, std::right, std::setw
 #include <ios>           // std::hex
 #include <limits>        // std::numeric_limits
@@ -2194,7 +2195,11 @@ Semantics::Output::Line Semantics::ConstantValue::get_static_repr() const {
 			sstr << get_integer();
 			return sstr.str();
 		} case char_tag: {
-			return quote_char(get_char());
+			//return quote_char(get_char());
+			// MARS MIPS doesn't seem to like "li $t0, '\x05'", so choose something else to not cause this error.
+			std::ostringstream sstr;
+			sstr << static_cast<int32_t>(static_cast<uint8_t>(get_char()));
+			return sstr.str();
 		} case boolean_tag: {
 			if (get_boolean()) {
 				return {"1"};
