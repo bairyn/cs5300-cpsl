@@ -271,6 +271,7 @@ public:
 
 			// | Resolve a chain of aliases.
 			const Type &resolve_type(const IdentifierScope &storage_scope, bool check_cycles = true) const;
+			TypeIndex   resolve_type_index(const IdentifierScope &storage_scope, bool check_cycles = true) const;
 
 			bool matches(const Simple &other, const IdentifierScope &storage_scope) const;
 		};
@@ -383,101 +384,6 @@ public:
 		bool matches(const Type &other, const IdentifierScope &storage_scope) const;
 	};
 
-	// | The result of a constant expression.
-	class ConstantValue {
-	public:
-		// | Is this value considered to be a constant calculable at compile-time?
-		//
-		// If so, which type of constant is it?
-		enum tag_e {
-			null_tag    = 0,
-			dynamic_tag = 1,
-			integer_tag = 2,
-			char_tag    = 3,
-			boolean_tag = 4,
-			string_tag  = 5,
-			num_tags    = 5,
-		};
-		typedef enum tag_e tag_t;
-
-		class Dynamic {
-		public:
-			static const Dynamic dynamic;
-		};
-
-		using data_t = std::variant<
-			std::monostate,
-			Dynamic,
-			int32_t,
-			char,
-			bool,
-			std::string
-		>;
-
-		ConstantValue();
-		ConstantValue(tag_t tag, const data_t &data, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
-		ConstantValue(tag_t tag, data_t &&data, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
-		// | Copy the constant value but use new lexeme identifiers.
-		ConstantValue(const ConstantValue &constant_value, uint64_t lexeme_begin, uint64_t lexeme_end);
-		ConstantValue(ConstantValue &&constant_value, uint64_t lexeme_begin, uint64_t lexeme_end);
-		tag_t  tag;
-		data_t data;
-		uint64_t lexeme_begin = 0;
-		uint64_t lexeme_end   = 0;
-
-		static const ConstantValue true_constant;
-		static const ConstantValue false_constant;
-
-		ConstantValue(const Dynamic &dynamic, uint64_t lexeme_begin, uint64_t lexeme_end);
-		ConstantValue(Dynamic &&dynamic, uint64_t lexeme_begin, uint64_t lexeme_end);
-		explicit ConstantValue(int32_t integer, uint64_t lexeme_begin, uint64_t lexeme_end);
-		explicit ConstantValue(char char_, uint64_t lexeme_begin, uint64_t lexeme_end);
-		explicit ConstantValue(bool integer, uint64_t lexeme_begin, uint64_t lexeme_end);
-		ConstantValue(const std::string &string, uint64_t lexeme_begin, uint64_t lexeme_end);
-		ConstantValue(std::string &&string, uint64_t lexeme_begin, uint64_t lexeme_end);
-
-		// | Is the non-null constant value not tagged with "dynamic_tag"?
-		bool is_static() const;
-		bool is_dynamic() const;
-		bool is_integer() const;
-		bool is_char() const;
-		bool is_boolean() const;
-		bool is_string() const;
-
-		// | The tags must be correct, or else an exception will be thrown, including for set_*.
-		int32_t get_integer() const;
-		char get_char() const;
-		bool get_boolean() const;
-		std::string get_string_copy() const;
-		const std::string &get_string() const;
-		std::string &&get_string();
-		void set_integer(int32_t integer);
-		void set_char(char char_);
-		void set_boolean(bool boolean);
-		void set_string(const std::string &string);
-		void set_string(std::string &&string);
-
-		// | Return "dynamic", "integer", "char", "boolean", or "string".
-		static std::string get_tag_repr(tag_t tag);
-		std::string get_tag_repr() const;
-
-		// | Get the primitive type of the constant value, which must be static.
-		//
-		// Raise an error if it's not static.
-		const Type::Primitive &get_static_primitive_type() const;
-		const Type            &get_static_type()           const;
-
-		// | Get a string representation of the static value.
-		std::string get_static_repr() const;
-
-		static const std::map<char, std::string> char_escapes;
-		static const std::map<std::string, char> reverse_char_escapes;
-
-		static std::string escape_char(char char_);
-		static std::string quote_char(char char_);
-		static std::string quote_string(const std::string &string);
-	};
-
 	// | A representation of a storage unit: a register, offset on the stack, global address, etc.
 	//
 	// $t8 and $t9 are reserved in case any working storage units require 2
@@ -554,6 +460,101 @@ public:
 		bool is_register_dereference() const;
 
 		using Index = std::vector<Storage>::size_type;
+	};
+
+	// | The result of a constant expression.
+	class ConstantValue {
+	public:
+		// | Is this value considered to be a constant calculable at compile-time?
+		//
+		// If so, which type of constant is it?
+		enum tag_e {
+			null_tag    = 0,
+			dynamic_tag = 1,
+			integer_tag = 2,
+			char_tag    = 3,
+			boolean_tag = 4,
+			string_tag  = 5,
+			num_tags    = 5,
+		};
+		typedef enum tag_e tag_t;
+
+		class Dynamic {
+		public:
+			static const Dynamic dynamic;
+		};
+
+		using data_t = std::variant<
+			std::monostate,
+			Dynamic,
+			int32_t,
+			char,
+			bool,
+			Symbol  // string constant; the symbol for its label.
+		>;
+
+		ConstantValue();
+		ConstantValue(tag_t tag, const data_t &data, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+		ConstantValue(tag_t tag, data_t &&data, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
+		// | Copy the constant value but use new lexeme identifiers.
+		ConstantValue(const ConstantValue &constant_value, uint64_t lexeme_begin, uint64_t lexeme_end);
+		ConstantValue(ConstantValue &&constant_value, uint64_t lexeme_begin, uint64_t lexeme_end);
+		tag_t  tag;
+		data_t data;
+		uint64_t lexeme_begin = 0;
+		uint64_t lexeme_end   = 0;
+
+		static const ConstantValue true_constant;
+		static const ConstantValue false_constant;
+
+		ConstantValue(const Dynamic &dynamic, uint64_t lexeme_begin, uint64_t lexeme_end);
+		ConstantValue(Dynamic &&dynamic, uint64_t lexeme_begin, uint64_t lexeme_end);
+		explicit ConstantValue(int32_t integer, uint64_t lexeme_begin, uint64_t lexeme_end);
+		explicit ConstantValue(char char_, uint64_t lexeme_begin, uint64_t lexeme_end);
+		explicit ConstantValue(bool integer, uint64_t lexeme_begin, uint64_t lexeme_end);
+		ConstantValue(const Symbol &string, uint64_t lexeme_begin, uint64_t lexeme_end);
+		ConstantValue(Symbol &&string, uint64_t lexeme_begin, uint64_t lexeme_end);
+
+		// | Is the non-null constant value not tagged with "dynamic_tag"?
+		bool is_static() const;
+		bool is_dynamic() const;
+		bool is_integer() const;
+		bool is_char() const;
+		bool is_boolean() const;
+		bool is_string() const;
+
+		// | The tags must be correct, or else an exception will be thrown, including for set_*.
+		int32_t get_integer() const;
+		char get_char() const;
+		bool get_boolean() const;
+		Symbol get_string_copy() const;
+		const Symbol &get_string() const;
+		Symbol &&get_string();
+		void set_integer(int32_t integer);
+		void set_char(char char_);
+		void set_boolean(bool boolean);
+		void set_string(const Symbol &string);
+		void set_string(Symbol &&string);
+
+		// | Return "dynamic", "integer", "char", "boolean", or "string".
+		static std::string get_tag_repr(tag_t tag);
+		std::string get_tag_repr() const;
+
+		// | Get the primitive type of the constant value, which must be static.
+		//
+		// Raise an error if it's not static.
+		const Type::Primitive &get_static_primitive_type() const;
+		const Type            &get_static_type()           const;
+
+		// | Get a string representation of the static value.
+		Output::Line get_static_repr() const;
+
+		static const std::map<char, std::string> char_escapes;
+		static const std::map<std::string, char> reverse_char_escapes;
+
+		static std::string escape_char(char char_);
+		static std::string quote_char(char char_);
+		static std::string quote_string(const std::string &string);
 	};
 
 	// | Objects represent a collection of identifiers in scope and what they refer to.
@@ -683,8 +684,10 @@ public:
 		// | Since types are accessed often in the code, conveniently provide these accessors.
 		const Type &type(TypeIndex type_index) const;
 		const Type &type(const std::string &identifier) const;
-		const Type &resolve_type(TypeIndex type_index) const;
-		const Type &resolve_type(const std::string &identifier) const;
+		const Type &resolve_type(TypeIndex type_index, bool check_cycles = true) const;
+		const Type &resolve_type(const std::string &identifier, bool check_cycles = true) const;
+		TypeIndex resolve_type_index(TypeIndex type_index, bool check_cycles = true) const;
+		TypeIndex resolve_type_index(const std::string &identifier, bool check_cycles = true) const;
 	};
 
 	Semantics();
@@ -708,8 +711,8 @@ public:
 		// identifier scope for each expression.
 		const IdentifierScope &expression_constant_scope,
 		const IdentifierScope &expression_var_scope
-	) const;
-	ConstantValue is_expression_constant(const ::Expression &expression, const IdentifierScope &expression_constant_scope, const IdentifierScope &expression_var_scope) const;
+	);
+	ConstantValue is_expression_constant(const ::Expression &expression, const IdentifierScope &expression_constant_scope, const IdentifierScope &expression_var_scope);
 
 	// | From the parse tree Type, construct a Semantics::Type that represents the type.
 	//
@@ -914,11 +917,11 @@ public:
 		class LessThanFrom : public Base {
 		public:
 			LessThanFrom();
-			LessThanFrom(const Base &base, bool is_word, bool is_signed = false);
+			LessThanFrom(const Base &base, bool is_load_word, bool is_signed = false);
 			// | Are we loading a byte or a word?
-			bool is_word;
+			bool is_load_word;
 			// | Is this a signed comparison?
-			bool is_signed;
+			bool is_signed = false;
 
 			std::vector<uint32_t> get_input_sizes() const;
 			std::vector<uint32_t> get_working_sizes() const;
@@ -1558,6 +1561,10 @@ public:
 		Block(const MIPSIO  &instructions, MIPSIO::Index front, MIPSIO::Index back, const std::map<std::string, TypeIndex> &local_variables, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
 		Block(      MIPSIO &&instructions, MIPSIO::Index front, MIPSIO::Index back, const std::map<std::string, TypeIndex> &local_variables, uint64_t lexeme_begin = 0, uint64_t lexeme_end = 0);
 
+		// | Add an instruction to the block, returning the index to it.
+		MIPSIO::Index add_instruction(const Instruction &instruction, const std::vector<MIPSIO::Index> inputs = {});
+		MIPSIO::Index add_instruction_indexed(const Instruction &instruction, const std::vector<MIPSIO::IO> inputs = {});
+
 		// | All blocks must be non-empty for merges.
 		// | Return the new "back".
 		MIPSIO::Index merge_append(const Block &other);
@@ -1597,7 +1604,9 @@ public:
 	std::vector<Output::Line> analyze_routine(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const Body &body, IdentifierScope &constant_scope, IdentifierScope &type_scope, const IdentifierScope &routine_scope, IdentifierScope &var_scope, IdentifierScope &combined_scope, IdentifierScope &storage_scope);
 
 	// | Get the symbol to a string literal, tracking it if this is the first time encountering it.
-	Symbol string_literal(const std::string &string);
+	Symbol string_literal_symbol(const std::string &string);
+	Storage string_literal(const std::string &string);
+	Storage string_literal(const Symbol &string_symbol);
 	static const uint64_t max_string_requested_label_suffix_length;
 	static std::string labelify(const std::string &string, const std::string &prefix = "string_literal");
 

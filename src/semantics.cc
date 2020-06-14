@@ -877,6 +877,38 @@ const Semantics::Type &Semantics::Type::Simple::resolve_type(const IdentifierSco
 	}
 }
 
+Semantics::TypeIndex Semantics::Type::Simple::resolve_type_index(const IdentifierScope &storage_scope, bool check_cycles) const {
+	if (!check_cycles) {
+		TypeIndex type_index = referent;
+		const Type *type = &storage_scope.type(type_index);
+		while (type->is_simple()) {
+			type_index = type->get_simple().referent;
+			type = &storage_scope.type(type_index);
+		}
+		return type_index;
+	} else {
+		TypeIndex type_index = referent;
+		const Type *type = &storage_scope.type(referent);
+		std::set<const Type *> visited;
+		while (type->is_simple()) {
+			if (visited.find(type) != visited.cend()) {
+				std::ostringstream sstr;
+				sstr << "Semantics::Type::Simple::resolve_type_index: error: found cycle in simple type alias declarations.";
+				throw SemanticsError(sstr.str());
+			}
+			visited.insert(type);
+			type_index = type->get_simple().referent;
+			type = &storage_scope.type(type_index);
+		}
+		if (!type) {
+			std::ostringstream sstr;
+			sstr << "Semantics::Type::Simple::resolve_type: error_index: found a null type pointer in simple type alias resolution!";
+			throw SemanticsError(sstr.str());
+		}
+		return type_index;
+	}
+}
+
 bool Semantics::Type::Simple::matches(const Simple &other, const IdentifierScope &storage_scope) const {
 	return identifier == other.identifier && fixed_width == other.fixed_width && size == other.size && storage_scope.type(referent).matches(storage_scope.type(other.referent), storage_scope);
 }
@@ -1512,6 +1544,94 @@ bool Semantics::Type::matches(const Type &other, const IdentifierScope &storage_
 	}
 }
 
+Semantics::Storage::Storage()
+	{}
+
+Semantics::Storage::Storage(uint32_t max_size, bool is_global, Symbol global_address, const std::string &register_, bool dereference, int32_t offset, bool no_sp_adjust, bool is_caller_preserved)
+	: max_size(max_size)
+	, is_global(is_global)
+	, global_address(global_address)
+	, register_(register_)
+	, dereference(dereference)
+	, offset(offset)
+	, no_sp_adjust(no_sp_adjust)
+	, is_caller_preserved(is_caller_preserved)
+	{}
+
+// Specialized storage constructors.
+// | Storage type #1: (&global) + x, and
+// | Storage type #2: ((uint8_t *) &global)[x];  -- if global is already a byte pointer/array, global[x].
+Semantics::Storage::Storage(Symbol global_address, bool dereference, uint32_t max_size, int32_t offset)
+	: max_size(max_size)
+	, is_global(true)
+	, global_address(global_address)
+	, register_("")
+	, dereference(dereference)
+	, offset(offset)
+	, no_sp_adjust(false)
+	, is_caller_preserved(false)
+	{}
+
+// | Storage type #3: 4-byte direct register.  (No dereference.)
+Semantics::Storage::Storage(const std::string &register_, bool no_sp_adjust)
+	: max_size(4)
+	, is_global(false)
+	, global_address(Symbol())
+	, register_(register_)
+	, dereference(false)
+	, offset(0)
+	, no_sp_adjust(no_sp_adjust)
+	, is_caller_preserved(false)
+	{}
+
+// | Storage type #4: dereferenced register.
+Semantics::Storage::Storage(const std::string &register_, uint32_t max_size, int32_t offset, bool no_sp_adjust)
+	: max_size(max_size)
+	, is_global(false)
+	, global_address(Symbol())
+	, register_(register_)
+	, dereference(true)
+	, offset(offset)
+	, no_sp_adjust(no_sp_adjust)
+	, is_caller_preserved(false)
+	{}
+
+// | Is this size ideal with for this storage?  (Does it equal max_size?)
+bool Semantics::Storage::ideal_size(uint32_t size) const {
+	return size == max_size;
+}
+
+// | Is this size compatible with this storage?  (Is it <= max_size?)
+bool Semantics::Storage::compatible_size(uint32_t size) const {
+	return size <= max_size;
+}
+
+std::vector<uint32_t> Semantics::Storage::get_sizes(const std::vector<Storage> &storage) {
+	std::vector<uint32_t> sizes;
+	for (const Storage &storage_unit : std::as_const(storage)) {
+		sizes.push_back(storage_unit.max_size);
+	}
+	return sizes;
+}
+
+// Type of the register.
+Semantics::Storage::type_t Semantics::Storage::get_type() const {
+	if           ( is_global && !dereference) {
+		return global_address_type;
+	} else if    ( is_global &&  dereference) {
+		return global_dereference_type;
+	} else if    (!is_global && !dereference) {
+		return register_direct_type;
+	} else {  // (!is_global &&  dereference) {
+		return register_dereference_type;
+	}
+}
+
+bool Semantics::Storage::is_global_address()       const { return get_type() == global_address_type; }
+bool Semantics::Storage::is_global_dereference()   const { return get_type() == global_dereference_type; }
+bool Semantics::Storage::is_register_direct()      const { return get_type() == register_direct_type; }
+bool Semantics::Storage::is_register_dereference() const { return get_type() == register_dereference_type; }
+
 const Semantics::ConstantValue::Dynamic Semantics::ConstantValue::Dynamic::dynamic {};
 
 Semantics::ConstantValue::ConstantValue()
@@ -1586,14 +1706,14 @@ Semantics::ConstantValue::ConstantValue(bool boolean, uint64_t lexeme_begin, uin
 	, lexeme_end(lexeme_end)
 	{}
 
-Semantics::ConstantValue::ConstantValue(const std::string &string, uint64_t lexeme_begin, uint64_t lexeme_end)
+Semantics::ConstantValue::ConstantValue(const Symbol &string, uint64_t lexeme_begin, uint64_t lexeme_end)
 	: tag(string_tag)
 	, data(string)
 	, lexeme_begin(lexeme_begin)
 	, lexeme_end(lexeme_end)
 	{}
 
-Semantics::ConstantValue::ConstantValue(std::string &&string, uint64_t lexeme_begin, uint64_t lexeme_end)
+Semantics::ConstantValue::ConstantValue(Symbol &&string, uint64_t lexeme_begin, uint64_t lexeme_end)
 	: tag(string_tag)
 	, data(std::move(string))
 	, lexeme_begin(lexeme_begin)
@@ -1786,7 +1906,7 @@ bool Semantics::ConstantValue::get_boolean() const {
 	return std::get<bool>(data);
 }
 
-std::string Semantics::ConstantValue::get_string_copy() const {
+Semantics::Symbol Semantics::ConstantValue::get_string_copy() const {
 	switch(tag) {
 		case dynamic_tag:
 		case integer_tag:
@@ -1808,10 +1928,11 @@ std::string Semantics::ConstantValue::get_string_copy() const {
 		throw SemanticsError(sstr.str());
 	}
 
-	return std::string(std::as_const(std::get<std::string>(data)));
+	Symbol string(std::as_const(std::get<Symbol>(data)));
+	return string;
 }
 
-const std::string &Semantics::ConstantValue::get_string() const {
+const Semantics::Symbol &Semantics::ConstantValue::get_string() const {
 	switch(tag) {
 		case dynamic_tag:
 		case integer_tag:
@@ -1833,10 +1954,10 @@ const std::string &Semantics::ConstantValue::get_string() const {
 		throw SemanticsError(sstr.str());
 	}
 
-	return std::get<std::string>(data);
+	return std::get<Symbol>(data);
 }
 
-std::string &&Semantics::ConstantValue::get_string() {
+Semantics::Symbol &&Semantics::ConstantValue::get_string() {
 	switch(tag) {
 		case dynamic_tag:
 		case integer_tag:
@@ -1858,7 +1979,7 @@ std::string &&Semantics::ConstantValue::get_string() {
 		throw SemanticsError(sstr.str());
 	}
 
-	return std::move(std::get<std::string>(data));
+	return std::move(std::get<Symbol>(data));
 }
 
 void Semantics::ConstantValue::set_integer(int32_t integer) {
@@ -1936,7 +2057,7 @@ void Semantics::ConstantValue::set_boolean(bool boolean) {
 	data = boolean;
 }
 
-void Semantics::ConstantValue::set_string(const std::string &string) {
+void Semantics::ConstantValue::set_string(const Symbol &string) {
 	switch(tag) {
 		case dynamic_tag:
 		case integer_tag:
@@ -1961,7 +2082,7 @@ void Semantics::ConstantValue::set_string(const std::string &string) {
 	data = string;
 }
 
-void Semantics::ConstantValue::set_string(std::string &&string) {
+void Semantics::ConstantValue::set_string(Symbol &&string) {
 	switch(tag) {
 		case dynamic_tag:
 		case integer_tag:
@@ -1983,7 +2104,7 @@ void Semantics::ConstantValue::set_string(std::string &&string) {
 		throw SemanticsError(sstr.str());
 	}
 
-	data = std::string(string);
+	data = std::move(string);
 }
 
 std::string Semantics::ConstantValue::get_tag_repr(tag_t tag) {
@@ -2062,7 +2183,7 @@ const Semantics::Type &Semantics::ConstantValue::get_static_type() const {
 }
 
 // | Get a string representation of the static value.
-std::string Semantics::ConstantValue::get_static_repr() const {
+Semantics::Output::Line Semantics::ConstantValue::get_static_repr() const {
 	switch(tag) {
 		case dynamic_tag: {
 			std::ostringstream sstr;
@@ -2076,12 +2197,12 @@ std::string Semantics::ConstantValue::get_static_repr() const {
 			return quote_char(get_char());
 		} case boolean_tag: {
 			if (get_boolean()) {
-				return "1";
+				return {"1"};
 			} else {
-				return "0";
+				return {"0"};
 			}
 		} case string_tag: {
-			return quote_string(get_string());
+			return std::as_const(get_string());
 		}
 
 		case null_tag:
@@ -2144,94 +2265,6 @@ std::string Semantics::ConstantValue::quote_string(const std::string &string) {
 	quoted.push_back('"');
 	return std::move(quoted);
 }
-
-Semantics::Storage::Storage()
-	{}
-
-Semantics::Storage::Storage(uint32_t max_size, bool is_global, Symbol global_address, const std::string &register_, bool dereference, int32_t offset, bool no_sp_adjust, bool is_caller_preserved)
-	: max_size(max_size)
-	, is_global(is_global)
-	, global_address(global_address)
-	, register_(register_)
-	, dereference(dereference)
-	, offset(offset)
-	, no_sp_adjust(no_sp_adjust)
-	, is_caller_preserved(is_caller_preserved)
-	{}
-
-// Specialized storage constructors.
-// | Storage type #1: (&global) + x, and
-// | Storage type #2: ((uint8_t *) &global)[x];  -- if global is already a byte pointer/array, global[x].
-Semantics::Storage::Storage(Symbol global_address, bool dereference, uint32_t max_size, int32_t offset)
-	: max_size(max_size)
-	, is_global(true)
-	, global_address(global_address)
-	, register_("")
-	, dereference(dereference)
-	, offset(offset)
-	, no_sp_adjust(false)
-	, is_caller_preserved(false)
-	{}
-
-// | Storage type #3: 4-byte direct register.  (No dereference.)
-Semantics::Storage::Storage(const std::string &register_, bool no_sp_adjust)
-	: max_size(4)
-	, is_global(false)
-	, global_address(Symbol())
-	, register_(register_)
-	, dereference(false)
-	, offset(0)
-	, no_sp_adjust(no_sp_adjust)
-	, is_caller_preserved(false)
-	{}
-
-// | Storage type #4: dereferenced register.
-Semantics::Storage::Storage(const std::string &register_, uint32_t max_size, int32_t offset, bool no_sp_adjust)
-	: max_size(max_size)
-	, is_global(false)
-	, global_address(Symbol())
-	, register_(register_)
-	, dereference(true)
-	, offset(offset)
-	, no_sp_adjust(no_sp_adjust)
-	, is_caller_preserved(false)
-	{}
-
-// | Is this size ideal with for this storage?  (Does it equal max_size?)
-bool Semantics::Storage::ideal_size(uint32_t size) const {
-	return size == max_size;
-}
-
-// | Is this size compatible with this storage?  (Is it <= max_size?)
-bool Semantics::Storage::compatible_size(uint32_t size) const {
-	return size <= max_size;
-}
-
-std::vector<uint32_t> Semantics::Storage::get_sizes(const std::vector<Storage> &storage) {
-	std::vector<uint32_t> sizes;
-	for (const Storage &storage_unit : std::as_const(storage)) {
-		sizes.push_back(storage_unit.max_size);
-	}
-	return sizes;
-}
-
-// Type of the register.
-Semantics::Storage::type_t Semantics::Storage::get_type() const {
-	if           ( is_global && !dereference) {
-		return global_address_type;
-	} else if    ( is_global &&  dereference) {
-		return global_dereference_type;
-	} else if    (!is_global && !dereference) {
-		return register_direct_type;
-	} else {  // (!is_global &&  dereference) {
-		return register_dereference_type;
-	}
-}
-
-bool Semantics::Storage::is_global_address()       const { return get_type() == global_address_type; }
-bool Semantics::Storage::is_global_dereference()   const { return get_type() == global_dereference_type; }
-bool Semantics::Storage::is_register_direct()      const { return get_type() == register_direct_type; }
-bool Semantics::Storage::is_register_dereference() const { return get_type() == register_dereference_type; }
 
 Semantics::IdentifierScope::IdentifierBinding::Static::Static()
 	{}
@@ -2752,12 +2785,25 @@ const Semantics::Type &Semantics::IdentifierScope::type(const std::string &ident
 	return get(identifier).get_type();
 }
 
-const Semantics::Type &Semantics::IdentifierScope::resolve_type(TypeIndex type_index) const {
-	return type(type_index).resolve_type(*this);
+const Semantics::Type &Semantics::IdentifierScope::resolve_type(TypeIndex type_index, bool check_cycles) const {
+	return type(type_index).resolve_type(*this, check_cycles);
 }
 
-const Semantics::Type &Semantics::IdentifierScope::resolve_type(const std::string &identifier) const {
-	return type(identifier).resolve_type(*this);
+const Semantics::Type &Semantics::IdentifierScope::resolve_type(const std::string &identifier, bool check_cycles) const {
+	return type(identifier).resolve_type(*this, check_cycles);
+}
+
+Semantics::TypeIndex Semantics::IdentifierScope::resolve_type_index(TypeIndex type_index, bool check_cycles) const {
+	const Type &type_ = type(type_index);
+	if (type_.is_simple()) {
+		return type_.get_simple().resolve_type_index(*this, check_cycles);
+	} else {
+		return type_index;
+	}
+}
+
+Semantics::TypeIndex Semantics::IdentifierScope::resolve_type_index(const std::string &identifier, bool check_cycles) const {
+	return resolve_type_index(index(identifier), check_cycles);
 }
 
 Semantics::Semantics()
@@ -2829,7 +2875,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 	// | A collection of identifiers of constants available to the scope of the expression.
 	const IdentifierScope &expression_constant_scope,
 	const IdentifierScope &expression_var_scope
-) const {
+) {
 	if (expression > grammar.expression_storage.size()) {
 		std::ostringstream sstr;
 		sstr << "Semantics::is_expression_constant: out of bounds expression reference: " << expression << " >= " << grammar.expression_storage.size() << ".";
@@ -4035,7 +4081,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 		} case ::Expression::string_branch: {
 			const ::Expression::String &string        = grammar.expression_string_storage.at(expression_symbol.data);
 			const LexemeString         &lexeme_string = grammar.lexemes.at(string.string).get_string();
-			expression_constant_value = ConstantValue(std::move(std::string(lexeme_string.expanded)), string.string, string.string + 1);
+			expression_constant_value = ConstantValue(static_cast<Symbol>(string_literal_symbol(lexeme_string.expanded)), string.string, string.string + 1);
 			break;
 		}
 
@@ -4051,7 +4097,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 	return expression_constant_value;
 }
 
-Semantics::ConstantValue Semantics::is_expression_constant(const ::Expression &expression, const IdentifierScope &expression_constant_scope, const IdentifierScope &expression_var_scope) const {
+Semantics::ConstantValue Semantics::is_expression_constant(const ::Expression &expression, const IdentifierScope &expression_constant_scope, const IdentifierScope &expression_var_scope) {
 	return is_expression_constant(&expression - &grammar.expression_storage[0], expression_constant_scope, expression_var_scope);
 }
 
@@ -4802,14 +4848,12 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadImmediate::emit
 	}
 
 	// Get the li operation.  Are we loading a label or a number?
-	Output::Line constant_load_op;
-	Output::Line value;
+	      Output::Line constant_load_op;
+	const Output::Line value            = constant_value.get_static_repr();
 	if (!constant_value.is_string()) {
 		constant_load_op = "\tli    ";
-		value = constant_value.get_static_repr();
 	} else {
 		constant_load_op = "\tla    ";
-		value = destination_storage.global_address;
 	}
 
 	// Part 1: emit the output depending on the destination storage type.
@@ -5055,13 +5099,13 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 Semantics::Instruction::LessThanFrom::LessThanFrom()
 	{}
 
-Semantics::Instruction::LessThanFrom::LessThanFrom(const Base &base, bool is_word, bool is_signed)
+Semantics::Instruction::LessThanFrom::LessThanFrom(const Base &base, bool is_load_word, bool is_signed)
 	: Base(base)
-	, is_word(is_word)
+	, is_load_word(is_load_word)
 	, is_signed(is_signed)
 	{}
 
-std::vector<uint32_t> Semantics::Instruction::LessThanFrom::get_input_sizes() const { return {static_cast<uint32_t>(is_word ? 4 : 1), static_cast<uint32_t>(is_word ? 4 : 1)}; }
+std::vector<uint32_t> Semantics::Instruction::LessThanFrom::get_input_sizes() const { return {static_cast<uint32_t>(is_load_word ? 4 : 1), static_cast<uint32_t>(is_load_word ? 4 : 1)}; }
 std::vector<uint32_t> Semantics::Instruction::LessThanFrom::get_working_sizes() const { return {}; }
 std::vector<uint32_t> Semantics::Instruction::LessThanFrom::get_output_sizes() const { return {static_cast<uint32_t>(1)}; }
 std::vector<uint32_t> Semantics::Instruction::LessThanFrom::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
@@ -5075,7 +5119,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LessThanFrom::emit(
 		binary_operator = "\tslt   ";
 	}
 
-	return emit_binary_operation(Instruction(*this), binary_operator, true, is_word, storages);
+	return emit_binary_operation(Instruction(*this), binary_operator, true, is_load_word, storages);
 }
 
 Semantics::Instruction::NorFrom::NorFrom()
@@ -11090,7 +11134,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 	if (constant_value.is_static()) {
 		expression_semantics.lexeme_begin = constant_value.lexeme_begin;
 		expression_semantics.lexeme_end   = constant_value.lexeme_end;
-		expression_semantics.output_type  = type_scope.index(constant_value.get_static_primitive_type().get_tag_repr());
+		const Type::Primitive &primitive_type = constant_value.get_static_primitive_type();
+		expression_semantics.output_type  = type_scope.index(primitive_type.get_tag_repr());
 		expression_semantics.output_index = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), constant_value.get_static_primitive_type().is_word(), constant_value)});
 	} else {
 		// Branch according to the expression type.
@@ -12489,6 +12534,17 @@ Semantics::Block::Block(MIPSIO &&instructions, MIPSIO::Index front, MIPSIO::Inde
 	, lexeme_begin(lexeme_begin)
 	, lexeme_end(lexeme_end)
 	{}
+
+// | Add an instruction to the block, returning the index to it.
+Semantics::MIPSIO::Index Semantics::Block::add_instruction(const Instruction &instruction, const std::vector<MIPSIO::Index> inputs) {
+	const MIPSIO::Index instruction_index = back = instructions.add_instruction(instruction, inputs, {back});
+	return instruction_index;
+}
+
+Semantics::MIPSIO::Index Semantics::Block::add_instruction_indexed(const Instruction &instruction, const std::vector<MIPSIO::IO> inputs) {
+	const MIPSIO::Index instruction_index = back = instructions.add_instruction_indexed(instruction, inputs, {back});
+	return instruction_index;
+}
 
 Semantics::MIPSIO::Index Semantics::Block::merge_append(const Block &other) {
 	const MIPSIO::Index new_back = back = instructions.merge(other.instructions, back, other.front, other.back);
@@ -13959,6 +14015,196 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				const ExpressionSequence &expression_sequence        = grammar.expression_sequence_storage.at(write_statement.expression_sequence);
 				const LexemeOperator     &rightparenthesis_operator0 = grammar.lexemes.at(write_statement.rightparenthesis_operator0).get_operator(); (void) rightparenthesis_operator0;
 
+				const ::Expression           &first_expression         = grammar.expression_storage.at(expression_sequence.expression);
+				const ExpressionPrefixedList &expression_prefixed_list = grammar.expression_prefixed_list_storage.at(expression_sequence.expression_prefixed_list);
+
+				// Collect the expressions in the list.
+				std::vector<const ::Expression *> expressions;
+
+				// Collect the expressions in the list.
+				expressions.push_back(&first_expression);
+				bool reached_end = false;
+				for (const ExpressionPrefixedList *last_list = &expression_prefixed_list; !reached_end; ) {
+					// Unpack the last list encountered.
+					switch(last_list->branch) {
+						case ExpressionPrefixedList::empty_branch: {
+							// We're done.
+							// (No need to unpack the empty branch.)
+							reached_end = true;
+							break;
+						}
+
+						case ExpressionPrefixedList::cons_branch: {
+							// Unpack the list.
+							const ExpressionPrefixedList::Cons &last_expression_prefixed_list_cons = grammar.expression_prefixed_list_cons_storage.at(last_list->data);
+							const ExpressionPrefixedList       &last_expression_prefixed_list      = grammar.expression_prefixed_list_storage.at(last_expression_prefixed_list_cons.expression_prefixed_list);
+							const LexemeOperator               &last_comma_operator0               = grammar.lexemes.at(last_expression_prefixed_list_cons.comma_operator0).get_operator(); (void) last_comma_operator0;
+							const ::Expression                 &last_expression                    = grammar.expression_storage.at(last_expression_prefixed_list_cons.expression);
+
+							// Add the expression.
+							expressions.push_back(&last_expression);
+							last_list = &last_expression_prefixed_list;
+
+							// Loop.
+							break;
+						}
+
+						// Unrecognized branch.
+						default: {
+							std::ostringstream sstr;
+							sstr << "Semantics::analyze_statements: internal error: invalid expression_prefixed_list branch at index " << last_list - &grammar.expression_prefixed_list_storage[0] << ": " << last_list->branch;
+							throw SemanticsError(sstr.str());
+						}
+					}
+				}
+
+				// Correct the order of the list.
+				std::reverse(expressions.begin() + 1, expressions.end());
+
+				// Analyze the expressions.
+				std::vector<Expression> argument_expressions;
+				for (const ::Expression * const &expression : std::as_const(expressions)) {
+					const Expression argument_expression = analyze_expression(*expression, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+					argument_expressions.push_back(argument_expression);
+				}
+
+				// Verify all expression types are primitives.
+				std::vector<TypeIndex>               argument_expression_type_indices;
+				std::vector<const Type *>            argument_expression_types;
+				std::vector<TypeIndex>               argument_expression_resolved_type_indices;
+				std::vector<const Type *>            argument_expression_resolved_types;
+				std::vector<const Type::Primitive *> argument_expression_resolved_primitive_types;
+				bool has_boolean = false;
+				for (const Expression &argument_expression : std::as_const(argument_expressions)) {
+					const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
+
+					const TypeIndex       &argument_expression_type_index              = argument_expression.output_type;
+					const Type            &argument_expression_type                    = storage_scope.type(argument_expression_type_index);
+					const TypeIndex       &argument_expression_resolved_type_index     = storage_scope.resolve_type_index(argument_expression_type_index);
+					const Type            &argument_expression_resolved_type           = storage_scope.resolve_type(argument_expression_resolved_type_index);
+
+					// Verify.
+					if (!argument_expression_resolved_type.is_primitive()) {
+						std::ostringstream sstr;
+						sstr
+							<< "Semantics::analyze_statements: error (line "
+							<< grammar.lexemes.at(argument_expression.lexeme_begin).get_line() << " col " << grammar.lexemes.at(argument_expression.lexeme_begin).get_column()
+							<< "): all arguments to ``write\" must be of types that resolve to primitives, but argument #"
+							<< argument_expression_index + 1
+							<< "is of type <"
+							<< argument_expression_type.get_repr(storage_scope)
+							<< ">"
+							;
+						if (argument_expression_type.matches(argument_expression_resolved_type, storage_scope)) {
+							sstr
+								<< "."
+								;
+						} else {
+							sstr
+								<< ", which resolves to non-primitive type <"
+								<< argument_expression_resolved_type.get_repr(storage_scope)
+								<< ">."
+								;
+						}
+						throw SemanticsError(sstr.str());
+					}
+
+					const Type::Primitive &argument_expression_resolved_primitive_type = argument_expression_resolved_type.get_primitive();
+
+					// Add type information.
+					argument_expression_type_indices              .push_back( argument_expression_type_index);
+					argument_expression_types                     .push_back(&argument_expression_type);
+					argument_expression_resolved_type_indices     .push_back( argument_expression_resolved_type_index);
+					argument_expression_resolved_types            .push_back(&argument_expression_resolved_type);
+					argument_expression_resolved_primitive_types  .push_back(&argument_expression_resolved_primitive_type);
+
+					// Are any arguments booleans?
+					if (argument_expression_resolved_primitive_type.is_boolean()) {
+						has_boolean = true;
+					}
+				}
+
+				// If there are any booleans, get the address of the boolean print string.
+				std::string   boolean_string_str;
+				Symbol        boolean_string_symbol;
+				Storage       boolean_string;
+				int8_t        false_offset;
+				ConstantValue boolean_string_constant_value;
+				if (has_boolean) {
+					std::ostringstream sstr;
+					sstr << "true" << '\0' << "false" << '\0';
+					boolean_string_str = sstr.str();
+					boolean_string_symbol = string_literal_symbol(boolean_string_str);
+					boolean_string = string_literal(boolean_string_symbol);
+					false_offset = 5;
+					boolean_string_constant_value = ConstantValue(static_cast<Symbol>(boolean_string_symbol), 0, 0);
+				}
+
+				// Perform and merge all expressions.
+				std::vector<Index> argument_expression_output_indices;
+				for (const Expression &argument_expression : std::as_const(argument_expressions)) {
+					const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
+
+					const TypeIndex               &argument_expression_type_index              = argument_expression_type_indices            [argument_expression_index];
+					const Type * const            &argument_expression_type                    = argument_expression_types                   [argument_expression_index];
+					const TypeIndex               &argument_expression_resolved_type_index     = argument_expression_resolved_type_indices   [argument_expression_index];
+					const Type * const            &argument_expression_resolved_type           = argument_expression_resolved_types          [argument_expression_index];
+					const Type::Primitive * const &argument_expression_resolved_primitive_type = argument_expression_resolved_primitive_types[argument_expression_index];
+
+					// Merge the expression.
+					const Index argument_expression_output_index = block.merge_expression(argument_expression);
+					argument_expression_output_indices.push_back(argument_expression_output_index);
+				}
+
+				// Backup $a0.
+				const Index backup_a0 = block.add_instruction(I::LoadFrom(B(), true, true, 0, false, true, Storage(), Storage("$a0")), {});
+
+				// For each argument, output the appropriate MARS syscalls to print the primitive values.
+				for (const Expression &argument_expression : std::as_const(argument_expressions)) {
+					const std::vector<Expression>::size_type argument_expression_index = &argument_expression - &argument_expressions[0];
+
+					const TypeIndex               &argument_expression_type_index              = argument_expression_type_indices            [argument_expression_index];
+					const Type * const            &argument_expression_type                    = argument_expression_types                   [argument_expression_index];
+					const TypeIndex               &argument_expression_resolved_type_index     = argument_expression_resolved_type_indices   [argument_expression_index];
+					const Type * const            &argument_expression_resolved_type           = argument_expression_resolved_types          [argument_expression_index];
+					const Type::Primitive * const &argument_expression_resolved_primitive_type = argument_expression_resolved_primitive_types[argument_expression_index];
+					const Index                   &argument_expression_output_index            = argument_expression_output_indices          [argument_expression_index];
+
+					const bool is_word = argument_expression_resolved_primitive_type->is_word();
+
+					// Print the value.
+					if        (argument_expression_resolved_primitive_type->is_integer()) {
+						const Index syscall_code_print_integer_1_index = block.add_instruction(I::LoadFrom(B(), true, true, 1, true, true, Storage("$v0"), Storage("$zero")), {}); (void) syscall_code_print_integer_1_index;
+						const Index syscall_write_a0_index             = block.add_instruction(I::LoadFrom(B(), true, is_word, 0, true, false, Storage("$a0"), Storage()), {argument_expression_output_index}); (void) syscall_write_a0_index;
+						const Index syscall_index                      = block.add_instruction(I::Syscall(B()), {}); (void) syscall_index;
+					} else if (argument_expression_resolved_primitive_type->is_string()) {
+						const Index syscall_code_print_string_4_index = block.add_instruction(I::LoadFrom(B(), true, true, 4, true, true, Storage("$v0"), Storage("$zero")), {}); (void) syscall_code_print_string_4_index;
+						const Index syscall_write_a0_index            = block.add_instruction(I::LoadFrom(B(), true, is_word, 0, true, false, Storage("$a0"), Storage()), {argument_expression_output_index}); (void) syscall_write_a0_index;
+						const Index syscall_index                     = block.add_instruction(I::Syscall(B()), {}); (void) syscall_index;
+					} else if (argument_expression_resolved_primitive_type->is_boolean()) {
+						assert(has_boolean);
+						const Index load_1_index                      = block.add_instruction({I::LoadImmediate(B(), is_word, ConstantValue(static_cast<int32_t>(1), 0, 0))});
+						const Index not_index                         = block.add_instruction({I::LessThanFrom(B(), is_word)}, {argument_expression_output_index, load_1_index});
+						const Index load_false_offset_byte_index      = block.add_instruction({I::LoadImmediate(B(), false, ConstantValue(static_cast<char>(false_offset), 0, 0))});
+						const Index offset_byte_index                 = block.add_instruction({I::MultFrom(B(), false, true, false)}, {not_index, load_false_offset_byte_index});
+						const Index offset_index                      = (boolean_string_constant_value.get_static_primitive_type().is_word() == false) ? offset_byte_index : block.add_instruction({I::LoadFrom(B(), boolean_string_constant_value.get_static_primitive_type().is_word(), false)}, {offset_byte_index});
+						const Index base_index                        = block.add_instruction({I::LoadImmediate(B(), boolean_string_constant_value.get_static_primitive_type().is_word(), boolean_string_constant_value)});
+						const Index load_string_index                 = block.add_instruction({I::AddFrom(B(), boolean_string_constant_value.get_static_primitive_type().is_word())}, {base_index, offset_index});
+
+						const Index syscall_code_print_string_4_index = block.add_instruction(I::LoadFrom(B(), true, true, 4, true, true, Storage("$v0"), Storage("$zero")), {}); (void) syscall_code_print_string_4_index;
+						const Index syscall_write_a0_index            = block.add_instruction(I::LoadFrom(B(), true, false, 0, true, false, Storage("$a0"), Storage()), {load_string_index}); (void) syscall_write_a0_index;
+						const Index syscall_index                     = block.add_instruction(I::Syscall(B()), {}); (void) syscall_index;
+					} else { //argument_expression_resolved_primitive_type.is_char()
+						const Index syscall_code_print_char_11_index = block.add_instruction(I::LoadFrom(B(), true, true, 11, true, true, Storage("$v0"), Storage("$zero")), {}); (void) syscall_code_print_char_11_index;
+						const Index syscall_write_a0_index           = block.add_instruction(I::LoadFrom(B(), true, is_word, 0, true, false, Storage("$a0"), Storage()), {argument_expression_output_index}); (void) syscall_write_a0_index;
+						const Index syscall_index                    = block.add_instruction(I::Syscall(B()), {}); (void) syscall_index;
+					}
+				}
+
+				// Restore $a0.
+				const Index restore_a0 = block.add_instruction(I::LoadFrom(B(), true, true, 0, true, false, Storage("$a0"), Storage()), {backup_a0}); (void) restore_a0;
+
+				// We're done.
 				break;
 			} case Statement::call_branch: {
 				const Statement::Call &statement_call = grammar.statement_call_storage.at(statement.data);
@@ -15069,7 +15315,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 }
 
 // | Get the symbol to a string literal, tracking it if this is the first time encountering it.
-Semantics::Symbol Semantics::string_literal(const std::string &string) {
+Semantics::Symbol Semantics::string_literal_symbol(const std::string &string) {
 	std::map<std::string, Symbol>::const_iterator string_constants_search = string_constants.find(string);
 	if (string_constants_search == string_constants.cend()) {
 		Symbol string_symbol {labelify(string), "", string_constants.size()};
@@ -15078,6 +15324,17 @@ Semantics::Symbol Semantics::string_literal(const std::string &string) {
 	} else {
 		return string_constants_search->second;
 	}
+}
+
+Semantics::Storage Semantics::string_literal(const std::string &string) {
+	const Symbol symbol = string_literal_symbol(string);
+	Storage storage = Storage(symbol, false, 4, 0);
+	return storage;
+}
+
+Semantics::Storage Semantics::string_literal(const Symbol &string_symbol) {
+	Storage storage = Storage(string_symbol, false, 4, 0);
+	return storage;
 }
 
 const uint64_t Semantics::max_string_requested_label_suffix_length = CPSL_CC_SEMANTICS_MAX_STRING_REQUESTED_LABEL_SUFFIX_LENGTH;
@@ -16869,7 +17126,7 @@ void Semantics::analyze() {
 		std::string        quoted_string = ConstantValue::quote_string(string);
 
 		output.add_line(Output::global_vars_section, ":", symbol);
-		output.add_line(Output::global_vars_section, "\t.asciiz " + quoted_string);
+		output.add_line(Output::global_vars_section, "\t.asciiz          " + quoted_string);
 	}
 }
 
