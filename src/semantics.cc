@@ -10857,7 +10857,7 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 				switch (lvalue_accessor_clause.branch) {
 					case LvalueAccessorClause::index_branch: {
 						const LvalueAccessorClause::Index &lvalue_accessor_clause_index = grammar.lvalue_accessor_clause_index_storage.at(lvalue_accessor_clause.data);
-						const LexemeKeyword               &dot_operator0                = grammar.lexemes.at(lvalue_accessor_clause_index.dot_operator0).get_keyword();
+						const LexemeOperator              &dot_operator0                = grammar.lexemes.at(lvalue_accessor_clause_index.dot_operator0).get_operator();
 						const LexemeIdentifier            &identifier                   = grammar.lexemes.at(lvalue_accessor_clause_index.identifier).get_identifier();
 
 						lvalue_source_analysis.lexeme_end = lvalue_accessor_clause_index.identifier + 1;
