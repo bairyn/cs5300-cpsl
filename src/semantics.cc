@@ -13064,7 +13064,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			;
 
 		if (argument_is_var_nonprimitive) {
-			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, true, argument_storage, Storage("$sp", is_word ? 4 : 1, pushed_arg_allocated + direct_ref_allocated + var_nonprimitive_offsets[argument_expression_index], true))}, {}, {block.back});
+			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, pushed_arg_allocated + direct_ref_allocated + var_nonprimitive_offsets[argument_expression_index], true, true, argument_storage, Storage("$sp", true))}, {}, {block.back});
 		} else if (is_direct_register) {
 			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, true, pushed_arg_allocated + direct_register_ref_offsets[argument_expression_index], true, true, argument_storage, Storage("$sp", true))}, {}, {block.back});
 		} else if (!parameter_is_ref || !storage_scope.resolve_type(argument_type_index).is_primitive()) {
