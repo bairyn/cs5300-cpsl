@@ -28,7 +28,7 @@ LOWER           [a-z]
 UPPER           [A-Z]
 LETTER          {UPPER}|{LOWER}
 /* {-} operator: c.f. https://westes.github.io/flex/manual/Patterns.html */
-INNERCHAR       [[:print:]]{-}[\\]|"\\"[[:print:]]
+INNERCHAR       [[:print:]]{-}[\\"]|"\\"[[:print:]]
 IDENTIFIER_PREFIX  {LETTER}
 IDENTIFIER_CHAR  {LETTER}|{DIGIT}|"_"
 IDENTIFIER_CHAR_NO_PREFIX {DIGIT}|"_"
