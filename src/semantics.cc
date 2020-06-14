@@ -903,8 +903,11 @@ Semantics::Type::Record::Record(const std::string &identifier, std::vector<std::
 			fixed_width = false;
 		}
 
+		size = Instruction::AddSp::round_to_align(size, field_type.get_size());
 		size += field_type.get_size();
 	}
+
+	size = Instruction::AddSp::round_to_align(size);
 }
 
 // | Used for comparison and equality checking.
@@ -10886,6 +10889,7 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 								break;
 							}
 
+							offset = Instruction::AddSp::round_to_align(offset, storage_scope.type(field_type).get_size());
 							offset += storage_scope.type(field_type).get_size();
 						}
 						if (!found) {
