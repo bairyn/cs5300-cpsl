@@ -4477,7 +4477,7 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 	}
 }
 
-std::vector<Semantics::Output::Line> Semantics::Instruction::emit_binary_operation(const Instruction &instruction, const Output::Line &binary_operation, bool is_save_word, bool is_word_load, const std::vector<Storage> &storages) {
+std::vector<Semantics::Output::Line> Semantics::Instruction::emit_binary_operation(const Instruction &instruction, const Output::Line &binary_operation, bool is_word_save, bool is_word_load, const std::vector<Storage> &storages) {
 	// Check sizes.
 	if (Storage::get_sizes(storages) != instruction.get_all_sizes()) {
 		std::ostringstream sstr;
@@ -4511,8 +4511,8 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::emit_binary_operati
 	// 	4: x($reg)             (Read from this dereferenced register.)
 
 	// Get sized save and load operations.
-	Output::Line sized_save = is_save_word ? "\tsw    " : "\tsb    ";
-	Output::Line sized_load = is_save_word ? "\tlw    " : "\tlb    ";
+	Output::Line sized_save = is_word_save ? "\tsw    " : "\tsb    ";
+	Output::Line sized_load = is_word_load ? "\tlw    " : "\tlb    ";
 
 	// Part 1: load right_storage.
 	std::string right_register = "$t9";

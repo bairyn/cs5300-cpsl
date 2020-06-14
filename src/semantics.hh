@@ -763,7 +763,7 @@ public:
 		};
 		typedef enum tag_e tag_t;
 
-		static std::vector<Output::Line> emit_binary_operation(const Instruction &instruction, const Output::Line &binary_operation, bool is_save_word, bool is_word_load, const std::vector<Storage> &storages);
+		static std::vector<Output::Line> emit_binary_operation(const Instruction &instruction, const Output::Line &binary_operation, bool is_word_save, bool is_word_load, const std::vector<Storage> &storages);
 
 		class Base {
 		public:
