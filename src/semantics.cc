@@ -5151,7 +5151,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LessThanFrom::emit(
 		binary_operator = "\tslt   ";
 	}
 
-	return emit_binary_operation(Instruction(*this), binary_operator, true, is_load_word, storages);
+	return emit_binary_operation(Instruction(*this), binary_operator, false, is_load_word, storages);
 }
 
 Semantics::Instruction::NorFrom::NorFrom()
