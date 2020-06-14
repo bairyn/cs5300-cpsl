@@ -13779,9 +13779,9 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				const Index near_last_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, addition, false, false, Storage(), Storage())}, {last_index}, {block.back});
 
 				// Get the symbols.
-				const Symbol     for_symbol      = Symbol(labelify(grammar.lexemes_text(for_statement.identifier, for_statement.expression1), "for"), "", for_statement.for_keyword0);
-				const Symbol     checkfor_symbol = Symbol(labelify(grammar.lexemes_text(for_statement.identifier, for_statement.expression1), "checkfor"), "", for_statement.end_keyword0);
-				const Symbol     endfor_symbol   = Symbol(labelify(grammar.lexemes_text(for_statement.identifier, for_statement.expression1), "endfor"), "", for_statement.end_keyword0);
+				const Symbol     for_symbol      = Symbol(labelify(grammar.lexemes_text(for_statement.identifier, last_expression.lexeme_end), "for"), "", for_statement.for_keyword0);
+				const Symbol     checkfor_symbol = Symbol(labelify(grammar.lexemes_text(for_statement.identifier, last_expression.lexeme_end), "checkfor"), "", for_statement.end_keyword0);
+				const Symbol     endfor_symbol   = Symbol(labelify(grammar.lexemes_text(for_statement.identifier, last_expression.lexeme_end), "endfor"), "", for_statement.end_keyword0);
 
 				// Analyze the "for" block.
 				const Block for_block = analyze_statements(routine_declaration, statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol);
