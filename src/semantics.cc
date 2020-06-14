@@ -12910,6 +12910,14 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			if (emit_extra_redundant_labels) {
 				block.back = block.instructions.add_instruction({I::Ignore(B(true, endwhile_symbol), false, false)}, {}, {block.back});
 			}
+
+			// Add an ignore connection for each output used as input in the
+			// while loop that is created before the beginning of the while
+			// loop so that the working storages aren't freed prematurely,
+			// since there's a loop.  MIPSIO::emit() isn't aware that we
+			// emitted a loop, so make connections here.
+			const Index ignore_src_index = block.back = block.instructions.add_instruction({I::Ignore(B())}, {src_index}, {block.back}); (void) ignore_src_index;
+			const Index ignore_dest_index = block.back = block.instructions.add_instruction({I::Ignore(B())}, {dest_index}, {block.back}); (void) ignore_dest_index;
 		}
 	}
 	// Free our temporary variables.
@@ -13292,6 +13300,14 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 					if (emit_extra_redundant_labels) {
 						block.back = block.instructions.add_instruction({I::Ignore(B(true, endwhile_symbol), false, false)}, {}, {block.back});
 					}
+
+					// Add an ignore connection for each output used as input in the
+					// while loop that is created before the beginning of the while
+					// loop so that the working storages aren't freed prematurely,
+					// since there's a loop.  MIPSIO::emit() isn't aware that we
+					// emitted a loop, so make connections here.
+					const Index ignore_src_index = block.back = block.instructions.add_instruction({I::Ignore(B())}, {src_index}, {block.back}); (void) ignore_src_index;
+					const Index ignore_dest_index = block.back = block.instructions.add_instruction({I::Ignore(B())}, {dest_index}, {block.back}); (void) ignore_dest_index;
 
 					// Free our temporary variables.
 					block.back = block.instructions.add_instruction({I::AddSp(B(), temporary_variables_allocated)}, {}, {block.back});
