@@ -14185,14 +14185,15 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 						assert(has_boolean);
 						const Index load_1_index                      = block.add_instruction({I::LoadImmediate(B(), is_word, ConstantValue(static_cast<int32_t>(1), 0, 0))});
 						const Index not_index                         = block.add_instruction({I::LessThanFrom(B(), is_word)}, {argument_expression_output_index, load_1_index});
-						const Index load_false_offset_byte_index      = block.add_instruction({I::LoadImmediate(B(), false, ConstantValue(static_cast<char>(false_offset), 0, 0))});
-						const Index offset_byte_index                 = block.add_instruction({I::MultFrom(B(), false, true, false)}, {not_index, load_false_offset_byte_index});
-						const Index offset_index                      = (boolean_string_constant_value.get_static_primitive_type().is_word() == false) ? offset_byte_index : block.add_instruction({I::LoadFrom(B(), boolean_string_constant_value.get_static_primitive_type().is_word(), false)}, {offset_byte_index});
-						const Index base_index                        = block.add_instruction({I::LoadImmediate(B(), boolean_string_constant_value.get_static_primitive_type().is_word(), boolean_string_constant_value)});
-						const Index load_string_index                 = block.add_instruction({I::AddFrom(B(), boolean_string_constant_value.get_static_primitive_type().is_word())}, {base_index, offset_index});
+						const Index load_false_offset_byte_index      = block.add_instruction({I::LoadImmediate(B(), is_word, ConstantValue(static_cast<char>(false_offset), 0, 0))});
+						const Index offset_byte_index                 = block.add_instruction({I::MultFrom(B(), is_word, true, false)}, {not_index, load_false_offset_byte_index});
+						const Index offset_index                      = (is_word == true) ? offset_byte_index : block.add_instruction({I::LoadFrom(B(), true, is_word)}, {offset_byte_index});
+						const Index base_presized_index               = block.add_instruction({I::LoadImmediate(B(), boolean_string_constant_value.get_static_primitive_type().is_word(), boolean_string_constant_value)});
+						const Index base_index                        = (boolean_string_constant_value.get_static_primitive_type().is_word() == true) ? base_presized_index : block.add_instruction({I::LoadFrom(B(), true, boolean_string_constant_value.get_static_primitive_type().is_word())}, {base_presized_index});
+						const Index load_string_index                 = block.add_instruction({I::AddFrom(B(), true)}, {base_index, offset_index});
 
 						const Index syscall_code_print_string_4_index = block.add_instruction(I::LoadFrom(B(), true, true, 4, true, true, Storage("$v0"), Storage("$zero")), {}); (void) syscall_code_print_string_4_index;
-						const Index syscall_write_a0_index            = block.add_instruction(I::LoadFrom(B(), true, false, 0, true, false, Storage("$a0"), Storage()), {load_string_index}); (void) syscall_write_a0_index;
+						const Index syscall_write_a0_index            = block.add_instruction(I::LoadFrom(B(), true, true, 0, true, false, Storage("$a0"), Storage()), {load_string_index}); (void) syscall_write_a0_index;
 						const Index syscall_index                     = block.add_instruction(I::Syscall(B()), {}); (void) syscall_index;
 					} else { //argument_expression_resolved_primitive_type.is_char()
 						const Index syscall_code_print_char_11_index = block.add_instruction(I::LoadFrom(B(), true, true, 11, true, true, Storage("$v0"), Storage("$zero")), {}); (void) syscall_code_print_char_11_index;
