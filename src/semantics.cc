@@ -5081,13 +5081,13 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 	std::string free_register = is_t9_free ? "$t9" : "$t8";
 	if        (destination_storage.is_register_direct()) {
 		if (!post_dereference_save) {
-			if (source_register != destination_storage.register_) {
-				if (!addition_pending) {
+			if (!addition_pending) {
+				if (source_register != destination_storage.register_) {
 					lines.push_back("\tla    " + destination_storage.register_ + ", (" + source_register + ")");
-				} else {
-					addition_pending = false;
-					lines.push_back("\tla    " + destination_storage.register_ + ", " + std::to_string(addition) + "(" + source_register + ")");
 				}
+			} else {
+				addition_pending = false;
+				lines.push_back("\tla    " + destination_storage.register_ + ", " + std::to_string(addition) + "(" + source_register + ")");
 			}
 		} else {
 			lines.push_back(sized_save + source_register + ", (" + destination_storage.register_ + ")");
@@ -13895,10 +13895,10 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				// Increment or decrement the iterator variable.
 				if (!var.is_primitive_and_ref) {
 					// Set the storage to first.
-					const Index initialize_iterator_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, addition, true, true, var.storage, var.storage, true, true)}, {}, {block.back}); (void) initialize_iterator_index;
+					const Index initialize_iterator_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, addition, true, true, var.storage, var.storage, false, false)}, {}, {block.back}); (void) initialize_iterator_index;
 				} else {
 					// Set the dereferenced storage's address to first.
-					const Index initialize_iterator_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, addition, true, true, var.storage, var.storage, true, false)}, {}, {block.back}); (void) initialize_iterator_index;
+					const Index initialize_iterator_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, addition, true, true, var.storage, var.storage, true, true)}, {}, {block.back}); (void) initialize_iterator_index;
 				}
 
 				// "checkfor" label.
