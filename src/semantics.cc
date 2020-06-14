@@ -13665,12 +13665,96 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 
 				break;
 			} case Statement::return_branch: {
+				// TODO: check for absence of return in function.
+				// TODO: check for return being the last instruction in a
+				//       block; omit it if so.  (Maybe have std::set<Index>
+				//       silence_instructions in MIPSIO.)
 				const Statement::Return &statement_return = grammar.statement_return_storage.at(statement.data);
 				const ReturnStatement   &return_statement = grammar.return_statement_storage.at(statement_return.return_statement);
 
 				const LexemeKeyword &return_keyword0 = grammar.lexemes.at(return_statement.return_keyword0).get_keyword(); (void) return_keyword;
 				const ExpressionOpt &expression_opt  = grammar.expression_opt_storage.at(return_statement.expression_opt);
 
+				// If there's an expression we're returning, put it in $v0.
+				switch (expression_opt.branch) {
+					case ExpressionOpt::empty_branch: {
+						// No need to unpack the empty value.
+
+						// Just check whether we're returning without a value from a function that should return a value.
+
+						if (routine_declaration.output.has_value()) {
+							std::ostringstream sstr;
+							sstr
+								<< "Semantics::analyze_statements: error (line "
+								<< grammar.lexemes.at(return_statement.return_keyword0).get_line() << " col " << grammar.lexemes.at(return_statement.return_keyword0).get_column()
+								<< "): returning from a function requires a value, but none was provided, rather than an expression of type ``"
+								<< storage_scope.type(*routine_declaration.output).get_repr(storage_scope)
+								<< "\"."
+								;
+							throw SemanticsError(sstr.str());
+						}
+
+						break;
+					}
+
+					case ExpressionOpt::value_branch: {
+						const ExpressionOpt::Value &expression_opt_value = grammar.expression_opt_value_storage.at(expression_opt.data);
+
+						const ::Expression         &expression0          = grammar.expression_storage.at(expression_opt_value.expression);
+
+						// Analyze the expression.
+						const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+
+						// Make sure we aren't trying to return a value for a procedure that doesn't return a value.
+						if (!routine_declaration.output.has_value()) {
+							std::ostringstream sstr;
+							sstr
+								<< "Semantics::analyze_statements: error (line "
+								<< grammar.lexemes.at(value.lexeme_begin).get_line() << " col " << grammar.lexemes.at(value.lexeme_begin).get_column()
+								<< "): we're returning from a procedure that is declared to not return a value, but we're returning the value of an expression of type ``"
+								<< storage_scope.type(*routine_declaration.output).get_repr(storage_scope)
+								<< "\"."
+								;
+							throw SemanticsError(sstr.str());
+						}
+
+						// Make sure the type matches what we ought to be returning.
+						if (!storage_scope.resolve_type(value.output_type).matches(storage_scope.resolve_type(*routine_declaration.output), storage_scope)) {
+							std::ostringstream sstr;
+							sstr
+								<< "Semantics::analyze_statements: error (line "
+								<< grammar.lexemes.at(value.lexeme_begin).get_line() << " col " << grammar.lexemes.at(value.lexeme_begin).get_column()
+								<< "): the return value here must be of type ``" << storage_scope.type(*routine_declaration.output).get_repr(storage_scope) << "\", not ``"
+								<< storage_scope.type(value.output_type).get_repr(storage_scope)
+								<< "\"."
+								;
+							throw SemanticsError(sstr.str());
+						}
+
+						const Type &resolved_value_type = storage_scope.resolve_type(value.output_type);
+
+						// Merge the expression.
+						const Index value_index = block.merge_expression(value);
+
+						// Just put the value in $v0.
+						const bool is_word = !resolved_value_type.is_primitive() || resolved_value_type.get_primitive().is_word();
+						const Index set_return = block.back = block.instructions.add_instruction(I::LoadFrom{B(), true, is_word, 0, true, false, Storage("$v0"), Storage()}, {value_index}, {block.back}); (void) set_return;
+
+						// We're done.
+						break;
+					}
+
+					default: {
+						std::ostringstream sstr;
+						sstr << "Semantics::analyze_statements: internal error: invalid expression_opt branch at index " << &expression_opt - &grammar.expression_opt_storage[0] << ": " << expression_opt.branch;
+						throw SemanticsError(sstr.str());
+					}
+				}
+
+				// Return: jump to the cleanup routine.
+				block.back = block.instructions.add_instruction({I::Jump(B(), cleanup_symbol)}, {}, {block.back});
+
+				// We're done.
 				break;
 			} case Statement::read_branch: {
 				const Statement::Read &statement_read = grammar.statement_read_storage.at(statement.data);
