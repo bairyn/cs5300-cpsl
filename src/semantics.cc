@@ -4081,6 +4081,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 		} case ::Expression::string_branch: {
 			const ::Expression::String &string        = grammar.expression_string_storage.at(expression_symbol.data);
 			const LexemeString         &lexeme_string = grammar.lexemes.at(string.string).get_string();
+			//expression_constant_value = ConstantValue(static_cast<Symbol>(string_literal_symbol(ConstantValue::quote_string(lexeme_string.text.substr(1, lexeme_string.text.size() - 2)))), string.string, string.string + 1);
 			expression_constant_value = ConstantValue(static_cast<Symbol>(string_literal_symbol(lexeme_string.expanded)), string.string, string.string + 1);
 			break;
 		}

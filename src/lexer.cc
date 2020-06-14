@@ -576,7 +576,7 @@ LexemeString::LexemeString(const LexemeBase &lexeme_base)
 		// Note: this branch cannot be reached if the length is < 2.
 		text_unquoted = text.substr(1, text.size() - 1 - 1);
 	} else {
-		text_unquoted = std::move(std::string(text));
+		text_unquoted = std::move(std::string(std::as_const(text)));
 	}
 
 	// Traverse the string, expanding all escapes.  Raise an error if there is
