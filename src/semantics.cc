@@ -5820,7 +5820,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::BranchZero::emit(co
 	}
 
 	// Get sized load operation.
-	Output::Line sized_load = is_word_load ? "\tlw    " : "\tlb    ";
+	Output::Line sized_load = is_word ? "\tlw    " : "\tlb    ";
 
 	// Get the branch operator.
 	Output::Line branch_operator = !branch_non_zero ? "\tbeq   " : "\tbne   ";
@@ -5882,7 +5882,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::BranchNonnegative::
 	}
 
 	// Get sized load operation.
-	Output::Line sized_load = is_word_load ? "\tlw    " : "\tlb    ";
+	Output::Line sized_load = is_word ? "\tlw    " : "\tlb    ";
 
 	// Get the branch operator.
 	Output::Line branch_operator = "\tbge   ";
@@ -14923,7 +14923,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 	last_intro_index     = block_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, Storage("$sp", 4, 0, true), Storage("$ra"), false, false)}, {}, last_intro_index);
 
 	// Allocate space on the stack.
-	if (stack_allocated > 0) {
+	if (stack_allocated != 0) {
 		last_intro_index = block_semantics.instructions.add_instruction({I::AddSp(B(), -(stack_allocated - Instruction::AddSp::round_to_align(4)))}, {}, last_intro_index);
 	}
 
@@ -14976,8 +14976,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 #endif /* #if 0 */
 
 	// Reverse what intro did.
-	if (stack_allocated > 0) {
-		block_semantics.back = block_semantics.instructions.add_instruction({I::AddSp(B(), stack_allocated)}, {}, block_semantics.back);
+	if (stack_allocated != 0) {
+		block_semantics.back = block_semantics.instructions.add_instruction({I::AddSp(B(), stack_allocated - Instruction::AddSp::round_to_align(4))}, {}, block_semantics.back);
 	}
 	block_semantics.back = block_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, Storage("$ra"), Storage("$sp", 4, 0, true), false, false)}, {}, block_semantics.back);
 	block_semantics.back = block_semantics.instructions.add_instruction({I::AddSp(B(), 4)}, {}, block_semantics.back);
