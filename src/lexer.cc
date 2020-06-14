@@ -584,6 +584,8 @@ LexemeString::LexemeString(const LexemeBase &lexeme_base)
 	bool is_escape = false;
 	for (const char &c: std::as_const(text_unquoted)) {
 		if (is_escape) {
+			is_escape = false;
+
 			switch (c) {
 				case 'n':
 					expanded.push_back('\n');
