@@ -16376,6 +16376,11 @@ void Semantics::analyze() {
 							// Are these parameters references?
 							bool is_ref;
 							switch (var_or_ref.branch) {
+								case VarOrRef::empty_branch: {
+									is_ref = false;
+									break;
+								};
+
 								case VarOrRef::var_branch: {
 									const VarOrRef::Var &var_or_ref_var = grammar.var_or_ref_var_storage.at(var_or_ref.data);
 									const LexemeKeyword &var_keyword0   = grammar.lexemes.at(var_or_ref_var.var_keyword0).get_keyword(); (void) var_keyword0;
@@ -16602,6 +16607,11 @@ void Semantics::analyze() {
 							// Are these parameters references?
 							bool is_ref;
 							switch (var_or_ref.branch) {
+								case VarOrRef::empty_branch: {
+									is_ref = false;
+									break;
+								};
+
 								case VarOrRef::var_branch: {
 									const VarOrRef::Var &var_or_ref_var = grammar.var_or_ref_var_storage.at(var_or_ref.data);
 									const LexemeKeyword &var_keyword0   = grammar.lexemes.at(var_or_ref_var.var_keyword0).get_keyword(); (void) var_keyword0;
@@ -16880,6 +16890,11 @@ void Semantics::analyze() {
 							// Are these parameters references?
 							bool is_ref;
 							switch (var_or_ref.branch) {
+								case VarOrRef::empty_branch: {
+									is_ref = false;
+									break;
+								};
+
 								case VarOrRef::var_branch: {
 									const VarOrRef::Var &var_or_ref_var = grammar.var_or_ref_var_storage.at(var_or_ref.data);
 									const LexemeKeyword &var_keyword0   = grammar.lexemes.at(var_or_ref_var.var_keyword0).get_keyword(); (void) var_keyword0;
@@ -17113,6 +17128,11 @@ void Semantics::analyze() {
 							// Are these parameters references?
 							bool is_ref;
 							switch (var_or_ref.branch) {
+								case VarOrRef::empty_branch: {
+									is_ref = false;
+									break;
+								};
+
 								case VarOrRef::var_branch: {
 									const VarOrRef::Var &var_or_ref_var = grammar.var_or_ref_var_storage.at(var_or_ref.data);
 									const LexemeKeyword &var_keyword0   = grammar.lexemes.at(var_or_ref_var.var_keyword0).get_keyword(); (void) var_keyword0;

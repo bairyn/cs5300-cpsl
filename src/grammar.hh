@@ -401,6 +401,41 @@ public: \
 	}; \
 };
 
+#define DECLARE_SYMBOL_CLASS_1_1_0( \
+	S, s, B0, B1, B2, b0, b1, b2, b0c0, b1c0 \
+) \
+class S : public NonterminalSymbol { \
+public: \
+	S(uint64_t branch, uint64_t data); \
+	uint64_t branch; \
+	uint64_t data; \
+ \
+ 	enum branch_e { \
+		null_branch           = 0, \
+		STRCAT_2(b0, _branch) = 1, \
+		STRCAT_2(b1, _branch) = 2, \
+		STRCAT_2(b2, _branch) = 3, \
+		num_branches          = 3, \
+	}; \
+ \
+ 	class B0 : public Branch { \
+	public: \
+		B0(uint64_t b0c0); \
+		uint64_t b0c0; \
+	}; \
+ \
+ 	class B1 : public Branch { \
+	public: \
+		B1(uint64_t b1c0); \
+		uint64_t b1c0; \
+	}; \
+ \
+ 	class B2 : public Branch { \
+	public: \
+		B2(); \
+	}; \
+};
+
 #define DECLARE_SYMBOL_CLASS_1_1_1( \
 	S, s, B0, B1, B2, b0, b1, b2, b0c0, b1c0, b2c0 \
 ) \
@@ -820,7 +855,7 @@ DECLARE_SYMBOL_CLASS_10_10(
 DECLARE_SYMBOL_CLASS_0_2(FormalParameters, formal_parameters, Empty, First, empty, first, formal_parameter, formal_parameter_prefixed_list)
 DECLARE_SYMBOL_CLASS_0_3(FormalParameterPrefixedList, formal_parameter_prefixed_list, Empty, Cons, empty, cons, formal_parameter_prefixed_list, semicolon_operator0, formal_parameter)
 DECLARE_SYMBOL_CLASS_4(FormalParameter, formal_parameter, var_or_ref, ident_list, colon_operator0, type)
-DECLARE_SYMBOL_CLASS_1_1(VarOrRef, var_or_ref, Var, Ref, var, ref, var_keyword0, ref_keyword0)
+DECLARE_SYMBOL_CLASS_1_1_0(VarOrRef, var_or_ref, Var, Ref, Empty, var, ref, empty, var_keyword0, ref_keyword0)
 DECLARE_SYMBOL_CLASS_4(Body, body, constant_decl_opt, type_decl_opt, var_decl_opt, block)
 DECLARE_SYMBOL_CLASS_3(Block, block, begin_keyword0, statement_sequence, end_keyword0)
 DECLARE_SYMBOL_CLASS_3(TypeDecl, type_decl, type_keyword0, type_assignment, type_assignment_list)
@@ -1030,6 +1065,17 @@ std::vector<S::B1> STRCAT_4(s, _, b1, _storage); \
 uint64_t STRCAT_4(new_, s, _, b0)(uint64_t b0c0, uint64_t b0c1, uint64_t b0c2, uint64_t b0c3, uint64_t b0c4, uint64_t b0c5, uint64_t b0c6, uint64_t b0c7, uint64_t b0c8, uint64_t b0c9); \
 uint64_t STRCAT_4(new_, s, _, b1)(uint64_t b1c0, uint64_t b1c1, uint64_t b1c2, uint64_t b1c3, uint64_t b1c4, uint64_t b1c5, uint64_t b1c6, uint64_t b1c7, uint64_t b1c8, uint64_t b1c9);
 
+#define DECLARE_SYMBOL_FIELDS_1_1_0( \
+	S, s, B0, B1, B2, b0, b1, b2, b0c0, b1c0 \
+) \
+std::vector<S> STRCAT_2(s, _storage); \
+std::vector<S::B0> STRCAT_4(s, _, b0, _storage); \
+std::vector<S::B1> STRCAT_4(s, _, b1, _storage); \
+std::vector<S::B2> STRCAT_4(s, _, b2, _storage); \
+uint64_t STRCAT_4(new_, s, _, b0)(uint64_t b0c0); \
+uint64_t STRCAT_4(new_, s, _, b1)(uint64_t b1c0); \
+uint64_t STRCAT_4(new_, s, _, b2)();
+
 #define DECLARE_SYMBOL_FIELDS_1_1_1( \
 	S, s, B0, B1, B2, b0, b1, b2, b0c0, b1c0, b2c0 \
 ) \
@@ -1191,7 +1237,7 @@ public:
 	DECLARE_SYMBOL_FIELDS_0_2(FormalParameters, formal_parameters, Empty, First, empty, first, formal_parameter, formal_parameter_prefixed_list)
 	DECLARE_SYMBOL_FIELDS_0_3(FormalParameterPrefixedList, formal_parameter_prefixed_list, Empty, Cons, empty, cons, formal_parameter_prefixed_list, semicolon_operator0, formal_parameter)
 	DECLARE_SYMBOL_FIELDS_4(FormalParameter, formal_parameter, var_or_ref, ident_list, colon_operator0, type)
-	DECLARE_SYMBOL_FIELDS_1_1(VarOrRef, var_or_ref, Var, Ref, var, ref, var_keyword0, ref_keyword0)
+	DECLARE_SYMBOL_FIELDS_1_1_0(VarOrRef, var_or_ref, Var, Ref, Empty, var, ref, empty, var_keyword0, ref_keyword0)
 	DECLARE_SYMBOL_FIELDS_4(Body, body, constant_decl_opt, type_decl_opt, var_decl_opt, block)
 	DECLARE_SYMBOL_FIELDS_3(Block, block, begin_keyword0, statement_sequence, end_keyword0)
 	DECLARE_SYMBOL_FIELDS_3(TypeDecl, type_decl, type_keyword0, type_assignment, type_assignment_list)

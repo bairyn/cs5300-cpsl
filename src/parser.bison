@@ -285,6 +285,7 @@ formal_parameter:
 var_or_ref:
 	  VAR_KEYWORD {$$ = pg.new_var_or_ref_var($1);}
 	| REF_KEYWORD {$$ = pg.new_var_or_ref_ref($1);}
+	| %empty      {$$ = pg.new_var_or_ref_empty();}
 ;
 
 body:

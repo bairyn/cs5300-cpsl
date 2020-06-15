@@ -452,6 +452,49 @@ uint64_t Grammar::STRCAT_4(new_, s, _, b1)(uint64_t b1c0, uint64_t b1c1, uint64_
 	return index; \
 }
 
+#define DEFINE_SYMBOL_1_1_0( \
+	S, s, B0, B1, B2, b0, b1, b2, b0c0, b1c0 \
+) \
+S::S(uint64_t branch, uint64_t data) \
+	: branch(branch) \
+	, data(data) \
+	{} \
+ \
+S::B0::B0(uint64_t b0c0) \
+	: b0c0(b0c0) \
+	{} \
+ \
+S::B1::B1(uint64_t b1c0) \
+	: b1c0(b1c0) \
+	{} \
+ \
+S::B2::B2() \
+	{} \
+ \
+uint64_t Grammar::STRCAT_4(new_, s, _, b0)(uint64_t b0c0) { \
+	uint64_t index = static_cast<uint64_t>(STRCAT_2(s, _storage).size()); \
+	uint64_t branch_index = static_cast<uint64_t>(STRCAT_4(s, _, b0, _storage).size()); \
+	STRCAT_4(s, _, b0, _storage).emplace_back(b0c0); \
+	STRCAT_2(s, _storage).emplace_back(S::STRCAT_2(b0, _branch), branch_index); \
+	return index; \
+} \
+ \
+uint64_t Grammar::STRCAT_4(new_, s, _, b1)(uint64_t b1c0) { \
+	uint64_t index = static_cast<uint64_t>(STRCAT_2(s, _storage).size()); \
+	uint64_t branch_index = static_cast<uint64_t>(STRCAT_4(s, _, b1, _storage).size()); \
+	STRCAT_4(s, _, b1, _storage).emplace_back(b1c0); \
+	STRCAT_2(s, _storage).emplace_back(S::STRCAT_2(b1, _branch), branch_index); \
+	return index; \
+} \
+ \
+uint64_t Grammar::STRCAT_4(new_, s, _, b2)() { \
+	uint64_t index = static_cast<uint64_t>(STRCAT_2(s, _storage).size()); \
+	uint64_t branch_index = static_cast<uint64_t>(STRCAT_4(s, _, b2, _storage).size()); \
+	STRCAT_4(s, _, b2, _storage).emplace_back(); \
+	STRCAT_2(s, _storage).emplace_back(S::STRCAT_2(b2, _branch), branch_index); \
+	return index; \
+}
+
 #define DEFINE_SYMBOL_1_1_1( \
 	S, s, B0, B1, B2, b0, b1, b2, b0c0, b1c0, b2c0 \
 ) \
@@ -1045,7 +1088,7 @@ DEFINE_SYMBOL_10_10(
 DEFINE_SYMBOL_0_2(FormalParameters, formal_parameters, Empty, First, empty, first, formal_parameter, formal_parameter_prefixed_list)
 DEFINE_SYMBOL_0_3(FormalParameterPrefixedList, formal_parameter_prefixed_list, Empty, Cons, empty, cons, formal_parameter_prefixed_list, semicolon_operator0, formal_parameter)
 DEFINE_SYMBOL_4(FormalParameter, formal_parameter, var_or_ref, ident_list, colon_operator0, type)
-DEFINE_SYMBOL_1_1(VarOrRef, var_or_ref, Var, Ref, var, ref, var_keyword0, ref_keyword0)
+DEFINE_SYMBOL_1_1_0(VarOrRef, var_or_ref, Var, Ref, Empty, var, ref, empty, var_keyword0, ref_keyword0)
 DEFINE_SYMBOL_4(Body, body, constant_decl_opt, type_decl_opt, var_decl_opt, block)
 DEFINE_SYMBOL_3(Block, block, begin_keyword0, statement_sequence, end_keyword0)
 DEFINE_SYMBOL_3(TypeDecl, type_decl, type_keyword0, type_assignment, type_assignment_list)
