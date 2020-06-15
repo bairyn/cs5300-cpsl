@@ -13370,7 +13370,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	// to, and push a pointer to it as an "after-the-last" argument.
 	const bool    has_dynamic_output_pointer = callee_has_output && !storage_scope.resolve_type(*callee_output).is_primitive();
 	const int32_t dynamic_output_allocated   = Instruction::AddSp::round_to_align(has_dynamic_output_pointer ? 8 : 0);
-	stack_allocated += pushed_arg_allocated;
+	stack_allocated += dynamic_output_allocated;
 	if (dynamic_output_allocated != 0) {
 		block.back = block.instructions.add_instruction({I::AddSp(B(), -dynamic_output_allocated)}, {}, {block.back});
 	}
@@ -13379,9 +13379,11 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 		assert(output_type.get_fixed_width());
 		const uint32_t  output_size = output_type.get_size();
 
-		const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, Storage("$sp", true), Storage("#marker_dynamic_bottom"))}, {}, {block.back});
+		analysis_state.dynamically_allocated = I::AddSp::round_to_align(analysis_state.dynamically_allocated);
+		const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, analysis_state.dynamically_allocated, true, true, Storage("$sp", true), Storage("#marker_dynamic_bottom"))}, {}, {block.back});
+		analysis_state.dynamically_allocated += dynamic_output_allocated;
 	}
-	analysis_state.dynamically_allocated += dynamic_output_allocated;
+	// (Note: these are two separate allocations we're making: one will be made after analysis of blocks later on, and the offsets will be adjust appropriate using our dynamic marker, and another allocation (4 byte pointer rounded to 8 bytes) is being made now to hold the pointer to the dynamic allocation, which can be larger (e.g. 512 bytes).
 
 	// Next, put the first 4 arguments in $a0-$a3, and push the rest.
 
@@ -14307,9 +14309,99 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 						// Merge the expression.
 						const Index value_index = block.merge_expression(value);
 
-						// Just put the value in $v0.
-						const bool is_word = !resolved_value_type.is_primitive() || resolved_value_type.get_primitive().is_word();
-						const Index set_return = block.back = block.instructions.add_instruction(I::LoadFrom{B(), true, is_word, 0, true, false, Storage("$v0"), Storage()}, {value_index}, {block.back}); (void) set_return;
+						if (resolved_value_type.is_primitive()) {
+							// Just put the value in $v0.
+							const bool is_word = !resolved_value_type.is_primitive() || resolved_value_type.get_primitive().is_word();
+							const Index set_return_index = block.back = block.instructions.add_instruction(I::LoadFrom{B(), true, is_word, 0, true, false, Storage("$v0"), Storage()}, {value_index}, {block.back}); (void) set_return_index;
+						} else {
+							// After the last argument is a pointer to the array we should be copying this value to.
+							//
+							// We could iterate over each parameter in
+							// routine_declaration.  There's a little hack I
+							// added (that is more global it should be; but it
+							// works for now):
+							// analysis_state.last_stack_argument_total_size.
+							// We can just use this instead.
+							//
+							// TODO: replace this
+							// last_stack_argument_total_size hack with
+							// iterating over routine_declaration's parameters
+							// (or some other alternative).
+
+							// We'll be putting this pointer in $v0 eventually, so we may as well do it now.
+							const Index load_pointer_index = block.back = block.instructions.add_instruction(I::LoadFrom{B(), true, true, analysis_state.last_stack_argument_total_size, true, true, Storage("$v0"), Storage("$sp")}, {}, {block.back}); (void) load_pointer_index;
+
+							// Now copy the array or record.  Memmove.
+
+							// Get 2 temporary fixed Variables for us to use for our manual memmove loop.  4 bytes rounded to 8 bytes.
+							const int32_t temporary_variables_allocated = Instruction::AddSp::round_to_align(2 * Type::Primitive::integer_type.get_size());
+							block.back = block.instructions.add_instruction({I::AddSp(B(), -temporary_variables_allocated)}, {}, {block.back});
+							const Storage temporary_offset_integer_var = Storage("$sp", Type::Primitive::integer_type.get_size(), 0 * Type::Primitive::integer_type.get_size(), true);
+							const Storage temporary_address_var        = Storage("$sp", Type::Primitive::integer_type.get_size(), 1 * Type::Primitive::integer_type.get_size(), true);
+
+							// Add a storage that refers to the base address of this copied array or record.
+							//const Storage var_nonprimitive_storage = Storage("$sp", 4, var_nonprimitive_offset, true);  // Wait...this storage will dereference it!
+							//var_nonprimitive_storages.push_back(var_nonprimitive_storage);
+
+							// memmove for dest < src: equivalent of this:
+							// 	temp0 = dest
+							// 	temp1 = src
+							// 	while (temp0 < dest + argument_type.get_size()) {
+							// 		*temp0++ = *temp1++;
+							// 	}
+							// Get dest and src addresses into dynamically selected storages.  Initialize offset to 0.
+							const Index dest_index             = block.back = block.instructions.add_instruction(I::LoadFrom(B(), true, true, 0, false, true, Storage(), Storage("$v0")), {}, {block.back});
+							const Index src_index              = value_index;
+							const Index zero_initialize_offset = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, temporary_offset_integer_var, Storage("$zero"))}, {}, {block.back});
+
+							// Manually put in our while loop.
+							// Analyze the "while" block condition.  Don't merge it yet.
+							const Symbol     while_symbol      = Symbol(labelify("return", "memmove_while"),      "", return_statement.return_keyword0);
+							const Symbol     checkwhile_symbol = Symbol(labelify("return", "memmove_checkwhile"), "", return_statement.return_keyword0);
+							const Symbol     endwhile_symbol   = Symbol(labelify("return", "memmove_endwhile"),   "", return_statement.return_keyword0);
+
+							// First, jump to "checkwhile" to check the condition for the first time.
+							block.back = block.instructions.add_instruction({I::Jump(B(), checkwhile_symbol)}, {}, {block.back});
+
+							// "while" label.
+							block.back = block.instructions.add_instruction({I::Ignore(B(true, while_symbol), false, false)}, {}, {block.back});
+
+							// "while" block.
+							// ...
+							const Index get_temporary_offset_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), temporary_offset_integer_var)}, {}, {block.back});
+							const Index get_src_byte_address       = block.back = block.instructions.add_instruction({I::AddFrom(B(), true)}, {src_index, get_temporary_offset_index}, {block.back});
+							const Index get_src_byte               = block.back = block.instructions.add_instruction({I::LoadFrom(B(), false, false, 0, false, false, Storage(), Storage(), false, true)}, {get_src_byte_address}, {block.back});
+							const Index get_dest_byte_address      = block.back = block.instructions.add_instruction({I::AddFrom(B(), true)}, {dest_index, get_temporary_offset_index}, {block.back});
+							const Index increment_offset_index     = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 1, true, true, temporary_offset_integer_var, temporary_offset_integer_var)}, {}, {block.back});
+							const Index copy_dest_byte_address     = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, false, temporary_address_var, Storage())}, {get_dest_byte_address}, {block.back});
+							const Index write_byte_index           = block.back = block.instructions.add_instruction({I::LoadFrom(B(), false, false, 0, true, false, temporary_address_var, Storage(), true, false)}, {get_src_byte}, {block.back});
+
+							// "checkwhile" label.
+							block.back = block.instructions.add_instruction({I::Ignore(B(true, checkwhile_symbol), false, false)}, {}, {block.back});
+
+							// "while" condition.  (BranchZero has the branch_non_zero flag set to true.)
+							// ...
+							const Index get_temporary_offset_index2 = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), temporary_offset_integer_var)}, {}, {block.back});
+							const Index get_type_size_index         = block.back = block.instructions.add_instruction({I::LoadImmediate(B(), true, ConstantValue(static_cast<int32_t>(storage_scope.type(*routine_declaration.output).get_size()), 0, 0))}, {}, {block.back});
+							const Index while_condition_index       = block.back = block.instructions.add_instruction({I::LessThanFrom(B(), true)}, {get_temporary_offset_index2, get_type_size_index}, {block.back});
+							block.back = block.instructions.add_instruction({I::BranchZero(B(), false, while_symbol, true)}, {while_condition_index}, {block.back});
+
+							// "endwhile label".  We don't need the endwhile label, and it is unused, but emit it anyway for readability.
+							if (emit_extra_redundant_labels) {
+								block.back = block.instructions.add_instruction({I::Ignore(B(true, endwhile_symbol), false, false)}, {}, {block.back});
+							}
+
+							// Add an ignore connection for each output used as input in the
+							// while loop that is created before the beginning of the while
+							// loop so that the working storages aren't freed prematurely,
+							// since there's a loop.  MIPSIO::emit() isn't aware that we
+							// emitted a loop, so make connections here.
+							const Index ignore_src_index = block.back = block.instructions.add_instruction({I::Ignore(B())}, {src_index}, {block.back}); (void) ignore_src_index;
+							const Index ignore_dest_index = block.back = block.instructions.add_instruction({I::Ignore(B())}, {dest_index}, {block.back}); (void) ignore_dest_index;
+
+							// Free our temporary variables.
+							block.back = block.instructions.add_instruction({I::AddSp(B(), temporary_variables_allocated)}, {}, {block.back});
+						}
 
 						// We're done.
 						break;
@@ -14964,6 +15056,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 		}
 	}
 	stack_argument_total_size = Instruction::AddSp::round_to_align(stack_argument_total_size);
+
+	analysis_state.last_stack_argument_total_size = stack_argument_total_size;
 
 	// Handle local variables.
 	for (const std::pair<std::string, TypeIndex> &local_variable : std::as_const(local_variables)) {

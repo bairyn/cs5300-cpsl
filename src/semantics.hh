@@ -63,6 +63,14 @@ public:
 		//
 		// (New allocations are generally lower/deeper in the stack.)
 		int32_t dynamically_allocated = 0;
+
+		// | This feels a little like a hack and involves state that's more
+		// global than it should be, but it'll do for now.
+		//
+		// TODO: replace this last_stack_argument_total_size hack with
+		// iterating over routine_declaration's parameters when analyzing
+		// statements (or some other alternative).
+		int32_t last_stack_argument_total_size = 0;
 	};
 
 	// | In the assembled output, locations marked as symbols will be replaced
