@@ -38,7 +38,6 @@ public:
 #define CPSL_CC_SEMANTICS_COMBINE_IDENTIFIER_NAMESPACES            false
 #define CPSL_CC_SEMANTICS_MAX_UNIQUE_TRY_ITERATIONS                A_BILLION  // fun
 #define CPSL_CC_SEMANTICS_MAX_STRING_REQUESTED_LABEL_SUFFIX_LENGTH 32
-#define CPSL_CC_SEMANTICS_ALL_ARRAY_RECORDS_ARE_REFS               false
 #define CPSL_CC_SEMANTICS_PERMIT_SEQUENCE_CONNECTION_DELAYS        true
 #define CPSL_CC_SEMANTICS_PERMIT_SHADOWING                         true
 #define CPSL_CC_SEMANTICS_EMIT_SOME_REDUNDANT_LABELS               true
@@ -1447,8 +1446,6 @@ public:
 		static merge_mipsio_with_calls(MIPSIO &mips_io, std::vector<Call> &calls, const MIPSIO &other_mips_io, const std::vector<Call> &other_calls);
 	};
 #endif /* #if 0 */
-
-	static const bool all_arrays_records_are_refs;
 
 	class Expression;
 	class LvalueSourceAnalysis {

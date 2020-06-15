@@ -10796,8 +10796,6 @@ void Semantics::MIPSIO::preserve_register(const std::string &register_) {
 
 const bool Semantics::MIPSIO::permit_sequence_connection_delays = CPSL_CC_SEMANTICS_PERMIT_SEQUENCE_CONNECTION_DELAYS;
 
-const bool Semantics::all_arrays_records_are_refs = CPSL_CC_SEMANTICS_ALL_ARRAY_RECORDS_ARE_REFS;
-
 Semantics::LvalueSourceAnalysis::LvalueSourceAnalysis()
 	{}
 
