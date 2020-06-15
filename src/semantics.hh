@@ -1457,10 +1457,12 @@ public:
 		bool                    is_lvalue_primref = false;  // Ignored if !is_value_fixed_storage.  If is_lvalue_primref, then the fixed storage refers not to base primref, but to the address of the base primref.
 		uint64_t                lexeme_begin = 0;
 		uint64_t                lexeme_end   = 0;
+		bool                    is_mutable   = true;  // Does it not refer to a constant?
+		ConstantValue           constant_value;       // If !is_mutable, this is the constant value.
 
 		MIPSIO::Index merge_expression(const Expression &other);
 	};
-	LvalueSourceAnalysis analyze_lvalue_source(const Lvalue &lvalue, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope);
+	LvalueSourceAnalysis analyze_lvalue_source(const Lvalue &lvalue, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, bool require_mutable = true);
 
 	class Block;
 	class Expression {

@@ -10831,7 +10831,7 @@ Semantics::MIPSIO::Index Semantics::LvalueSourceAnalysis::merge_expression(const
 	return merged_other_output_index;
 }
 
-Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &lvalue, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope) {
+Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &lvalue, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, bool require_mutable) {
 	// Some type aliases to improve readability.
 	using M = Semantics::MIPSIO;
 	using I = Semantics::Instruction;
@@ -10854,6 +10854,7 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 	lvalue_source_analysis.lvalue_identifier = &lvalue_identifier;
 
 	lvalue_source_analysis.lexeme_begin = lvalue.identifier;
+	lvalue_source_analysis.lexeme_end = lvalue.identifier + 1;
 
 	// Collect the lvalue accessor clauses in the list.
 	std::vector<const LvalueAccessorClause *> lvalue_accessor_clauses;
@@ -10938,6 +10939,7 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 			}
 
 			// It's a variable.
+			lvalue_source_analysis.is_mutable              = false;
 			lvalue_source_analysis.lvalue_type             = type;
 			lvalue_source_analysis.lvalue_index            = std::numeric_limits<Index>::max();
 			lvalue_source_analysis.lvalue_fixed_storage    = var.storage;
@@ -11098,6 +11100,7 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 				}
 			}
 
+			lvalue_source_analysis.is_mutable              = false;
 			lvalue_source_analysis.lvalue_type             = last_output_type;
 			lvalue_source_analysis.lvalue_index            = last_output_index;
 			lvalue_source_analysis.lvalue_fixed_storage    = Storage();
@@ -11114,15 +11117,30 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 			throw SemanticsError(sstr.str());
 		}
 	} else if (constant_scope.has(lvalue_identifier.text)) {
-		std::ostringstream sstr;
-		sstr
-			<< "Semantics::analyze_lvalue_source: error (line "
-			<< lvalue_identifier.line << " col " << lvalue_identifier.column
-			<< "): the lvalue identifier refers to a constant, not a mutable location: "
-			<< lvalue_identifier.text
-			<< "."
-			;
-		throw SemanticsError(sstr.str());
+		if (require_mutable) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::analyze_lvalue_source: error (line "
+				<< lvalue_identifier.line << " col " << lvalue_identifier.column
+				<< "): the lvalue identifier refers to a constant, not a mutable location: "
+				<< lvalue_identifier.text
+				<< "."
+				;
+			throw SemanticsError(sstr.str());
+		} else {
+			lvalue_source_analysis.is_mutable     = false;
+			lvalue_source_analysis.constant_value = constant_scope.get(lvalue_identifier.text).get_static().constant_value;
+			lvalue_source_analysis.lvalue_type    = type_scope.index(lvalue_source_analysis.constant_value.get_static_primitive_type().get_tag_repr());
+
+			lvalue_source_analysis.lvalue_index            = std::numeric_limits<Index>::max();
+			lvalue_source_analysis.lvalue_fixed_storage    = Storage();
+			lvalue_source_analysis.is_lvalue_fixed_storage = true;
+			lvalue_source_analysis.is_lvalue_primref       = false;
+
+			// To preserve registers, add an empty instruction, so that
+			// lvalue_source_analysis can always be merged.
+			lvalue_source_analysis.lvalue_index = lvalue_source_analysis.instructions.add_instruction({I::Ignore(B(), false, false)});
+		}
 	} else {
 		std::ostringstream sstr;
 		sstr
@@ -12506,11 +12524,18 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 
 				// An lvalue in an expression corresponds a read / a LoadFrom.
 
-				LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue_symbol, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+				LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue_symbol, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 				expression_semantics.output_type  = lvalue_source_analysis.lvalue_type;
 				expression_semantics.lexeme_begin = lvalue_source_analysis.lexeme_begin;
 				expression_semantics.lexeme_end   = lvalue_source_analysis.lexeme_end;
-				if (lvalue_source_analysis.is_lvalue_fixed_storage) {
+				if (lvalue_source_analysis.is_mutable) {
+					// This should have been picked up by the constant expression check.
+					expression_semantics.lexeme_begin = lvalue_source_analysis.constant_value.lexeme_begin;
+					expression_semantics.lexeme_end   = lvalue_source_analysis.constant_value.lexeme_end;
+					const Type::Primitive &primitive_type = lvalue_source_analysis.constant_value.get_static_primitive_type();
+					expression_semantics.output_type  = type_scope.index(primitive_type.get_tag_repr());
+					expression_semantics.output_index = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), lvalue_source_analysis.constant_value.get_static_primitive_type().is_word(), lvalue_source_analysis.constant_value)});
+				} else if (lvalue_source_analysis.is_lvalue_fixed_storage) {
 					const Index lvalue_source_analysis_index = expression_semantics.merge_lvalue_source_analysis(lvalue_source_analysis);
 					if (!lvalue_source_analysis.is_lvalue_primref) {
 						// No accessors or instructions; just load from the storage.
@@ -12857,7 +12882,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			const Lvalue                     &lvalue                      = grammar.lvalue_storage.at(expression_lvalue.lvalue);
 			const LexemeIdentifier           &lexeme_identifier           = grammar.lexemes.at(lvalue.identifier).get_identifier();
 			const LvalueAccessorClauseList   &lvalue_accessor_clause_list = grammar.lvalue_accessor_clause_list_storage.at(lvalue.lvalue_accessor_clause_list);
-			LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope);
+			LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, false);
 			const Index lvalue_source_analysis_index = block.merge_lvalue_source_analysis(lvalue_source_analysis);
 			const Index lvalue_output_index
 				= lvalue_source_analysis.is_lvalue_fixed_storage
@@ -13075,6 +13100,17 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			direct_register_ref_offsets.push_back(direct_ref_allocated);
 			direct_ref_allocated += storage_scope.type(argument_type_index).get_size();
 		}
+
+		if (!argument_lvalue_source_analysis.is_mutable && parameter_is_ref) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::analyze_call: error (line "
+				<< grammar.lexemes.at(argument_expression.lexeme_begin).get_line() << " col " << grammar.lexemes.at(argument_expression.lexeme_begin).get_column()
+				<< "): for argument #" << argument_expression_index + 1 << ", cannot provide constant value as a ref, for type "
+				<< "<" << storage_scope.type(argument_expression.output_type).get_repr(storage_scope) << ">"
+				;
+			throw SemanticsError(sstr.str());
+		}
 	}
 	// For all combined direct register ref storages, align to 8 bytes.
 	direct_ref_allocated = Instruction::AddSp::round_to_align(direct_ref_allocated);
@@ -13187,6 +13223,9 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 		} else {
 			// primref parameter and primref or primvar argument.
 			assert(argument_lvalue_source_analysis.is_lvalue_fixed_storage);
+
+			// If it's a constant value, it's primitive and parameter is ref, so the previous elseif clause should apply.
+			assert(argument_lvalue_source_analysis.is_mutable);
 
 			// primref argument?
 			if (argument_lvalue_source_analysis.is_lvalue_primref) {
