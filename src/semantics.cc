@@ -13381,7 +13381,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 
 		analysis_state.dynamically_allocated = I::AddSp::round_to_align(analysis_state.dynamically_allocated);
 		const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, analysis_state.dynamically_allocated, true, true, Storage("$sp", true), Storage("#marker_dynamic_bottom"))}, {}, {block.back});
-		analysis_state.dynamically_allocated += dynamic_output_allocated;
+		analysis_state.dynamically_allocated += output_size;
 	}
 	// (Note: these are two separate allocations we're making: one will be made after analysis of blocks later on, and the offsets will be adjust appropriate using our dynamic marker, and another allocation (4 byte pointer rounded to 8 bytes) is being made now to hold the pointer to the dynamic allocation, which can be larger (e.g. 512 bytes).
 
