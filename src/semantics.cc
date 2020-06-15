@@ -9816,6 +9816,8 @@ std::pair<std::vector<uint32_t>, std::vector<uint64_t>> Semantics::MIPSIO::prepa
 					}
 				}
 
+				assert(reverse_claimed_working_storages.find(child_with_output) != reverse_claimed_working_storages.cend());
+
 				if (!child_output_has_unemitted_output_nodes) {
 					// Unclaim this output.
 					const Storage::Index claimed_storage = reverse_claimed_working_storages.at(child_with_output);
@@ -10474,6 +10476,8 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 						}
 					}
 				}
+
+				assert(reverse_claimed_working_storages.find(child_with_output) != reverse_claimed_working_storages.cend());
 
 				if (!child_output_has_unemitted_output_nodes) {
 					// Unclaim this output.
