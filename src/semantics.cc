@@ -13006,7 +13006,9 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	//    returns.  See #7 for more information.
 	// 6. Saved registers.  This entire component is 8-byte aligned.
 	//    MIPSIO::emit() handles the pseudoinstruction we add.
-	// 7. Arguments.  Array and record arguments will point to the original
+	// 7. If the output of the function we're calling, dynamically allocate
+	//    extra space for it to write to.
+	// 8. Arguments.  Array and record arguments will point to the original
 	//    array or record for Ref parameters, or it will point to the copied
 	//    array or record for Var parameters.  For all primitive Var arguments,
 	//    a LoadFrom copies the 4-byte (4-byte alignment) or 1-byte value
@@ -13245,6 +13247,24 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	nosaves.insert(nosaves.end(), var_nonprimitive_address_indices.cbegin(), var_nonprimitive_address_indices.cend());
 	const Index save_registers = block.back = block.instructions.add_instruction({I::Call(B(), Symbol(), true, false, nosaves, nosave_registers)}, {}, {block.back});
 
+	// Before adding any arguments, if it is a function that returns a record
+	// or array, dynamically allocate on our own stack memory for it to copy
+	// to, and push a pointer to it as an "after-the-last" argument.
+	const bool    has_dynamic_output_pointer = callee_has_output && !storage_scope.resolve_type(*callee_output).is_primitive();
+	const int32_t dynamic_output_allocated   = Instruction::AddSp::round_to_align(has_dynamic_output_pointer ? 8 : 0);
+	stack_allocated += pushed_arg_allocated;
+	if (dynamic_output_allocated != 0) {
+		block.back = block.instructions.add_instruction({I::AddSp(B(), -dynamic_output_allocated)}, {}, {block.back});
+	}
+	if (has_dynamic_output_pointer) {
+		const Type     &output_type = storage_scope.type(*callee_output);
+		assert(output_type.get_fixed_width());
+		const uint32_t  output_size = output_type.get_size();
+
+		const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, Storage("sp", true), Storage("#marker_dynamic_bottom"))}, {}, {block.back});
+	}
+	analysis_state.dynamically_allocated += dynamic_output_allocated;
+
 	// Next, put the first 4 arguments in $a0-$a3, and push the rest.
 
 	// Sizes first.
@@ -13310,9 +13330,9 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			;
 
 		if (argument_is_var_nonprimitive) {
-			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, pushed_arg_allocated + direct_ref_allocated + var_nonprimitive_offsets[argument_expression_index], true, true, argument_storage, Storage("$sp", true))}, {}, {block.back});
+			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, pushed_arg_allocated + dynamic_output_allocated + direct_ref_allocated + var_nonprimitive_offsets[argument_expression_index], true, true, argument_storage, Storage("$sp", true))}, {}, {block.back});
 		} else if (is_direct_register) {
-			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, true, pushed_arg_allocated + direct_register_ref_offsets[argument_expression_index], true, true, argument_storage, Storage("$sp", true))}, {}, {block.back});
+			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, true, pushed_arg_allocated + dynamic_output_allocated + direct_register_ref_offsets[argument_expression_index], true, true, argument_storage, Storage("$sp", true))}, {}, {block.back});
 		} else if (!parameter_is_ref || !storage_scope.resolve_type(argument_type_index).is_primitive()) {
 			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {argument_output}, {block.back});
 		} else {
@@ -13349,6 +13369,10 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	// Pop arguments and discard them.
 	if (pushed_arg_allocated != 0) {
 		block.back = block.instructions.add_instruction({I::AddSp(B(), pushed_arg_allocated)}, {}, {block.back});
+	}
+
+	if (dynamic_output_allocated != 0) {
+		block.back = block.instructions.add_instruction({I::AddSp(B(), dynamic_output_allocated)}, {}, {block.back});
 	}
 
 	// Pop registers that were saved onto the stack.
