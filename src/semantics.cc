@@ -12842,7 +12842,8 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 		const Index argument_output_index = block.merge_expression(argument_expression);
 		argument_outputs.push_back(argument_output_index);
 		// Permit the expression output to be ignored.  TODO: only merge expressions that are used to avoid inefficiency and fragility.
-		const Index expression_ignore_index = block.back = block.instructions.add_instruction({I::Ignore(B())}, {argument_output_index}, {block.back}); (void) expression_ignore_index;
+		const bool expression_output_is_word = !storage_scope.resolve_type(argument_expression.output_type).is_primitive() || storage_scope.resolve_type(argument_expression.output_type).get_primitive().is_word();
+		const Index expression_ignore_index = block.back = block.instructions.add_instruction({I::Ignore(B(), true, expression_output_is_word)}, {argument_output_index}, {block.back}); (void) expression_ignore_index;
 
 		// Is this an lvalue?  Get the lvalue analysis if so.
 		const ::Expression * const &expression        = expressions[argument_expression_index];
