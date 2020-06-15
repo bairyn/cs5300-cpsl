@@ -11410,7 +11410,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 						const Index sub_index             = expression_semantics.instructions.add_instruction({I::SubFrom(B(), left_type.is_word())}, {left_index, right_index});
 						const Index load_1_index          = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), left_type.is_word(), ConstantValue(static_cast<int32_t>(1), 0, 0))});
 						const Index eq_index              = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word())}, {sub_index, load_1_index});
-						const Index neq_index             = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), left_type.is_word())}, {eq_index, load_1_index});
+						const Index load_1_byte_index     = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), false, ConstantValue(static_cast<int32_t>(1), 0, 0))});
+						const Index neq_index             = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), false)}, {eq_index, load_1_byte_index});
 						expression_semantics.output_index = neq_index;
 					} else {
 						std::ostringstream sstr;
