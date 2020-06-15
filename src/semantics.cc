@@ -4940,7 +4940,7 @@ Semantics::Instruction::LoadFrom::LoadFrom(const Base &base, bool is_word, int32
 	, addition(addition)
 	{}
 
-std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_input_sizes() const { if (is_load_fixed && !get_dest_address_from_input) { return {}; } else if (is_load_fixed != !get_dest_address_from_input) { return {static_cast<uint32_t>(is_word_load || dereference_load ? 4 : 1)}; } else { return {static_cast<uint32_t>(is_word_load || dereference_load ? 4 : 1), static_cast<uint32_t>(is_word_load || dereference_load ? 4 : 1)}; } }
+std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_input_sizes() const { if (is_load_fixed && !get_dest_address_from_input) { return {}; } else if (is_load_fixed != !get_dest_address_from_input) { return {static_cast<uint32_t>(is_word_load || dereference_load || get_dest_address_from_input ? 4 : 1)}; } else { return {static_cast<uint32_t>(is_word_load || dereference_load ? 4 : 1), 4}; } }
 std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_working_sizes() const { return {}; }
 std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_output_sizes() const { if (is_save_fixed || get_dest_address_from_input) { return {}; } else { return {static_cast<uint32_t>(is_word_save || dereference_save ? 4 : 1)}; } }
 std::vector<uint32_t> Semantics::Instruction::LoadFrom::get_all_sizes() const { std::vector<uint32_t> v, i(std::move(get_input_sizes())), w(std::move(get_working_sizes())), o(std::move(get_output_sizes())); v.insert(v.end(), i.cbegin(), i.cend()); v.insert(v.end(), w.cbegin(), w.cend()); v.insert(v.end(), o.cbegin(), o.cend()); return v; }
