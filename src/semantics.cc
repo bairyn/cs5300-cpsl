@@ -17344,6 +17344,14 @@ void Semantics::analyze() {
 		const Symbol      &symbol        = string_symbol_pair.second;
 		//std::string        quoted_string = ConstantValue::quote_string(string);
 
+		// If this is the first line in the global_vars_section,
+		// add the initial declarations.
+		if (output.is_section_empty(Output::global_vars_section)) {
+			std::ostringstream sline;
+			sline << ".data";
+			output.add_line(Output::global_vars_section, sline.str());
+		}
+
 		output.add_line(Output::global_vars_section, ":", symbol);
 		//output.add_line(Output::global_vars_section, "\t.asciiz          " + quoted_string);
 		// MARS MIPS didn't read \x00 correctly.  So instead, emit a sequence of printable strings and .byte s.
