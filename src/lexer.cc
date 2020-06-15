@@ -189,7 +189,7 @@ const std::map<std::string, operator_t> LexemeOperator::operator_map {
 	{"*", times_operator},
 	{"/", slash_operator},
 	{"&", ampersand_operator},
-	{"|", slash_operator},
+	{"|", pipe_operator},
 	{"~", tilde_operator},
 	{"=", equals_operator},
 	{"<>", lt_or_gt_operator},
