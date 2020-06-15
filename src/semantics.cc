@@ -15593,7 +15593,7 @@ bool Semantics::would_multiplication_overflow(int32_t a, int32_t b) {
 		return false;
 	}
 	if (a == -1 || b == -1) {
-		return a != std::numeric_limits<int32_t>::min() && b != std::numeric_limits<int32_t>::min();
+		return a == std::numeric_limits<int32_t>::min() || b == std::numeric_limits<int32_t>::min();
 	}
 
 	// Since the result is increasing in magnitude, fail at the greatest
