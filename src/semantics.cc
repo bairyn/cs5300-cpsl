@@ -9896,6 +9896,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 
 	int32_t add_sp_total    = 0;  // Includes pushed_sp_total.
 	int32_t pushed_sp_total = 0;  // Applied even if no_sp_adjust.
+	int32_t add_sp_total_at_last_push = 0;
 
 	// Except for nosave_registers, only allow nosaves corresponding to these
 	// nodes.  This should only be storages used between "push_registers" and
@@ -10221,7 +10222,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 			if (instruction_storage_unit.is_register_dereference() && instruction_storage_unit.register_ == "$sp") {
 				int32_t add_sp_already_applied = 0;
 
-				if (instruction_storage_unit.offset >= -pushed_sp_total) {
+				if (instruction_storage_unit.offset >= add_sp_total_at_last_push - add_sp_total) {
 					instruction_storage_unit.offset -= pushed_sp_total;
 					add_sp_already_applied += pushed_sp_total;
 				}
@@ -10249,7 +10250,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 					if (alt_load_from.fixed_save_storage.is_register_dereference() && alt_load_from.fixed_save_storage.register_ == "$sp") {
 						int32_t add_sp_already_applied = 0;
 
-						if (alt_load_from.fixed_save_storage.offset >= -pushed_sp_total) {
+						if (alt_load_from.fixed_save_storage.offset >= add_sp_total_at_last_push - add_sp_total) {
 							alt_load_from.fixed_save_storage.offset -= pushed_sp_total;
 							add_sp_already_applied += pushed_sp_total;
 						}
@@ -10271,7 +10272,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 						if (alt_load_from.fixed_load_storage.is_register_dereference() && alt_load_from.fixed_load_storage.register_ == "$sp") {
 							int32_t add_sp_already_applied = 0;
 
-							if (alt_load_from.fixed_load_storage.offset >= -pushed_sp_total) {
+							if (alt_load_from.fixed_load_storage.offset >= add_sp_total_at_last_push - add_sp_total) {
 								alt_load_from.fixed_load_storage.offset -= pushed_sp_total;
 								add_sp_already_applied += pushed_sp_total;
 							}
@@ -10285,7 +10286,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 						if (alt_load_from.fixed_load_storage.register_ == "$sp") {
 							int32_t add_sp_already_applied = 0;
 
-							if (alt_load_from.addition >= -pushed_sp_total) {
+							if (alt_load_from.addition >= add_sp_total_at_last_push - add_sp_total) {
 								alt_load_from.addition -= pushed_sp_total;
 								add_sp_already_applied += pushed_sp_total;
 							}
@@ -10408,6 +10409,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 				const int32_t addition = Instruction::AddSp::round_to_align(-4*pushed_registers.size());
 				add_sp_total += addition;
 				pushed_sp_total += addition;
+				add_sp_total_at_last_push = add_sp_total;
 				if (addition != 0) {
 					instruction_output.push_back("\taddiu $sp, $sp, " + std::to_string(addition));
 				}
@@ -10424,6 +10426,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 				const int32_t addition = Instruction::AddSp::round_to_align(4*pushed_registers.size());
 				add_sp_total += addition;
 				pushed_sp_total += addition;
+				add_sp_total_at_last_push = 0;
 				if (addition != 0) {
 					instruction_output.push_back("\taddiu $sp, $sp, " + std::to_string(addition));
 				}
