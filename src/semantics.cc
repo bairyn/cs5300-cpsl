@@ -10261,14 +10261,14 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 					instruction_storage_unit.offset -= add_sp_total - add_sp_already_applied;
 				}
 			} else if (instruction_storage_unit.is_register_dereference() && instruction_storage_unit.register_.substr(0, std::min(instruction_storage_unit.register_.size() - 0, std::string("#marker_").size())) == "#marker_") {
-				std::string nosuffix = instruction_storage_unit.register_.substr(std::string("#marker").size());
+				std::string noprefix = instruction_storage_unit.register_.substr(std::string("#marker_").size());
 				std::string marker;
 				bool is_top;
 				if        (instruction_storage_unit.register_.substr(instruction_storage_unit.register_.size() - std::min(instruction_storage_unit.register_.size(), std::string("_top").size()), std::min(instruction_storage_unit.register_.size(), std::string("_top").size())) == "_top") {
-					marker = nosuffix.substr(0, nosuffix.size() - std::string("_top").size());
+					marker = noprefix.substr(0, noprefix.size() - std::string("_top").size());
 					is_top = true;
 				} else if (instruction_storage_unit.register_.substr(instruction_storage_unit.register_.size() - std::min(instruction_storage_unit.register_.size(), std::string("_bottom").size()), std::min(instruction_storage_unit.register_.size(), std::string("_bottom").size())) == "_bottom") {
-					marker = nosuffix.substr(0, nosuffix.size() - std::string("_bottom").size());
+					marker = noprefix.substr(0, noprefix.size() - std::string("_bottom").size());
 					is_top = false;
 				} else {
 					std::ostringstream sstr;
@@ -10298,6 +10298,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 				} else {
 					instruction_storage_unit.offset -= bottom;
 				}
+				instruction_storage_unit.register_ = "$sp";
 			}
 		}
 
@@ -10327,14 +10328,14 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 							alt_load_from.fixed_save_storage.offset -= add_sp_total - add_sp_already_applied;
 						}
 					} else if (alt_load_from.fixed_save_storage.is_register_dereference() && alt_load_from.fixed_save_storage.register_.substr(0, std::min(alt_load_from.fixed_save_storage.register_.size() - 0, std::string("#marker_").size())) == "#marker_") {
-						std::string nosuffix = alt_load_from.fixed_save_storage.register_.substr(std::string("#marker").size());
+						std::string noprefix = alt_load_from.fixed_save_storage.register_.substr(std::string("#marker_").size());
 						std::string marker;
 						bool is_top;
 						if        (alt_load_from.fixed_save_storage.register_.substr(alt_load_from.fixed_save_storage.register_.size() - std::min(alt_load_from.fixed_save_storage.register_.size(), std::string("_top").size()), std::min(alt_load_from.fixed_save_storage.register_.size(), std::string("_top").size())) == "_top") {
-							marker = nosuffix.substr(0, nosuffix.size() - std::string("_top").size());
+							marker = noprefix.substr(0, noprefix.size() - std::string("_top").size());
 							is_top = true;
 						} else if (alt_load_from.fixed_save_storage.register_.substr(alt_load_from.fixed_save_storage.register_.size() - std::min(alt_load_from.fixed_save_storage.register_.size(), std::string("_bottom").size()), std::min(alt_load_from.fixed_save_storage.register_.size(), std::string("_bottom").size())) == "_bottom") {
-							marker = nosuffix.substr(0, nosuffix.size() - std::string("_bottom").size());
+							marker = noprefix.substr(0, noprefix.size() - std::string("_bottom").size());
 							is_top = false;
 						} else {
 							std::ostringstream sstr;
@@ -10364,6 +10365,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 						} else {
 							alt_load_from.fixed_save_storage.offset -= bottom;
 						}
+						alt_load_from.fixed_save_storage.register_ = "$sp";
 					}
 				}
 				if (alt_load_from.is_load_fixed) {
@@ -10387,14 +10389,14 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 								alt_load_from.fixed_load_storage.offset -= add_sp_total - add_sp_already_applied;
 							}
 						} else if (alt_load_from.fixed_load_storage.is_register_dereference() && alt_load_from.fixed_load_storage.register_.substr(0, std::min(alt_load_from.fixed_load_storage.register_.size() - 0, std::string("#marker_").size())) == "#marker_") {
-							std::string nosuffix = alt_load_from.fixed_load_storage.register_.substr(std::string("#marker").size());
+							std::string noprefix = alt_load_from.fixed_load_storage.register_.substr(std::string("#marker_").size());
 							std::string marker;
 							bool is_top;
 							if        (alt_load_from.fixed_load_storage.register_.substr(alt_load_from.fixed_load_storage.register_.size() - std::min(alt_load_from.fixed_load_storage.register_.size(), std::string("_top").size()), std::min(alt_load_from.fixed_load_storage.register_.size(), std::string("_top").size())) == "_top") {
-								marker = nosuffix.substr(0, nosuffix.size() - std::string("_top").size());
+								marker = noprefix.substr(0, noprefix.size() - std::string("_top").size());
 								is_top = true;
 							} else if (alt_load_from.fixed_load_storage.register_.substr(alt_load_from.fixed_load_storage.register_.size() - std::min(alt_load_from.fixed_load_storage.register_.size(), std::string("_bottom").size()), std::min(alt_load_from.fixed_load_storage.register_.size(), std::string("_bottom").size())) == "_bottom") {
-								marker = nosuffix.substr(0, nosuffix.size() - std::string("_bottom").size());
+								marker = noprefix.substr(0, noprefix.size() - std::string("_bottom").size());
 								is_top = false;
 							} else {
 								std::ostringstream sstr;
@@ -10424,6 +10426,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 							} else {
 								alt_load_from.fixed_load_storage.offset -= bottom;
 							}
+							alt_load_from.fixed_load_storage.register_ = "$sp";
 						}
 					} else if (alt_load_from.fixed_load_storage.is_register_direct()) {
 						if (alt_load_from.fixed_load_storage.register_ == "$sp") {
@@ -10439,14 +10442,14 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 								alt_load_from.addition -= add_sp_total - add_sp_already_applied;
 							}
 						} else if (alt_load_from.fixed_load_storage.is_register_direct() && alt_load_from.fixed_load_storage.register_.substr(0, std::min(alt_load_from.fixed_load_storage.register_.size() - 0, std::string("#marker_").size())) == "#marker_") {
-							std::string nosuffix = alt_load_from.fixed_load_storage.register_.substr(std::string("#marker").size());
+							std::string noprefix = alt_load_from.fixed_load_storage.register_.substr(std::string("#marker_").size());
 							std::string marker;
 							bool is_top;
 							if        (alt_load_from.fixed_load_storage.register_.substr(alt_load_from.fixed_load_storage.register_.size() - std::min(alt_load_from.fixed_load_storage.register_.size(), std::string("_top").size()), std::min(alt_load_from.fixed_load_storage.register_.size(), std::string("_top").size())) == "_top") {
-								marker = nosuffix.substr(0, nosuffix.size() - std::string("_top").size());
+								marker = noprefix.substr(0, noprefix.size() - std::string("_top").size());
 								is_top = true;
 							} else if (alt_load_from.fixed_load_storage.register_.substr(alt_load_from.fixed_load_storage.register_.size() - std::min(alt_load_from.fixed_load_storage.register_.size(), std::string("_bottom").size()), std::min(alt_load_from.fixed_load_storage.register_.size(), std::string("_bottom").size())) == "_bottom") {
-								marker = nosuffix.substr(0, nosuffix.size() - std::string("_bottom").size());
+								marker = noprefix.substr(0, noprefix.size() - std::string("_bottom").size());
 								is_top = false;
 							} else {
 								std::ostringstream sstr;
@@ -10476,6 +10479,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 							} else {
 								alt_load_from.addition -= bottom;
 							}
+							alt_load_from.fixed_load_storage.register_ = "$sp";
 						}
 					}
 				}
@@ -13375,7 +13379,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 		assert(output_type.get_fixed_width());
 		const uint32_t  output_size = output_type.get_size();
 
-		const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, Storage("sp", true), Storage("#marker_dynamic_bottom"))}, {}, {block.back});
+		const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, Storage("$sp", true), Storage("#marker_dynamic_bottom"))}, {}, {block.back});
 	}
 	analysis_state.dynamically_allocated += dynamic_output_allocated;
 
@@ -15233,7 +15237,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 	// Make a marker for it.
 	const int32_t dynamically_allocated = Instruction::AddSp::round_to_align(analysis_state.dynamically_allocated);
 	if (analysis_state.dynamically_allocated != 0) {
-		block_semantics.back = block_semantics.instructions.add_instruction({I::AddSp(B(), Instruction::AddSp::round_to_align(-analysis_state.dynamically_allocated), "dynamic")}, {}, block_semantics.back);
+		last_intro_index = block_semantics.instructions.add_instruction({I::AddSp(B(), Instruction::AddSp::round_to_align(-analysis_state.dynamically_allocated), "dynamic")}, {}, last_intro_index);
 	}
 
 	// Commented out: these are already copied on a call!  Instead, just add a binding to the appropriate storage.  We do that above.
