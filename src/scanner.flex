@@ -60,17 +60,16 @@ WHITESPACE [ \n\t]+
 
 %%
 
-	/* Catch identifiers without the right prefix as a lexer error. */
-"_" |
-{IDENTIFIER_CHAR_NO_PREFIX}({IDENTIFIER_CHAR})*{LETTER}({IDENTIFIER_CHAR})* {
-	std::ostringstream sstr;
-	sstr << "scanner: error: identifiers need to begin with a letter (scanned `" << yytext << "').";
-	throw LexerError(sstr.str());
-}
-
 {IDENTIFIER} {
 	const std::string text(yytext);
 	const Lexeme last_lexeme(yyget_extra(yyscanner));
+
+	/* Catch identifiers without the right prefix as a lexer error. */
+	if (text.size() > 0 && (text[0] == '_' || (text[0] >= '0' && text[0] <= '9'))) {
+		std::ostringstream sstr;
+		sstr << "scanner: error: identifiers need to begin with a letter (scanned `" << yytext << "').";
+		throw LexerError(sstr.str());
+	}
 
 	if (LexemeKeyword::is_keyword(text)) {
 		Lexeme current_lexeme(
