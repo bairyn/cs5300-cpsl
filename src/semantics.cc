@@ -14649,11 +14649,17 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 		const bool is_resolved_type_word = !storage_scope.resolve_type(parameter_type).is_primitive() || storage_scope.resolve_type(parameter_type).get_primitive().is_word();
 		const bool is_nonprimitive = storage_scope.type(parameter_type).resolve_type(storage_scope).is_array() || storage_scope.type(parameter_type).resolve_type(storage_scope).is_record();
 		if (parameter_index < 4) {
-			const Storage parameter_storage
+			const bool is_word = is_resolved_type_word || parameter_is_ref;
+
+			Storage parameter_storage
 				= !is_primitive_and_ref || is_nonprimitive
 				? Storage("$a" + std::to_string(parameter_index))                                    // Just use $a directly; don't dereference.  (Primitive Var.)
 				: Storage("$a" + std::to_string(parameter_index), is_resolved_type_word ? 4 : 1, 0)  // The variable should dereference an address.
 				;
+
+			if (!is_word) {
+				parameter_storage.max_size = 1;
+			}
 
 			local_var_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
 			local_combined_scope.insert({parameter_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(parameter_type, parameter_storage))});
