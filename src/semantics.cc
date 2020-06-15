@@ -2991,6 +2991,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
+			break;
 		} case ::Expression::ampersand_branch: {
 			const ::Expression::Ampersand &ampersand           = grammar.expression_ampersand_storage.at(expression_symbol.data);
 			const ::Expression            &expression0         = grammar.expression_storage.at(ampersand.expression0); (void) expression0;
@@ -3055,6 +3056,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
+			break;
 		} case ::Expression::equals_branch: {
 			const ::Expression::Equals &equals           = grammar.expression_equals_storage.at(expression_symbol.data);
 			const ::Expression         &expression0      = grammar.expression_storage.at(equals.expression0); (void) expression0;
@@ -3109,6 +3111,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
+			break;
 		} case ::Expression::lt_or_gt_branch: {
 			const ::Expression::LtOrGt &lt_or_gt           = grammar.expression_lt_or_gt_storage.at(expression_symbol.data);
 			const ::Expression         &expression0        = grammar.expression_storage.at(lt_or_gt.expression0); (void) expression0;
@@ -3163,6 +3166,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
+			break;
 		} case ::Expression::le_branch: {
 			const ::Expression::Le &le           = grammar.expression_le_storage.at(expression_symbol.data);
 			const ::Expression     &expression0  = grammar.expression_storage.at(le.expression0); (void) expression0;
@@ -3217,6 +3221,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
+			break;
 		} case ::Expression::ge_branch: {
 			const ::Expression::Ge &ge           = grammar.expression_ge_storage.at(expression_symbol.data);
 			const ::Expression     &expression0  = grammar.expression_storage.at(ge.expression0); (void) expression0;
@@ -3271,6 +3276,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
+			break;
 		} case ::Expression::lt_branch: {
 			const ::Expression::Lt &lt           = grammar.expression_lt_storage.at(expression_symbol.data);
 			const ::Expression     &expression0  = grammar.expression_storage.at(lt.expression0); (void) expression0;
@@ -3325,6 +3331,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
+			break;
 		} case ::Expression::gt_branch: {
 			const ::Expression::Gt &gt           = grammar.expression_gt_storage.at(expression_symbol.data);
 			const ::Expression     &expression0  = grammar.expression_storage.at(gt.expression0); (void) expression0;
@@ -3379,6 +3386,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
+			break;
 		} case ::Expression::plus_branch: {
 			const ::Expression::Plus &plus           = grammar.expression_plus_storage.at(expression_symbol.data);
 			const ::Expression       &expression0    = grammar.expression_storage.at(plus.expression0); (void) expression0;
@@ -3463,6 +3471,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
+			break;
 		} case ::Expression::minus_branch: {
 			const ::Expression::Minus &minus           = grammar.expression_minus_storage.at(expression_symbol.data);
 			const ::Expression        &expression0     = grammar.expression_storage.at(minus.expression0); (void) expression0;
@@ -3547,6 +3556,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
+			break;
 		} case ::Expression::times_branch: {
 			const ::Expression::Times &times           = grammar.expression_times_storage.at(expression_symbol.data);
 			const ::Expression        &expression0     = grammar.expression_storage.at(times.expression0); (void) expression0;
@@ -3631,6 +3641,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
+			break;
 		} case ::Expression::slash_branch: {
 			const ::Expression::Slash &slash           = grammar.expression_slash_storage.at(expression_symbol.data);
 			const ::Expression        &expression0     = grammar.expression_storage.at(slash.expression0); (void) expression0;
@@ -3735,6 +3746,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
+			break;
 		} case ::Expression::percent_branch: {
 			const ::Expression::Percent &percent           = grammar.expression_percent_storage.at(expression_symbol.data);
 			const ::Expression          &expression0       = grammar.expression_storage.at(percent.expression0); (void) expression0;
@@ -3820,6 +3832,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
+			break;
 		} case ::Expression::tilde_branch: {
 			const ::Expression::Tilde &tilde           = grammar.expression_tilde_storage.at(expression_symbol.data);
 			const LexemeOperator      &tilde_operator0 = grammar.lexemes.at(tilde.tilde_operator0).get_operator();
@@ -3863,6 +3876,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
+			break;
 		} case ::Expression::unary_minus_branch: {
 			const ::Expression::UnaryMinus &unary_minus     = grammar.expression_unary_minus_storage.at(expression_symbol.data);
 			const LexemeOperator           &minus_operator0 = grammar.lexemes.at(unary_minus.minus_operator0).get_operator();
@@ -3924,6 +3938,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 					;
 				throw SemanticsError(sstr.str());
 			}
+			break;
 		} case ::Expression::parentheses_branch: {
 			const ::Expression::Parentheses &parentheses                = grammar.expression_parentheses_storage.at(expression_symbol.data);
 			const LexemeOperator            &leftparenthesis_operator0  = grammar.lexemes.at(parentheses.leftparenthesis_operator0).get_operator(); (void) leftparenthesis_operator0;
@@ -4092,6 +4107,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(
 				expression_constant_value = ConstantValue(static_.constant_value, lvalue_symbol.identifier, lvalue_symbol.identifier + 1);
 				break;
 			}
+			break;
 		}
 
 		// These 3 branches are static.
