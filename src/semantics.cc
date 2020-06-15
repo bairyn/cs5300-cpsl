@@ -11215,7 +11215,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const Type::Primitive &right_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 
 				// Are the expressions of the same type?
-				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
+				if (storage_scope.resolve_type(left.output_type).tag != storage_scope.resolve_type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
@@ -11275,7 +11275,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const Type::Primitive &right_type = storage_scope.type(left.output_type).resolve_type(storage_scope).get_primitive();
 
 				// Are the expressions of the same type?
-				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
+				if (storage_scope.resolve_type(left.output_type).tag != storage_scope.resolve_type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
@@ -11320,7 +11320,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
+				if (storage_scope.resolve_type(left.output_type).tag != storage_scope.resolve_type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
@@ -11388,7 +11388,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
+				if (storage_scope.resolve_type(left.output_type).tag != storage_scope.resolve_type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
@@ -11458,7 +11458,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
+				if (storage_scope.resolve_type(left.output_type).tag != storage_scope.resolve_type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
@@ -11528,7 +11528,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
+				if (storage_scope.resolve_type(left.output_type).tag != storage_scope.resolve_type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
@@ -11598,7 +11598,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
+				if (storage_scope.resolve_type(left.output_type).tag != storage_scope.resolve_type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
@@ -11664,7 +11664,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
 				// Are the expressions of the same type?
-				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
+				if (storage_scope.resolve_type(left.output_type).tag != storage_scope.resolve_type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
@@ -11758,7 +11758,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				}
 
 				// Are the expressions of the same type?
-				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
+				if (storage_scope.resolve_type(left.output_type).tag != storage_scope.resolve_type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
@@ -11831,7 +11831,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				}
 
 				// Are the expressions of the same type?
-				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
+				if (storage_scope.resolve_type(left.output_type).tag != storage_scope.resolve_type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
@@ -11904,7 +11904,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				}
 
 				// Are the expressions of the same type?
-				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
+				if (storage_scope.resolve_type(left.output_type).tag != storage_scope.resolve_type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
@@ -11979,7 +11979,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				}
 
 				// Are the expressions of the same type?
-				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
+				if (storage_scope.resolve_type(left.output_type).tag != storage_scope.resolve_type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
@@ -12054,7 +12054,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				}
 
 				// Are the expressions of the same type?
-				if (storage_scope.type(left.output_type).tag != storage_scope.type(right.output_type).tag) {
+				if (storage_scope.resolve_type(left.output_type).tag != storage_scope.resolve_type(right.output_type).tag) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze_expression: error (line "
