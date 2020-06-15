@@ -4986,7 +4986,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 			<< (is_word_save ? 4 : 1)
 			<< "-byte word-sized saving but was constructed with a fixed destination storage size of "
 			<< destination_storage.max_size
-			<< "."
+			<< ", or it was 1 with get_dest_address_from_input set to true."
 			;
 		throw SemanticsError(sstr.str());
 	}
