@@ -10326,6 +10326,44 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 							alt_load_from.fixed_save_storage.no_sp_adjust = true;
 							alt_load_from.fixed_save_storage.offset -= add_sp_total - add_sp_already_applied;
 						}
+					} else if (alt_load_from.fixed_save_storage.is_register_dereference() && alt_load_from.fixed_save_storage.register_.substr(0, std::min(alt_load_from.fixed_save_storage.register_.size() - 0, std::string("#marker_").size())) == "#marker_") {
+						std::string nosuffix = alt_load_from.fixed_save_storage.register_.substr(std::string("#marker").size());
+						std::string marker;
+						bool is_top;
+						if        (alt_load_from.fixed_save_storage.register_.substr(alt_load_from.fixed_save_storage.register_.size() - std::min(alt_load_from.fixed_save_storage.register_.size(), std::string("_top").size()), std::min(alt_load_from.fixed_save_storage.register_.size(), std::string("_top").size())) == "_top") {
+							marker = nosuffix.substr(0, nosuffix.size() - std::string("_top").size());
+							is_top = true;
+						} else if (alt_load_from.fixed_save_storage.register_.substr(alt_load_from.fixed_save_storage.register_.size() - std::min(alt_load_from.fixed_save_storage.register_.size(), std::string("_bottom").size()), std::min(alt_load_from.fixed_save_storage.register_.size(), std::string("_bottom").size())) == "_bottom") {
+							marker = nosuffix.substr(0, nosuffix.size() - std::string("_bottom").size());
+							is_top = false;
+						} else {
+							std::ostringstream sstr;
+							sstr
+								<< "Semantics::MIPSIO::emit: internal error: a ``#marker_\" pseudo-register must end in ``_top\" or ``_bottom\" but doesn't." << std::endl
+								<< "\tthis_node (index) : " << this_node << std::endl
+								<< "\tpseudo-register   : " << alt_load_from.fixed_save_storage.register_
+								;
+							throw SemanticsError(sstr.str());
+						}
+
+						std::map<std::string, std::pair<int32_t, int32_t>>::const_iterator markers_search = markers.find(marker);  // marker name -> {top, bottom}, i.e. {add_sp_total before push, add_sp_total after push}
+						if (markers_search == markers.cend()) {
+							std::ostringstream sstr;
+							sstr
+								<< "Semantics::MIPSIO::emit: internal error: a ``#marker_\" pseudo-register was used but no AddSp instruction recorded this marker; it is missing.  Was it spelled correctly?" << std::endl
+								<< "\tthis_node (index) : " << this_node << std::endl
+								<< "\tpseudo-register   : " << alt_load_from.fixed_save_storage.register_
+								;
+							throw SemanticsError(sstr.str());
+						}
+						const int32_t top    = markers_search->second.first;
+						const int32_t bottom = markers_search->second.second;
+
+						if (is_top) {
+							alt_load_from.fixed_save_storage.offset -= top;
+						} else {
+							alt_load_from.fixed_save_storage.offset -= bottom;
+						}
 					}
 				}
 				if (alt_load_from.is_load_fixed) {
@@ -10348,6 +10386,44 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 								alt_load_from.fixed_load_storage.no_sp_adjust = true;
 								alt_load_from.fixed_load_storage.offset -= add_sp_total - add_sp_already_applied;
 							}
+						} else if (alt_load_from.fixed_load_storage.is_register_dereference() && alt_load_from.fixed_load_storage.register_.substr(0, std::min(alt_load_from.fixed_load_storage.register_.size() - 0, std::string("#marker_").size())) == "#marker_") {
+							std::string nosuffix = alt_load_from.fixed_load_storage.register_.substr(std::string("#marker").size());
+							std::string marker;
+							bool is_top;
+							if        (alt_load_from.fixed_load_storage.register_.substr(alt_load_from.fixed_load_storage.register_.size() - std::min(alt_load_from.fixed_load_storage.register_.size(), std::string("_top").size()), std::min(alt_load_from.fixed_load_storage.register_.size(), std::string("_top").size())) == "_top") {
+								marker = nosuffix.substr(0, nosuffix.size() - std::string("_top").size());
+								is_top = true;
+							} else if (alt_load_from.fixed_load_storage.register_.substr(alt_load_from.fixed_load_storage.register_.size() - std::min(alt_load_from.fixed_load_storage.register_.size(), std::string("_bottom").size()), std::min(alt_load_from.fixed_load_storage.register_.size(), std::string("_bottom").size())) == "_bottom") {
+								marker = nosuffix.substr(0, nosuffix.size() - std::string("_bottom").size());
+								is_top = false;
+							} else {
+								std::ostringstream sstr;
+								sstr
+									<< "Semantics::MIPSIO::emit: internal error: a ``#marker_\" pseudo-register must end in ``_top\" or ``_bottom\" but doesn't." << std::endl
+									<< "\tthis_node (index) : " << this_node << std::endl
+									<< "\tpseudo-register   : " << alt_load_from.fixed_load_storage.register_
+									;
+								throw SemanticsError(sstr.str());
+							}
+
+							std::map<std::string, std::pair<int32_t, int32_t>>::const_iterator markers_search = markers.find(marker);  // marker name -> {top, bottom}, i.e. {add_sp_total before push, add_sp_total after push}
+							if (markers_search == markers.cend()) {
+								std::ostringstream sstr;
+								sstr
+									<< "Semantics::MIPSIO::emit: internal error: a ``#marker_\" pseudo-register was used but no AddSp instruction recorded this marker; it is missing.  Was it spelled correctly?" << std::endl
+									<< "\tthis_node (index) : " << this_node << std::endl
+									<< "\tpseudo-register   : " << alt_load_from.fixed_load_storage.register_
+									;
+								throw SemanticsError(sstr.str());
+							}
+							const int32_t top    = markers_search->second.first;
+							const int32_t bottom = markers_search->second.second;
+
+							if (is_top) {
+								alt_load_from.fixed_load_storage.offset -= top;
+							} else {
+								alt_load_from.fixed_load_storage.offset -= bottom;
+							}
 						}
 					} else if (alt_load_from.fixed_load_storage.is_register_direct()) {
 						if (alt_load_from.fixed_load_storage.register_ == "$sp") {
@@ -10361,6 +10437,44 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 							if (!alt_load_from.fixed_load_storage.no_sp_adjust) {
 								alt_load_from.fixed_load_storage.no_sp_adjust = true;
 								alt_load_from.addition -= add_sp_total - add_sp_already_applied;
+							}
+						} else if (alt_load_from.fixed_load_storage.is_register_direct() && alt_load_from.fixed_load_storage.register_.substr(0, std::min(alt_load_from.fixed_load_storage.register_.size() - 0, std::string("#marker_").size())) == "#marker_") {
+							std::string nosuffix = alt_load_from.fixed_load_storage.register_.substr(std::string("#marker").size());
+							std::string marker;
+							bool is_top;
+							if        (alt_load_from.fixed_load_storage.register_.substr(alt_load_from.fixed_load_storage.register_.size() - std::min(alt_load_from.fixed_load_storage.register_.size(), std::string("_top").size()), std::min(alt_load_from.fixed_load_storage.register_.size(), std::string("_top").size())) == "_top") {
+								marker = nosuffix.substr(0, nosuffix.size() - std::string("_top").size());
+								is_top = true;
+							} else if (alt_load_from.fixed_load_storage.register_.substr(alt_load_from.fixed_load_storage.register_.size() - std::min(alt_load_from.fixed_load_storage.register_.size(), std::string("_bottom").size()), std::min(alt_load_from.fixed_load_storage.register_.size(), std::string("_bottom").size())) == "_bottom") {
+								marker = nosuffix.substr(0, nosuffix.size() - std::string("_bottom").size());
+								is_top = false;
+							} else {
+								std::ostringstream sstr;
+								sstr
+									<< "Semantics::MIPSIO::emit: internal error: a ``#marker_\" pseudo-register must end in ``_top\" or ``_bottom\" but doesn't." << std::endl
+									<< "\tthis_node (index) : " << this_node << std::endl
+									<< "\tpseudo-register   : " << alt_load_from.fixed_load_storage.register_
+									;
+								throw SemanticsError(sstr.str());
+							}
+
+							std::map<std::string, std::pair<int32_t, int32_t>>::const_iterator markers_search = markers.find(marker);  // marker name -> {top, bottom}, i.e. {add_sp_total before push, add_sp_total after push}
+							if (markers_search == markers.cend()) {
+								std::ostringstream sstr;
+								sstr
+									<< "Semantics::MIPSIO::emit: internal error: a ``#marker_\" pseudo-register was used but no AddSp instruction recorded this marker; it is missing.  Was it spelled correctly?" << std::endl
+									<< "\tthis_node (index) : " << this_node << std::endl
+									<< "\tpseudo-register   : " << alt_load_from.fixed_load_storage.register_
+									;
+								throw SemanticsError(sstr.str());
+							}
+							const int32_t top    = markers_search->second.first;
+							const int32_t bottom = markers_search->second.second;
+
+							if (is_top) {
+								alt_load_from.addition -= top;
+							} else {
+								alt_load_from.addition -= bottom;
 							}
 						}
 					}
