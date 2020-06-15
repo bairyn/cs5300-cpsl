@@ -44,11 +44,6 @@ public:
 #define CPSL_CC_SEMANTICS_EMIT_EXTRA_REDUNDANT_LABELS              false
 #define CPSL_CC_SEMANTICS_PERMIT_UNUSED_FUNCTION_OUTPUTS           true
 
-// TODO: remove these redefinitions; they're only here to let me know when
-//       sequence connection delays and shadowing happen during development.
-#undef CPSL_CC_SEMANTICS_PERMIT_SHADOWING
-#define CPSL_CC_SEMANTICS_PERMIT_SHADOWING                         false
-
 class Semantics {
 public:
 	static const bool combine_identifier_namespaces;
