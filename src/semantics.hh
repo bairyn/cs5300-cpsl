@@ -830,11 +830,18 @@ public:
 		// | AddSp.
 		// Add or subtract the $sp stack pointer, and tell emit() to modify $sp-based Storages sent to instructions.
 		// If "offset" is not 8-byte aligned, it will be rounded away from 0 to the nearest 8-byte boundary.
+		//
+		// To tell emit() to track the stack offset before (top) and stack
+		// offset after (bottom), make "marker" a non-empty string, e.g.
+		// "dynamic".  Then the pseudo-registers "#marker_dynamic_top" and
+		// "#marker_dynamic_bottom" can be used, and emit() will use these
+		// markers instead of add_sp_total if the register were "$sp".
 		class AddSp : public Base {
 		public:
 			AddSp();
-			AddSp(const Base &base, int32_t offset);
+			AddSp(const Base &base, int32_t offset, const std::string &marker = "");
 			int32_t offset;
+			std::string marker;
 
 			std::vector<uint32_t> get_input_sizes() const;
 			std::vector<uint32_t> get_working_sizes() const;
@@ -1461,6 +1468,14 @@ public:
 		ConstantValue           constant_value;       // If !is_mutable, this is the constant value.
 
 		MIPSIO::Index merge_expression(const Expression &other);
+
+		// | Represents additional dynamic allocations that will be added /
+		// pushed beneath working storages.
+		//
+		// (New allocations are generally lower/deeper in the stack.)
+		//
+		// (In LvalueSourceAnalysis, this value is unused.)
+		int32_t dynamically_allocated = 0;
 	};
 	LvalueSourceAnalysis analyze_lvalue_source(const Lvalue &lvalue, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, bool require_mutable = true);
 
@@ -1501,6 +1516,8 @@ public:
 		// lexeme_end to the minimum and maximum, respectively.
 		MIPSIO::Index merge(const Expression &other);
 #endif /* #if 0 */
+
+		int32_t dynamically_allocated = 0;
 	};
 
 	// The non-const part is the ability to store strings.
@@ -1574,6 +1591,8 @@ public:
 		// | Since a sequence connection is added, other_output_index is not optional and does not default to 0.
 		MIPSIO::Index merge_expression(const Expression &other);
 		MIPSIO::Index merge_lvalue_source_analysis(const LvalueSourceAnalysis &other);
+
+		int32_t dynamically_allocated = 0;
 	};
 
 	// | Analyze a call and return a block that performs a call.  If the

@@ -4751,9 +4751,10 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::Syscall::emit(const
 Semantics::Instruction::AddSp::AddSp()
 	{}
 
-Semantics::Instruction::AddSp::AddSp(const Base &base, int32_t offset)
+Semantics::Instruction::AddSp::AddSp(const Base &base, int32_t offset, const std::string &marker)
 	: Base(base)
 	, offset(offset)
+	, marker(marker)
 {
 	int32_t rounded_offset = this->offset < 0 ? -this->offset : this->offset;
 	if (rounded_offset % 8 != 0) {
@@ -9917,6 +9918,8 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 	int32_t pushed_sp_total = 0;  // Applied even if no_sp_adjust.
 	int32_t add_sp_total_at_last_push = 0;
 
+	std::map<std::string, std::pair<int32_t, int32_t>> markers;  // marker name -> {top, bottom}, i.e. {add_sp_total before push, add_sp_total after push}
+
 	// Except for nosave_registers, only allow nosaves corresponding to these
 	// nodes.  This should only be storages used between "push_registers" and
 	// "jal" (TODO: double check this) that aren't re-used later on; only
@@ -10250,6 +10253,44 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 					instruction_storage_unit.no_sp_adjust = true;
 					instruction_storage_unit.offset -= add_sp_total - add_sp_already_applied;
 				}
+			} else if (instruction_storage_unit.is_register_dereference() && instruction_storage_unit.register_.substr(0, std::min(instruction_storage_unit.register_.size() - 0, std::string("#marker_").size())) == "#marker_") {
+				std::string nosuffix = instruction_storage_unit.register_.substr(std::string("#marker").size());
+				std::string marker;
+				bool is_top;
+				if        (instruction_storage_unit.register_.substr(instruction_storage_unit.register_.size() - std::min(instruction_storage_unit.register_.size(), std::string("_top").size()), std::min(instruction_storage_unit.register_.size(), std::string("_top").size())) == "_top") {
+					marker = nosuffix.substr(0, nosuffix.size() - std::string("_top").size());
+					is_top = true;
+				} else if (instruction_storage_unit.register_.substr(instruction_storage_unit.register_.size() - std::min(instruction_storage_unit.register_.size(), std::string("_bottom").size()), std::min(instruction_storage_unit.register_.size(), std::string("_bottom").size())) == "_bottom") {
+					marker = nosuffix.substr(0, nosuffix.size() - std::string("_bottom").size());
+					is_top = false;
+				} else {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::MIPSIO::emit: internal error: a ``#marker_\" pseudo-register must end in ``_top\" or ``_bottom\" but doesn't." << std::endl
+						<< "\tthis_node (index) : " << this_node << std::endl
+						<< "\tpseudo-register   : " << instruction_storage_unit.register_
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				std::map<std::string, std::pair<int32_t, int32_t>>::const_iterator markers_search = markers.find(marker);  // marker name -> {top, bottom}, i.e. {add_sp_total before push, add_sp_total after push}
+				if (markers_search == markers.cend()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::MIPSIO::emit: internal error: a ``#marker_\" pseudo-register was used but no AddSp instruction recorded this marker; it is missing.  Was it spelled correctly?" << std::endl
+						<< "\tthis_node (index) : " << this_node << std::endl
+						<< "\tpseudo-register   : " << instruction_storage_unit.register_
+						;
+					throw SemanticsError(sstr.str());
+				}
+				const int32_t top    = markers_search->second.first;
+				const int32_t bottom = markers_search->second.second;
+
+				if (is_top) {
+					instruction_storage_unit.offset -= top;
+				} else {
+					instruction_storage_unit.offset -= bottom;
+				}
 			}
 		}
 
@@ -10323,15 +10364,32 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 
 		// | Handle AddSp instructions.
 		if (instruction.is_add_sp()) {
-			const int32_t offset = instruction.get_add_sp().offset;
+			const Instruction::AddSp &add_sp = instruction.get_add_sp();
+
+			const int32_t offset = add_sp.offset;
 			if (offset % 8 != 0) {
 				std::ostringstream sstr;
 				sstr
-					<< "Semantics::MIPSIO::emit: error: an AddSp instruction is not 8-byte aligned, but this should have automatically been rounded away from 0.  Was it modified at some point?" << std::endl
+					<< "Semantics::MIPSIO::emit: internal error: an AddSp instruction is not 8-byte aligned, but this should have automatically been rounded away from 0.  Was it modified at some point?" << std::endl
 					<< "\tthis_node (index) : " << this_node << std::endl
 					<< "\toffset            : " << offset
 					;
 				throw SemanticsError(sstr.str());
+			}
+
+			if (add_sp.marker.size() > 0) {
+				if (markers.find(add_sp.marker) != markers.cend()) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::MIPSIO::emit: internal error: an AddSp instruction contains a marker but a previous one with the same marker name was already emitted.  Not overwriting." << std::endl
+						<< "\tthis_node (index) : " << this_node << std::endl
+						<< "\toffset            : " << offset
+						<< "\tmarker name       : " << add_sp.marker
+						;
+					throw SemanticsError(sstr.str());
+				}
+
+				markers.insert({add_sp.marker, {add_sp_total, add_sp_total + offset}});
 			}
 
 			add_sp_total += offset;
@@ -10546,6 +10604,17 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 		throw SemanticsError(sstr.str());
 	}
 
+	// Make sure add_sp_total is back to 0.
+	if (add_sp_total != 0) {
+		std::ostringstream sstr;
+		sstr
+			<< "Semantics::MIPSIO::emit: error: add_sp_total did not return to 0.  Is there a push/pop inconsistency somewhere?" << std::endl
+			<< "\tvisited : " << visited_instructions.size() << std::endl
+			<< "\tnodes   : " << instructions.size()
+			;
+		throw SemanticsError(sstr.str());
+	}
+
 	// Return the emitted output.
 	return output_lines;
 }
@@ -10742,6 +10811,9 @@ void Semantics::MIPSIO::add_sequence_connections(const std::vector<Index> before
 // "add_instruction" into "other" (but not "this") must be added by the
 // returned value to remain correct.
 Semantics::MIPSIO::Index Semantics::MIPSIO::merge(const MIPSIO &other) {
+	// MIPSIO has no "dynamically_allocated".
+	//dynamically_allocated += other.dynamically_allocated;
+
 	const Index addition = instructions.size();
 
 	preserved_regs.insert(other.preserved_regs.cbegin(), other.preserved_regs.cend());
@@ -10843,6 +10915,7 @@ Semantics::LvalueSourceAnalysis::LvalueSourceAnalysis(MIPSIO &&instructions, con
 	{}
 
 Semantics::MIPSIO::Index Semantics::LvalueSourceAnalysis::merge_expression(const Expression &other) {
+	dynamically_allocated += other.dynamically_allocated;
 	const MIPSIO::Index merged_other_output_index = instructions.merge(other.instructions) + other.output_index;
 	return merged_other_output_index;
 }
@@ -11179,16 +11252,19 @@ Semantics::Expression::Expression(const MIPSIO  &instructions, TypeIndex output_
 Semantics::Expression::Expression(      MIPSIO &&instructions, TypeIndex output_type, MIPSIO::Index output_index, uint64_t lexeme_begin, uint64_t lexeme_end) : instructions(std::move(instructions)), output_type(output_type), output_index(output_index), lexeme_begin(lexeme_begin), lexeme_end(lexeme_end) {}
 
 Semantics::MIPSIO::Index Semantics::Expression::merge(const Expression &other) {
+	dynamically_allocated += other.dynamically_allocated;
 	const MIPSIO::Index merged_other_output_index = instructions.merge(other.instructions) + other.output_index;
 	return merged_other_output_index;
 }
 
 Semantics::MIPSIO::Index Semantics::Expression::merge_block(const Block &other, MIPSIO::Index other_output_index) {
+	dynamically_allocated += other.dynamically_allocated;
 	const MIPSIO::Index merged_other_output_index = instructions.merge(other.instructions) + other_output_index;
 	return merged_other_output_index;
 }
 
 Semantics::MIPSIO::Index Semantics::Expression::merge_lvalue_source_analysis(const LvalueSourceAnalysis &other) {
+	dynamically_allocated += other.dynamically_allocated;
 	const MIPSIO::Index merged_other_output_index = instructions.merge(other.instructions) + other.lvalue_index;
 	return merged_other_output_index;
 }
@@ -12642,11 +12718,13 @@ Semantics::MIPSIO::Index Semantics::Block::add_instruction_indexed(const Instruc
 }
 
 Semantics::MIPSIO::Index Semantics::Block::merge_append(const Block &other) {
+	dynamically_allocated += other.dynamically_allocated;
 	const MIPSIO::Index new_back = back = instructions.merge(other.instructions, back, other.front, other.back);
 	return new_back;
 }
 
 Semantics::MIPSIO::Index Semantics::Block::merge_prepend(const Block &other) {
+	dynamically_allocated += other.dynamically_allocated;
 	Block reversed_merge = std::as_const(other);
 	const MIPSIO::Index new_back = reversed_merge.merge_append(*this); (void) new_back;
 	*this = reversed_merge;
@@ -12654,6 +12732,7 @@ Semantics::MIPSIO::Index Semantics::Block::merge_prepend(const Block &other) {
 }
 
 Semantics::MIPSIO::Index Semantics::Block::merge_append(const Block &other, MIPSIO::Index other_output_index) {
+	dynamically_allocated += other.dynamically_allocated;
 	const MIPSIO::Index addition = instructions.merge(other.instructions);
 	instructions.add_sequence_connection(back, other.front + addition);
 	back = other.back + addition;
@@ -12661,6 +12740,7 @@ Semantics::MIPSIO::Index Semantics::Block::merge_append(const Block &other, MIPS
 }
 
 Semantics::MIPSIO::Index Semantics::Block::merge_prepend(const Block &other, MIPSIO::Index other_output_index) {
+	dynamically_allocated += other.dynamically_allocated;
 	Block reversed_merge = std::as_const(other);
 	const MIPSIO::Index new_output_index = reversed_merge.merge_append(*this, other_output_index);
 	*this = reversed_merge;
@@ -12668,11 +12748,13 @@ Semantics::MIPSIO::Index Semantics::Block::merge_prepend(const Block &other, MIP
 }
 
 Semantics::MIPSIO::Index Semantics::Block::merge_expression(const Expression &other) {
+	dynamically_allocated += other.dynamically_allocated;
 	const MIPSIO::Index merged_other_output_index = back = instructions.merge(other.instructions, back, other.output_index);
 	return merged_other_output_index;
 }
 
 Semantics::MIPSIO::Index Semantics::Block::merge_lvalue_source_analysis(const LvalueSourceAnalysis &other) {
+	dynamically_allocated += other.dynamically_allocated;
 	const MIPSIO::Index merged_other_output_index = back = instructions.merge(other.instructions, back, other.lvalue_index);
 	return merged_other_output_index;
 }
@@ -15012,6 +15094,12 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 		last_intro_index = block_semantics.instructions.add_instruction({I::AddSp(B(), -(stack_allocated - Instruction::AddSp::round_to_align(4)))}, {}, last_intro_index);
 	}
 
+	// Allocate the total dynamic allocations on the stack (known at compile-time) needed by the block after aligning it.
+	const int32_t dynamically_allocated = Instruction::AddSp::round_to_align(block_semantics.dynamically_allocated);
+	if (dynamically_allocated != 0) {
+		block_semantics.back = block_semantics.instructions.add_instruction({I::AddSp(B(), Instruction::AddSp::round_to_align(-dynamically_allocated), "dynamic")}, {}, block_semantics.back);
+	}
+
 	// Commented out: these are already copied on a call!  Instead, just add a binding to the appropriate storage.  We do that above.
 #if 0
 	// Now load all arguments as copies.  This does not need to be reversed; callers push and pop arguments when calling.
@@ -15061,6 +15149,9 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 #endif /* #if 0 */
 
 	// Reverse what intro did.
+	if (dynamically_allocated != 0) {
+		block_semantics.back = block_semantics.instructions.add_instruction({I::AddSp(B(), Instruction::AddSp::round_to_align(dynamically_allocated))}, {}, block_semantics.back);
+	}
 	if (stack_allocated != 0) {
 		block_semantics.back = block_semantics.instructions.add_instruction({I::AddSp(B(), stack_allocated - Instruction::AddSp::round_to_align(4))}, {}, block_semantics.back);
 	}
