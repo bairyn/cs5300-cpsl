@@ -80,6 +80,7 @@ std::map<Semantics::Symbol, std::string> Semantics::Symbol::generate_symbol_valu
 			// Does this one work?
 			if (used_names.find(try_) == used_names.cend()) {
 				// Use it.
+				used_names.insert(try_);
 				symbol_values.insert({symbol, try_});
 				found = true;
 				break;
