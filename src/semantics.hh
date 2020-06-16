@@ -52,31 +52,6 @@ public:
 	static const bool emit_extra_redundant_labels;
 	static const bool permit_unused_function_outputs;
 
-	// | Accumulated state before merging.
-	class AnalysisState {
-	public:
-		AnalysisState();
-		AnalysisState(int32_t dynamically_allocated);
-
-		// | Represents additional dynamic allocations that will be added /
-		// pushed beneath working storages.
-		//
-		// (New allocations are generally lower/deeper in the stack.)
-		//
-		// TODO: this required being reset, so this seems too global too.
-		// Maybe at least make it RoutineBlockState (for analyze_block, not
-		// Semantics::Block).
-		int32_t dynamically_allocated = 0;
-
-		// | This feels a little like a hack and involves state that's more
-		// global than it should be, but it'll do for now.
-		//
-		// TODO: replace this last_stack_argument_total_size hack with
-		// iterating over routine_declaration's parameters when analyzing
-		// statements (or some other alternative).
-		int32_t last_stack_argument_total_size = 0;
-	};
-
 	// | In the assembled output, locations marked as symbols will be replaced
 	// with a unique and consistent substring.
 	//
@@ -745,7 +720,7 @@ public:
 	// The lifetimes of types should not exceed the lifetime of their
 	// referents, which are normally stored inside of the type_type_scope
 	// IdentifierScope passed to this method.
-	Type analyze_type(const std::string &identifier, const ::Type &type, const IdentifierScope &type_constant_scope, const IdentifierScope &type_type_scope, IdentifierScope &storage_scope, AnalysisState &analysis_state);
+	Type analyze_type(const std::string &identifier, const ::Type &type, const IdentifierScope &type_constant_scope, const IdentifierScope &type_type_scope, IdentifierScope &storage_scope);
 
 	// | An intermediate unit representation of MIPS instructions.
 	//
@@ -1457,6 +1432,22 @@ public:
 		uint64_t num_deleted = 0;
 	};
 
+	// | Accumulated state before merging.
+	class RoutineBlockState {
+	public:
+		RoutineBlockState();
+		RoutineBlockState(int32_t dynamically_allocated);
+
+		// | Represents additional dynamic allocations that will be added /
+		// pushed beneath working storages.
+		//
+		// (New allocations are generally lower/deeper in the stack.)
+		int32_t dynamically_allocated = 0;
+
+		// | The total stack argument size for the current routine block.
+		int32_t last_stack_argument_total_size = 0;
+	};
+
 // TODO: inline support.
 #if 0
 	// | Refers to a Jump instruction, the IOs referring to the argument inputs, and the IOs referring to the argument outputs.
@@ -1494,7 +1485,7 @@ public:
 
 		MIPSIO::Index merge_expression(const Expression &other);
 	};
-	LvalueSourceAnalysis analyze_lvalue_source(const Lvalue &lvalue, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, AnalysisState &analysis_state, bool require_mutable = true);
+	LvalueSourceAnalysis analyze_lvalue_source(const Lvalue &lvalue, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, RoutineBlockState &routine_block_state, bool require_mutable = true);
 
 	class Block;
 	class Expression {
@@ -1536,8 +1527,8 @@ public:
 	};
 
 	// The non-const part is the ability to store strings.
-	Expression analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, AnalysisState &analysis_state);
-	Expression analyze_expression(const ::Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, AnalysisState &analysis_state);
+	Expression analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, RoutineBlockState &routine_block_state);
+	Expression analyze_expression(const ::Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, RoutineBlockState &routine_block_state);
 
 	// | A computation graph from needed input storage units to needed output storage units.
 	// MIPSIO with input types and locations and output types and locations.
@@ -1614,23 +1605,23 @@ public:
 	//
 	// Note: the caller_routine_declaration is the routine declaration of the
 	// caller's context, not of the called function or procedure.
-	std::pair<Block, std::optional<std::pair<MIPSIO::Index, TypeIndex>>> analyze_call(const LexemeIdentifier &routine_identifier, const ExpressionSequenceOpt &expression_sequence_opt, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, AnalysisState &analysis_state);
+	std::pair<Block, std::optional<std::pair<MIPSIO::Index, TypeIndex>>> analyze_call(const LexemeIdentifier &routine_identifier, const ExpressionSequenceOpt &expression_sequence_opt, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, RoutineBlockState &routine_block_state);
 
 	// | Analyze a sequence of statements.
 	//
 	// Note: this does not need to necessarily correspond to a ::Block in the
 	// grammar tree but can be a sequence of statements without a BEGIN and END
 	// keyword.
-	Block analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<uint64_t> &statements, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, const Symbol &cleanup_symbol, AnalysisState &analysis_state);
-	Block analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const StatementSequence &statement_sequence, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, const Symbol &cleanup_symbol, AnalysisState &analysis_state);
+	Block analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<uint64_t> &statements, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, const Symbol &cleanup_symbol, RoutineBlockState &routine_block_state);
+	Block analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const StatementSequence &statement_sequence, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, const Symbol &cleanup_symbol, RoutineBlockState &routine_block_state);
 
 	// | Analyze a BEGIN [statement]... END block.
-	std::vector<Output::Line> analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, IdentifierScope &var_scope, IdentifierScope &combined_scope, IdentifierScope &storage_scope, AnalysisState &analysis_state, const std::map<std::string, TypeIndex> &local_variables = {}, bool is_main = false);
+	std::vector<Output::Line> analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, IdentifierScope &var_scope, IdentifierScope &combined_scope, IdentifierScope &storage_scope, const std::map<std::string, TypeIndex> &local_variables = {}, bool is_main = false);
 
 	// | Analyze a routine definition.
 	//
 	// "analyze_block" but look for additional types, constants, and variables.
-	std::vector<Output::Line> analyze_routine(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const Body &body, IdentifierScope &constant_scope, IdentifierScope &type_scope, const IdentifierScope &routine_scope, IdentifierScope &var_scope, IdentifierScope &combined_scope, IdentifierScope &storage_scope, AnalysisState &analysis_state);
+	std::vector<Output::Line> analyze_routine(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const Body &body, IdentifierScope &constant_scope, IdentifierScope &type_scope, const IdentifierScope &routine_scope, IdentifierScope &var_scope, IdentifierScope &combined_scope, IdentifierScope &storage_scope);
 
 	// | Get the symbol to a string literal, tracking it if this is the first time encountering it.
 	Symbol string_literal_symbol(const std::string &string);
@@ -1672,8 +1663,6 @@ protected:
 	bool auto_analyze = true;
 	// | Whether to apply optimizations.
 	bool optimize = true;
-
-	AnalysisState analysis_state;
 
 	// | Collection of string constants we collect as we analyze the parse tree.
 	//

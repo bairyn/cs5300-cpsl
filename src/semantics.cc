@@ -42,10 +42,10 @@ const bool Semantics::emit_some_redundant_labels     = CPSL_CC_SEMANTICS_EMIT_SO
 const bool Semantics::emit_extra_redundant_labels    = CPSL_CC_SEMANTICS_EMIT_EXTRA_REDUNDANT_LABELS;
 const bool Semantics::permit_unused_function_outputs = CPSL_CC_SEMANTICS_PERMIT_UNUSED_FUNCTION_OUTPUTS;
 
-Semantics::AnalysisState::AnalysisState()
+Semantics::RoutineBlockState::RoutineBlockState()
 	{}
 
-Semantics::AnalysisState::AnalysisState(int32_t dynamically_allocated)
+Semantics::RoutineBlockState::RoutineBlockState(int32_t dynamically_allocated)
 	: dynamically_allocated(dynamically_allocated)
 	{}
 
@@ -4158,7 +4158,7 @@ Semantics::ConstantValue Semantics::is_expression_constant(const ::Expression &e
 }
 
 // | From the parse tree Type, construct a Semantics::Type that represents the type.
-Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::Type &type, const IdentifierScope &type_constant_scope, const IdentifierScope &type_type_scope, IdentifierScope &storage_scope, AnalysisState &analysis_state) {
+Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::Type &type, const IdentifierScope &type_constant_scope, const IdentifierScope &type_type_scope, IdentifierScope &storage_scope) {
 	switch (type.branch) {
 		case ::Type::simple_branch: {
 			// Unpack the simple_type.
@@ -4296,7 +4296,7 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 					next_semantics_type = type_type_scope.index(simple_identifier.text);
 				} else {
 					// Create an anonymous type.
-					Type anonymous_type = analyze_type("", next_type, type_constant_scope, type_type_scope, storage_scope, analysis_state);
+					Type anonymous_type = analyze_type("", next_type, type_constant_scope, type_type_scope, storage_scope);
 					next_semantics_type = storage_scope.add("", anonymous_type);
 				}
 
@@ -4481,7 +4481,7 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 				base_semantics_type = type_type_scope.index(simple_identifier.text);
 			} else {
 				// Create an anonymous type.
-				Type anonymous_type = analyze_type("", base_type, type_constant_scope, type_type_scope, storage_scope, analysis_state);
+				Type anonymous_type = analyze_type("", base_type, type_constant_scope, type_type_scope, storage_scope);
 				base_semantics_type = storage_scope.add("", anonymous_type);
 			}
 
@@ -11083,7 +11083,7 @@ Semantics::MIPSIO::Index Semantics::LvalueSourceAnalysis::merge_expression(const
 	return merged_other_output_index;
 }
 
-Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &lvalue, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, AnalysisState &analysis_state, bool require_mutable) {
+Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &lvalue, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, RoutineBlockState &routine_block_state, bool require_mutable) {
 	// Some type aliases to improve readability.
 	using M = Semantics::MIPSIO;
 	using I = Semantics::Instruction;
@@ -11305,7 +11305,7 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 						}
 
 						// Get the index expression, which should be an integer.
-						const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+						const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 						const Type &value_resolved_type = storage_scope.type(value.output_type).resolve_type(storage_scope);
 						if (!value_resolved_type.is_primitive() || !value_resolved_type.get_primitive().is_integer()) {
 							std::ostringstream sstr;
@@ -11441,11 +11441,11 @@ Semantics::MIPSIO::Index Semantics::Expression::merge_lvalue_source_analysis(con
 	return merged_other_output_index;
 }
 
-Semantics::Expression Semantics::analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, AnalysisState &analysis_state) {
-	return analyze_expression(grammar.expression_storage.at(expression), constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+Semantics::Expression Semantics::analyze_expression(uint64_t expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, RoutineBlockState &routine_block_state) {
+	return analyze_expression(grammar.expression_storage.at(expression), constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 }
 
-Semantics::Expression Semantics::analyze_expression(const ::Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, AnalysisState &analysis_state) {
+Semantics::Expression Semantics::analyze_expression(const ::Expression &expression, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, RoutineBlockState &routine_block_state) {
 	// Some type aliases to improve readability.
 	using M = Semantics::MIPSIO;
 	using I = Semantics::Instruction;
@@ -11483,8 +11483,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression       &expression1    = grammar.expression_storage.at(pipe.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 
 				// Make sure left and right are of primitive types.
 				if (!storage_scope.type(left.output_type).resolve_type(storage_scope).is_primitive() || !storage_scope.type(right.output_type).resolve_type(storage_scope).is_primitive()) {
@@ -11541,8 +11541,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression            &expression1         = grammar.expression_storage.at(ampersand.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -11601,8 +11601,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression         &expression1      = grammar.expression_storage.at(equals.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -11669,8 +11669,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression         &expression1        = grammar.expression_storage.at(lt_or_gt.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -11739,8 +11739,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression     &expression1  = grammar.expression_storage.at(le.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -11809,8 +11809,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression     &expression1  = grammar.expression_storage.at(ge.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -11879,8 +11879,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression     &expression1  = grammar.expression_storage.at(lt.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -11945,8 +11945,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression     &expression1  = grammar.expression_storage.at(gt.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -12011,8 +12011,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression       &expression1    = grammar.expression_storage.at(plus.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -12084,8 +12084,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression        &expression1     = grammar.expression_storage.at(minus.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -12157,8 +12157,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression        &expression1     = grammar.expression_storage.at(times.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -12232,8 +12232,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression        &expression1     = grammar.expression_storage.at(slash.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -12307,8 +12307,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression          &expression1       = grammar.expression_storage.at(percent.expression1);
 
 				// Get left and right subexpressions.
-				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
-				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression left  = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
+				const Expression right = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				expression_semantics.lexeme_begin = left.lexeme_begin;
 				expression_semantics.lexeme_end   = right.lexeme_end;
 
@@ -12383,7 +12383,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression        &expression0     = grammar.expression_storage.at(tilde.expression);
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				expression_semantics.lexeme_begin = tilde.tilde_operator0;
 				expression_semantics.lexeme_end   = value.lexeme_end;
 
@@ -12426,7 +12426,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const ::Expression             &expression0     = grammar.expression_storage.at(unary_minus.expression);
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				expression_semantics.lexeme_begin = unary_minus.minus_operator0;
 				expression_semantics.lexeme_end   = value.lexeme_end;
 
@@ -12485,7 +12485,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				const LexemeOperator            &rightparenthesis_operator0 = grammar.lexemes.at(parentheses.rightparenthesis_operator0).get_operator();
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				expression_semantics.lexeme_begin = parentheses.leftparenthesis_operator0;
 				expression_semantics.lexeme_end   = parentheses.rightparenthesis_operator0 + 1;
 
@@ -12510,7 +12510,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.lexeme_end   = call.rightparenthesis_operator0 + 1;
 
 				// Analyze the call.
-				std::pair<Block, std::optional<std::pair<Index, TypeIndex>>> call_analysis = analyze_call(call_identifier, expression_sequence_opt, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				std::pair<Block, std::optional<std::pair<Index, TypeIndex>>> call_analysis = analyze_call(call_identifier, expression_sequence_opt, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				const Block &call_block                = call_analysis.first;
 				const bool      call_has_output        = call_analysis.second.has_value();
 				const Index     call_output_index      = !call_has_output ? std::numeric_limits<Index>::max() : call_analysis.second->first;
@@ -12547,7 +12547,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Convert an integer to a char.
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				expression_semantics.lexeme_begin = chr.chr_keyword0;
 				expression_semantics.lexeme_end   = chr.rightparenthesis_operator0 + 1;
 
@@ -12608,7 +12608,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Convert a char to an integer.
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				expression_semantics.lexeme_begin = ord.ord_keyword0;
 				expression_semantics.lexeme_end   = ord.rightparenthesis_operator0 + 1;
 
@@ -12671,7 +12671,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Find the predecessor of a value.
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				expression_semantics.lexeme_begin = pred.pred_keyword0;
 				expression_semantics.lexeme_end   = pred.rightparenthesis_operator0 + 1;
 
@@ -12726,7 +12726,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Find the successor of a value.
 
 				// Get the subexpression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				expression_semantics.lexeme_begin = succ.succ_keyword0;
 				expression_semantics.lexeme_end   = succ.rightparenthesis_operator0 + 1;
 
@@ -12788,7 +12788,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 
 				// An lvalue in an expression corresponds a read / a LoadFrom.
 
-				LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue_symbol, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state, false);
+				LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue_symbol, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state, false);
 				expression_semantics.output_type  = lvalue_source_analysis.lvalue_type;
 				expression_semantics.lexeme_begin = lvalue_source_analysis.lexeme_begin;
 				expression_semantics.lexeme_end   = lvalue_source_analysis.lexeme_end;
@@ -12928,7 +12928,7 @@ Semantics::MIPSIO::Index Semantics::Block::merge_lvalue_source_analysis(const Lv
 // | Analyze a call and return a block that performs a call.  If the
 // function returns a value, return the index to the instruction that
 // retrieves the output too; otherwise, the second value is empty.
-std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Semantics::TypeIndex>>> Semantics::analyze_call(const LexemeIdentifier &routine_identifier, const ExpressionSequenceOpt &expression_sequence_opt, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, AnalysisState &analysis_state) {
+std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Semantics::TypeIndex>>> Semantics::analyze_call(const LexemeIdentifier &routine_identifier, const ExpressionSequenceOpt &expression_sequence_opt, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, RoutineBlockState &routine_block_state) {
 	// Some type aliases to improve readability.
 	using M = Semantics::MIPSIO;
 	using I = Semantics::Instruction;
@@ -13070,7 +13070,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	for (const ::Expression * const &expression : std::as_const(expressions)) {
 		const std::vector<::Expression>::size_type expression_index = &expression - &expressions[0];
 
-		argument_expressions.push_back(analyze_expression(*expression, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state));
+		argument_expressions.push_back(analyze_expression(*expression, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state));
 	}
 
 	// Make sure the type of each expression matches the parameter.
@@ -13146,7 +13146,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			const Lvalue                     &lvalue                      = grammar.lvalue_storage.at(expression_lvalue.lvalue);
 			const LexemeIdentifier           &lexeme_identifier           = grammar.lexemes.at(lvalue.identifier).get_identifier();
 			const LvalueAccessorClauseList   &lvalue_accessor_clause_list = grammar.lvalue_accessor_clause_list_storage.at(lvalue.lvalue_accessor_clause_list);
-			LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state, false);
+			LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state, false);
 			const Index lvalue_source_analysis_index = block.merge_lvalue_source_analysis(lvalue_source_analysis);
 			const Index lvalue_output_index
 				= lvalue_source_analysis.is_lvalue_fixed_storage
@@ -13430,9 +13430,9 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 		assert(output_type.get_fixed_width());
 		const uint32_t  output_size = output_type.get_size();
 
-		analysis_state.dynamically_allocated = I::AddSp::round_to_align(analysis_state.dynamically_allocated);
-		const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, analysis_state.dynamically_allocated, true, true, Storage("$sp", 4, 0, true), Storage("#marker_dynamic_bottom"))}, {}, {block.back});
-		analysis_state.dynamically_allocated += output_size;
+		routine_block_state.dynamically_allocated = I::AddSp::round_to_align(routine_block_state.dynamically_allocated);
+		const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, routine_block_state.dynamically_allocated, true, true, Storage("$sp", 4, 0, true), Storage("#marker_dynamic_bottom"))}, {}, {block.back});
+		routine_block_state.dynamically_allocated += output_size;
 	}
 	// (Note: these are two separate allocations we're making: one will be made after analysis of blocks later on, and the offsets will be adjust appropriate using our dynamic marker, and another allocation (4 byte pointer rounded to 8 bytes) is being made now to hold the pointer to the dynamic allocation, which can be larger (e.g. 512 bytes).
 
@@ -13606,7 +13606,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 // Note: this does not need to necessarily correspond to a ::Block in the
 // grammar tree but can be a sequence of statements without a BEGIN and END
 // keyword.
-Semantics::Block Semantics::analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<uint64_t> &statements, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, const Symbol &cleanup_symbol, AnalysisState &analysis_state) {
+Semantics::Block Semantics::analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<uint64_t> &statements, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, const Symbol &cleanup_symbol, RoutineBlockState &routine_block_state) {
 	// Some type aliases to improve readability.
 	using M = Semantics::MIPSIO;
 	using I = Semantics::Instruction;
@@ -13647,7 +13647,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				const std::string lexeme_identifier_text = grammar.lexemes.at(lvalue.identifier).get_identifier().text;
 
 				// Lookup the lvalue.
-				LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(lvalue, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 
 				// Merge the lvalue lookup instructions if there was not a fixed storage found.
 				Index lvalue_index;
@@ -13656,7 +13656,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				// LoadFrom to store the output to whatever the lvalue refers to.
 
 				// Analyze the expression.
-				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 
 				block.lexeme_end = value.lexeme_end;
 
@@ -13831,7 +13831,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				// final unconditional jump to the else clause.
 
 				// Analyze the "if" block condition.  Don't merge it yet.
-				const Expression if_condition = analyze_expression(if_expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression if_condition = analyze_expression(if_expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				const Symbol     if_symbol    = Symbol(labelify(grammar.lexemes_text(if_condition.lexeme_begin, if_condition.lexeme_end), "if"), "", if_statement.then_keyword0);
 				const Symbol     endif_symbol = Symbol(labelify(grammar.lexemes_text(if_condition.lexeme_begin, if_condition.lexeme_end), "endif"), "", if_statement.end_keyword0);
 
@@ -13849,7 +13849,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				}
 
 				// Analyze the "if" block.
-				const Block      if_block     = analyze_statements(routine_declaration, if_statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol, analysis_state);
+				const Block      if_block     = analyze_statements(routine_declaration, if_statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol, routine_block_state);
 
 				// Analyze all "elseif" block conditions.
 				std::vector<Expression> elseif_conditions;
@@ -13864,7 +13864,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 					const StatementSequence &elseif_statement_sequence = grammar.statement_sequence_storage.at(next_elseif_clause->statement_sequence);
 
 					// Analyze the "elseif" block condition.
-					const Expression elseif_condition = analyze_expression(elseif_expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+					const Expression elseif_condition = analyze_expression(elseif_expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 					const Symbol     elseif_symbol    = Symbol(labelify(grammar.lexemes_text(elseif_condition.lexeme_begin, elseif_condition.lexeme_end), "elseif"), "", next_elseif_clause->then_keyword0);
 
 					// Require the "elseif" block condition type to be a boolean.
@@ -13881,7 +13881,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 					}
 
 					// Analyze the "elseif" block.
-					const Block      elseif_block     = analyze_statements(routine_declaration, elseif_statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol, analysis_state);
+					const Block      elseif_block     = analyze_statements(routine_declaration, elseif_statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol, routine_block_state);
 
 					// Add this "elseif" block.
 					elseif_conditions.push_back(elseif_condition);
@@ -13911,7 +13911,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 						else_symbol= Symbol(labelify(grammar.lexemes_text(if_condition.lexeme_begin, if_condition.lexeme_end), "else"), "", else_clause.else_keyword0);
 
 						// Analyze the "else" block.
-						else_block = analyze_statements(routine_declaration, else_statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol, analysis_state);
+						else_block = analyze_statements(routine_declaration, else_statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol, routine_block_state);
 						break;
 					}
 
@@ -13995,7 +13995,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				// At the end of the block, branch back to the beginning of the block if the condition is met.
 
 				// Analyze the "while" block condition.  Don't merge it yet.
-				const Expression while_condition   = analyze_expression(while_expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression while_condition   = analyze_expression(while_expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				const Symbol     while_symbol      = Symbol(labelify(grammar.lexemes_text(while_condition.lexeme_begin, while_condition.lexeme_end), "while"), "", while_statement.do_keyword0);
 				const Symbol     checkwhile_symbol = Symbol(labelify(grammar.lexemes_text(while_condition.lexeme_begin, while_condition.lexeme_end), "checkwhile"), "", while_statement.end_keyword0);
 				const Symbol     endwhile_symbol   = Symbol(labelify(grammar.lexemes_text(while_condition.lexeme_begin, while_condition.lexeme_end), "endwhile"), "", while_statement.end_keyword0);
@@ -14014,7 +14014,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				}
 
 				// Analyze the "while" block.
-				const Block while_block = analyze_statements(routine_declaration, while_statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol, analysis_state);
+				const Block while_block = analyze_statements(routine_declaration, while_statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol, routine_block_state);
 
 				// First, jump to "checkwhile" to check the condition for the first time.
 				block.back = block.instructions.add_instruction({I::Jump(B(), checkwhile_symbol)}, {}, {block.back});
@@ -14051,7 +14051,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				// At the end of the block, branch to the beginning of the block if the condition is not met.
 
 				// Analyze the "repeat" block condition.  Don't merge it yet.
-				const Expression repeat_condition   = analyze_expression(repeat_expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression repeat_condition   = analyze_expression(repeat_expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				const Symbol     repeat_symbol      = Symbol(labelify(grammar.lexemes_text(repeat_condition.lexeme_begin, repeat_condition.lexeme_end), "repeat"), "", repeat_statement.repeat_keyword0);
 				const Symbol     endrepeat_symbol   = Symbol(labelify(grammar.lexemes_text(repeat_condition.lexeme_begin, repeat_condition.lexeme_end), "endrepeat"), "", repeat_statement.repeat_keyword0);
 
@@ -14069,7 +14069,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				}
 
 				// Analyze the "repeat" block.
-				const Block repeat_block = analyze_statements(routine_declaration, repeat_statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol, analysis_state);
+				const Block repeat_block = analyze_statements(routine_declaration, repeat_statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol, routine_block_state);
 
 				// "repeat" label.
 				block.back = block.instructions.add_instruction({I::Ignore(B(true, repeat_symbol), false, false)}, {}, {block.back});
@@ -14191,8 +14191,8 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				}
 
 				// Analyze the first and last number expressions.  We can also merge them now.
-				const Expression first_expression = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
-				const Expression last_expression  = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				const Expression first_expression = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
+				const Expression last_expression  = analyze_expression(expression1, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				const Index      first_index      = block.merge_expression(first_expression);
 				const Index      last_index       = block.merge_expression(last_expression);
 
@@ -14227,7 +14227,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				const Symbol     endfor_symbol   = Symbol(labelify(grammar.lexemes_text(for_statement.identifier, last_expression.lexeme_end), "endfor"), "", for_statement.end_keyword0);
 
 				// Analyze the "for" block.
-				const Block for_block = analyze_statements(routine_declaration, statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol, analysis_state);
+				const Block for_block = analyze_statements(routine_declaration, statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol, routine_block_state);
 
 				// First, initialize the iterator variable.
 				if (!var.is_primitive_and_ref) {
@@ -14330,7 +14330,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 						const ::Expression         &expression0          = grammar.expression_storage.at(expression_opt_value.expression);
 
 						// Analyze the expression.
-						const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+						const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 
 						// Make sure we aren't trying to return a value for a procedure that doesn't return a value.
 						if (!routine_declaration.output.has_value()) {
@@ -14374,7 +14374,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 							// routine_declaration.  There's a little hack I
 							// added (that is more global it should be; but it
 							// works for now):
-							// analysis_state.last_stack_argument_total_size.
+							// routine_block_state.last_stack_argument_total_size.
 							// We can just use this instead.
 							//
 							// TODO: replace this
@@ -14383,7 +14383,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 							// (or some other alternative).
 
 							// We'll be putting this pointer in $v0 eventually, so we may as well do it now.
-							const Index load_pointer_index = block.back = block.instructions.add_instruction(I::LoadFrom{B(), true, true, 0, true, true, Storage("$v0"), Storage("$sp", 4, analysis_state.last_stack_argument_total_size)}, {}, {block.back}); (void) load_pointer_index;
+							const Index load_pointer_index = block.back = block.instructions.add_instruction(I::LoadFrom{B(), true, true, 0, true, true, Storage("$v0"), Storage("$sp", 4, routine_block_state.last_stack_argument_total_size)}, {}, {block.back}); (void) load_pointer_index;
 
 							// Now copy the array or record.  Memmove.
 
@@ -14534,7 +14534,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				for (const Lvalue * const &lvalue : std::as_const(lvalues)) {
 					const std::vector<const Lvalue *>::size_type lvalue_index = &lvalue - &lvalues[0]; (void) lvalue_index;
 
-					LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(*lvalue, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+					LvalueSourceAnalysis lvalue_source_analysis = analyze_lvalue_source(*lvalue, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 					lvalue_source_analyses.push_back(lvalue_source_analysis);
 					const Index lvalue_output_index = block.merge_lvalue_source_analysis(lvalue_source_analysis);
 					lvalue_output_indices.push_back(lvalue_output_index);
@@ -14678,7 +14678,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				// Analyze the expressions.
 				std::vector<Expression> argument_expressions;
 				for (const ::Expression * const &expression : std::as_const(expressions)) {
-					const Expression argument_expression = analyze_expression(*expression, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+					const Expression argument_expression = analyze_expression(*expression, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 					argument_expressions.push_back(argument_expression);
 				}
 
@@ -14836,7 +14836,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				block.lexeme_end = procedure_call.rightparenthesis_operator0 + 1;
 
 				// Analyze the call.
-				std::pair<Block, std::optional<std::pair<Index, TypeIndex>>> call_analysis = analyze_call(identifier, expression_sequence_opt, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, analysis_state);
+				std::pair<Block, std::optional<std::pair<Index, TypeIndex>>> call_analysis = analyze_call(identifier, expression_sequence_opt, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 				const Block     &call_block             = call_analysis.first;
 				const bool       call_has_output        = call_analysis.second.has_value();
 				const Index      call_output_index      = !call_has_output ? std::numeric_limits<Index>::max() : call_analysis.second->first;
@@ -14891,7 +14891,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 	return block;
 }
 
-Semantics::Block Semantics::analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const StatementSequence &statement_sequence, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, const Symbol &cleanup_symbol, AnalysisState &analysis_state) {
+Semantics::Block Semantics::analyze_statements(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const StatementSequence &statement_sequence, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, const IdentifierScope &var_scope, const IdentifierScope &combined_scope, const IdentifierScope &storage_scope, const Symbol &cleanup_symbol, RoutineBlockState &routine_block_state) {
 	const Statement             &first_statement         = grammar.statement_storage.at(statement_sequence.statement);
 	const StatementPrefixedList &statement_prefixed_list = grammar.statement_prefixed_list_storage.at(statement_sequence.statement_prefixed_list);
 
@@ -14948,11 +14948,11 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 	}
 
 	// Forward to analyze_statements.
-	return analyze_statements(routine_declaration, statement_indices, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol, analysis_state);
+	return analyze_statements(routine_declaration, statement_indices, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol, routine_block_state);
 }
 
 // | Analyze a BEGIN [statement]... END block.
-std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, IdentifierScope &var_scope, IdentifierScope &combined_scope, IdentifierScope &storage_scope, AnalysisState &analysis_state, const std::map<std::string, TypeIndex> &local_variables, bool is_main) {
+std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const ::Block &block, const IdentifierScope &constant_scope, const IdentifierScope &type_scope, const IdentifierScope &routine_scope, IdentifierScope &var_scope, IdentifierScope &combined_scope, IdentifierScope &storage_scope, const std::map<std::string, TypeIndex> &local_variables, bool is_main) {
 	// Some type aliases to improve readability.
 	using M = Semantics::MIPSIO;
 	using I = Semantics::Instruction;
@@ -14969,6 +14969,9 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 
 	IdentifierScope local_var_scope(var_scope);
 	IdentifierScope local_combined_scope(combined_scope);
+
+	// Initialize the routine block state.
+	RoutineBlockState routine_block_state;
 
 	// Ensure routine_declaration.parameters has the same length as parameter_identifiers.
 	if (routine_declaration.parameters.size() != parameter_identifiers.size()) {
@@ -15112,7 +15115,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 	}
 	stack_argument_total_size = Instruction::AddSp::round_to_align(stack_argument_total_size);
 
-	analysis_state.last_stack_argument_total_size = stack_argument_total_size;
+	routine_block_state.last_stack_argument_total_size = stack_argument_total_size;
 
 	// Handle local variables.
 	for (const std::pair<std::string, TypeIndex> &local_variable : std::as_const(local_variables)) {
@@ -15204,8 +15207,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 	stack_allocated = Instruction::AddSp::round_to_align(stack_allocated);
 
 	// Analyze the statements in the block.
-	analysis_state.dynamically_allocated = 0;
-	Block block_semantics = analyze_statements(routine_declaration, statement_sequence, constant_scope, type_scope, routine_scope, local_var_scope, local_combined_scope, storage_scope, cleanup_symbol, analysis_state);
+	routine_block_state.dynamically_allocated = 0;
+	Block block_semantics = analyze_statements(routine_declaration, statement_sequence, constant_scope, type_scope, routine_scope, local_var_scope, local_combined_scope, storage_scope, cleanup_symbol, routine_block_state);
 
 	// Make sure front and back are valid by making sure there is at least one instruction.
 	if (block_semantics.instructions.instructions.size() <= 0) {
@@ -15385,9 +15388,9 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 
 	// Allocate the total dynamic allocations on the stack (known at compile-time) needed by the block after aligning it.
 	// Make a marker for it.
-	const int32_t dynamically_allocated = Instruction::AddSp::round_to_align(analysis_state.dynamically_allocated);
-	if (analysis_state.dynamically_allocated != 0) {
-		last_intro_index = block_semantics.instructions.add_instruction({I::AddSp(B(), Instruction::AddSp::round_to_align(-analysis_state.dynamically_allocated), "dynamic")}, {}, last_intro_index);
+	const int32_t dynamically_allocated = Instruction::AddSp::round_to_align(routine_block_state.dynamically_allocated);
+	if (routine_block_state.dynamically_allocated != 0) {
+		last_intro_index = block_semantics.instructions.add_instruction({I::AddSp(B(), Instruction::AddSp::round_to_align(-routine_block_state.dynamically_allocated), "dynamic")}, {}, last_intro_index);
 	}
 
 	// Commented out: these are already copied on a call!  Instead, just add a binding to the appropriate storage.  We do that above.
@@ -15439,9 +15442,9 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 #endif /* #if 0 */
 
 	// Reverse what intro did.
-	if (analysis_state.dynamically_allocated != 0) {
-		block_semantics.back = block_semantics.instructions.add_instruction({I::AddSp(B(), Instruction::AddSp::round_to_align(analysis_state.dynamically_allocated))}, {}, block_semantics.back);
-		analysis_state.dynamically_allocated = 0;
+	if (routine_block_state.dynamically_allocated != 0) {
+		block_semantics.back = block_semantics.instructions.add_instruction({I::AddSp(B(), Instruction::AddSp::round_to_align(routine_block_state.dynamically_allocated))}, {}, block_semantics.back);
+		routine_block_state.dynamically_allocated = 0;
 	}
 	if (stack_allocated != 0) {
 		block_semantics.back = block_semantics.instructions.add_instruction({I::AddSp(B(), stack_allocated)}, {}, block_semantics.back);
@@ -15495,7 +15498,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 // | Analyze a routine definition.
 //
 // "analyze_block" but look for additional types, constants, and variables.
-std::vector<Semantics::Output::Line> Semantics::analyze_routine(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const Body &body, IdentifierScope &constant_scope, IdentifierScope &type_scope, const IdentifierScope &routine_scope, IdentifierScope &var_scope, IdentifierScope &combined_scope, IdentifierScope &storage_scope, AnalysisState &analysis_state) {
+std::vector<Semantics::Output::Line> Semantics::analyze_routine(const IdentifierScope::IdentifierBinding::RoutineDeclaration &routine_declaration, const std::vector<std::string> &parameter_identifiers, const Body &body, IdentifierScope &constant_scope, IdentifierScope &type_scope, const IdentifierScope &routine_scope, IdentifierScope &var_scope, IdentifierScope &combined_scope, IdentifierScope &storage_scope) {
 	IdentifierScope local_constant_scope(constant_scope);
 	IdentifierScope local_type_scope(type_scope);
 	//IdentifierScope local_var_scope(var_scope);
@@ -15722,7 +15725,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 				}
 
 				// Calculate the type.
-				Type semantics_type = analyze_type(identifier.text, type, local_constant_scope, local_type_scope, storage_scope, analysis_state);
+				Type semantics_type = analyze_type(identifier.text, type, local_constant_scope, local_type_scope, storage_scope);
 
 				// Add this type to the local scope.
 				local_type_scope.insert({identifier.text, IdentifierScope::IdentifierBinding(std::move(IdentifierScope::IdentifierBinding::Type(semantics_type)))});
@@ -15829,7 +15832,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 					next_semantics_type = local_type_scope.index(simple_identifier.text);
 				} else {
 					// Create an anonymous type.
-					Type anonymous_type = analyze_type("", next_type, local_constant_scope, local_type_scope, storage_scope, analysis_state);
+					Type anonymous_type = analyze_type("", next_type, local_constant_scope, local_type_scope, storage_scope);
 					next_semantics_type = storage_scope.add("", anonymous_type);
 				}
 
@@ -15947,7 +15950,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_routine(const Identifier
 
 	// We've finished handling extra constants, types, and variables.
 	// Proceed to analyze_block.
-	return analyze_block(routine_declaration, parameter_identifiers, block, local_constant_scope, local_type_scope, routine_scope, var_scope, local_combined_scope, storage_scope, analysis_state, local_variables, false);
+	return analyze_block(routine_declaration, parameter_identifiers, block, local_constant_scope, local_type_scope, routine_scope, var_scope, local_combined_scope, storage_scope, local_variables, false);
 }
 
 // | Get the symbol to a string literal, tracking it if this is the first time encountering it.
@@ -16129,8 +16132,6 @@ void Semantics::reset_output() {
 	top_level_vars.clear();
 	string_constants.clear();
 	routine_definitions.clear();
-
-	analysis_state = AnalysisState();
 
 	// Reset.
 
@@ -16397,7 +16398,7 @@ void Semantics::analyze() {
 				}
 
 				// Calculate the type.
-				Type semantics_type = analyze_type(identifier.text, type, top_level_constant_scope, top_level_type_scope, storage_scope, analysis_state);
+				Type semantics_type = analyze_type(identifier.text, type, top_level_constant_scope, top_level_type_scope, storage_scope);
 
 				// Add this type to the top-level scope.
 				top_level_type_scope.insert(identifier.text, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Type(semantics_type)));
@@ -16503,7 +16504,7 @@ void Semantics::analyze() {
 					next_semantics_type = top_level_type_scope.index(simple_identifier.text);
 				} else {
 					// Create an anonymous type.
-					Type anonymous_type = analyze_type("", next_type, top_level_constant_scope, top_level_type_scope, storage_scope, analysis_state);
+					Type anonymous_type = analyze_type("", next_type, top_level_constant_scope, top_level_type_scope, storage_scope);
 					next_semantics_type = storage_scope.add("", anonymous_type);
 				}
 
@@ -16855,7 +16856,7 @@ void Semantics::analyze() {
 
 							// Get the type.
 							// Get the parameter type.
-							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope, analysis_state);
+							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope);
 							// Store a copy of this type in our anonymous type storage.
 							TypeIndex parameter_type = storage_scope.add("", temporary_type);
 
@@ -17086,7 +17087,7 @@ void Semantics::analyze() {
 
 							// Get the type.
 							// Get the parameter type.
-							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope, analysis_state);
+							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope);
 							// Store a copy of this type in our anonymous type storage.
 							TypeIndex parameter_type = storage_scope.add("", temporary_type);
 
@@ -17191,7 +17192,7 @@ void Semantics::analyze() {
 
 						// Emit procedure definition.
 						std::vector<Output::Line> routine_definition_lines;
-						routine_definition_lines = analyze_routine(routine_declaration, parameter_names, body, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope, storage_scope, analysis_state);
+						routine_definition_lines = analyze_routine(routine_declaration, parameter_names, body, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope, storage_scope);
 						output.add_line(Output::text_section, ":", routine_symbol);
 						output.add_lines(Output::text_section, routine_definition_lines);
 						output.add_line(Output::text_section, "");
@@ -17260,7 +17261,7 @@ void Semantics::analyze() {
 						}
 
 						// Get the output type.
-						Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope, analysis_state);
+						Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope);
 						// Store a copy of this type in our anonymous type storage.
 						TypeIndex output_type = storage_scope.add("", temporary_type);
 
@@ -17369,7 +17370,7 @@ void Semantics::analyze() {
 
 							// Get the type.
 							// Get the parameter type.
-							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope, analysis_state);
+							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope);
 							// Store a copy of this type in our anonymous type storage.
 							TypeIndex parameter_type = storage_scope.add("", temporary_type);
 
@@ -17498,7 +17499,7 @@ void Semantics::analyze() {
 						}
 
 						// Get the output type.
-						Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope, analysis_state);
+						Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope);
 						// Store a copy of this type in our anonymous type storage.
 						TypeIndex output_type = storage_scope.add("", temporary_type);
 
@@ -17607,7 +17608,7 @@ void Semantics::analyze() {
 
 							// Get the type.
 							// Get the parameter type.
-							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope, analysis_state);
+							Type temporary_type = analyze_type("", type, top_level_constant_scope, top_level_type_scope, storage_scope);
 							// Store a copy of this type in our anonymous type storage.
 							TypeIndex parameter_type = storage_scope.add("", temporary_type);
 
@@ -17712,7 +17713,7 @@ void Semantics::analyze() {
 
 						// Emit function definition.
 						std::vector<Output::Line> routine_definition_lines;
-						routine_definition_lines = analyze_routine(routine_declaration, parameter_names, body, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope, storage_scope, analysis_state);
+						routine_definition_lines = analyze_routine(routine_declaration, parameter_names, body, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope, storage_scope);
 						output.add_line(Output::text_section, ":", routine_symbol);
 						output.add_lines(Output::text_section, routine_definition_lines);
 						output.add_line(Output::text_section, "");
@@ -17772,7 +17773,7 @@ void Semantics::analyze() {
 	std::vector<std::pair<bool, TypeIndex >> main_parameters;
 	IdentifierScope::IdentifierBinding::RoutineDeclaration main_routine_declaration(main_routine_symbol, main_parameters, std::optional<TypeIndex >());
 	std::vector<Output::Line> main_routine_definition_lines;
-	main_routine_definition_lines = analyze_block(main_routine_declaration, {}, block, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope, storage_scope, analysis_state, {}, true);
+	main_routine_definition_lines = analyze_block(main_routine_declaration, {}, block, top_level_constant_scope, top_level_type_scope, top_level_routine_scope, top_level_var_scope, top_level_scope, storage_scope, {}, true);
 	output.add_line(Output::text_section, ":", main_routine_symbol);
 	output.add_lines(Output::text_section, main_routine_definition_lines);
 
