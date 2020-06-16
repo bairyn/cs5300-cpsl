@@ -16353,12 +16353,23 @@ void Semantics::analyze() {
 				}
 
 				// Add this constant to the top-level scope.
-				if (top_level_scope.has(identifier.text)) {
+				if (top_level_constant_scope.has(identifier.text)) {
 					std::ostringstream sstr;
 					sstr
 						<< "Semantics::analyze: error (line "
 						<< identifier.line << " col " << identifier.column
 						<< "): redefinition of constant ``" << identifier.text << "\"."
+						;
+					throw SemanticsError(sstr.str());
+				}
+				if (combine_identifier_namespaces && top_level_scope.has(identifier.text)) {
+					std::ostringstream sstr;
+					sstr
+						<< "Semantics::analyze: error (line "
+						<< identifier.line << " col " << identifier.column
+						<< "): definition of constant ``" << identifier.text << "\" conflicts with"
+						<< " an identifier in another namespace.  Set ``combine_identifier_namespaces\""
+						<< " to false to permit this."
 						;
 					throw SemanticsError(sstr.str());
 				}
