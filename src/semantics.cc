@@ -12435,10 +12435,16 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Apply bitwise NOT depending on the integer type.
 				expression_semantics.output_type = value.output_type;
 				const Index value_index = expression_semantics.merge(value);
-				//const Index copy_value_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), value_type.is_word())}, {value_index});
-				//const Index not_index   = expression_semantics.instructions.add_instruction({I::NorFrom(B(), value_type.is_word())}, {value_index, copy_value_index});
-				const Index not_index   = expression_semantics.instructions.add_instruction({I::NorFrom(B(), value_type.is_word())}, {value_index, value_index});
-				expression_semantics.output_index = not_index;
+				if (!value_type.is_boolean()) {
+					//const Index copy_value_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), value_type.is_word())}, {value_index});
+					//const Index not_index   = expression_semantics.instructions.add_instruction({I::NorFrom(B(), value_type.is_word())}, {value_index, copy_value_index});
+					const Index not_index   = expression_semantics.instructions.add_instruction({I::NorFrom(B(), value_type.is_word())}, {value_index, value_index});
+					expression_semantics.output_index = not_index;
+				} else {
+					const Index load_1_index = expression_semantics.instructions.add_instruction({I::LoadImmediate(B(), value_type.is_word(), ConstantValue(static_cast<int32_t>(1), 0, 0))});
+					const Index not_index    = expression_semantics.instructions.add_instruction({I::LessThanFrom(B(), value_type.is_word())}, {value_index, load_1_index});
+					expression_semantics.output_index = not_index;
+				}
 				break;
 			} case ::Expression::unary_minus_branch: {
 				const ::Expression::UnaryMinus &unary_minus     = grammar.expression_unary_minus_storage.at(expression_symbol.data);
