@@ -14329,7 +14329,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 							// (or some other alternative).
 
 							// We'll be putting this pointer in $v0 eventually, so we may as well do it now.
-							const Index load_pointer_index = block.back = block.instructions.add_instruction(I::LoadFrom{B(), true, true, analysis_state.last_stack_argument_total_size, true, true, Storage("$v0"), Storage("$sp")}, {}, {block.back}); (void) load_pointer_index;
+							const Index load_pointer_index = block.back = block.instructions.add_instruction(I::LoadFrom{B(), true, true, 0, true, true, Storage("$v0"), Storage("$sp", 4, analysis_state.last_stack_argument_total_size)}, {}, {block.back}); (void) load_pointer_index;
 
 							// Now copy the array or record.  Memmove.
 
