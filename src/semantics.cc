@@ -1,3 +1,5 @@
+// TODO: this should be split into multiple files.
+
 #include <algorithm>     // std::max, std::min, std::reverse, std::stable_sort, std::swap
 #include <cassert>       // assert
 #include <cctype>        // isalnum, isprint, tolower

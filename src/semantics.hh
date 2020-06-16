@@ -1,6 +1,8 @@
 #ifndef CPSL_CC_SEMANTICS_HH
 #define CPSL_CC_SEMANTICS_HH
 
+// TODO: this should be split into multiple files.
+
 #include <cstdint>    // uint8_t, int32_t, uint32_t, uint64_t
 #include <map>        // std::map
 #include <memory>     // std::shared_ptr
