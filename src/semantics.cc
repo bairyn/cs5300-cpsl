@@ -15137,7 +15137,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 		}
 
 		// Add the variable.
-		if (available_temporary_registers.size() > 0 && (storage_scope.type(local_variable_type).get_size() == 4 || storage_scope.type(local_variable_type).get_size() == 1)) {
+		if (available_temporary_registers.size() > 0 && (storage_scope.type(local_variable_type).get_size() == 4 || storage_scope.type(local_variable_type).get_size() == 1) && storage_scope.resolve_type(local_variable_type).is_primitive()) {
 			const std::string temporary_register = *available_temporary_registers.cbegin();
 			const bool is_word = !storage_scope.type(local_variable_type).is_primitive() || storage_scope.type(local_variable_type).get_primitive().is_word();
 			available_temporary_registers.erase(std::as_const(temporary_register));
