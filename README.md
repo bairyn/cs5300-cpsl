@@ -1,5 +1,14 @@
 # Overview
 
+This project is for a compilers course at USU (CS-5300). See
+<https://github.com/ksundberg/CS5300/> for more information.
+
+This compiler compiles CPSL code as specified in
+<https://github.com/ksundberg/CS5300/> repository to MIPS assembly with
+syscalls compatible with the MARS emulator.
+
+# Usage
+
 ```
 Usage: cpsl-cc [OPTION]... -o FILE [-i] FILE
 
