@@ -13125,7 +13125,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	// 6. Saved registers.  This entire component is 8-byte aligned.
 	//    MIPSIO::emit() handles the pseudoinstruction we add.
 	// 7. If the output of the function we're calling, dynamically allocate
-	//    extra space for it to write to.
+	//    extra space for it to write to.  (Currently not in $a0-$a3.)
 	// 8. Arguments.  Array and record arguments will point to the original
 	//    array or record for Ref parameters, or it will point to the copied
 	//    array or record for Var parameters.  For all primitive Var arguments,
@@ -13380,7 +13380,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 		const uint32_t  output_size = output_type.get_size();
 
 		analysis_state.dynamically_allocated = I::AddSp::round_to_align(analysis_state.dynamically_allocated);
-		const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, analysis_state.dynamically_allocated, true, true, Storage("$sp", true), Storage("#marker_dynamic_bottom"))}, {}, {block.back});
+		const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, analysis_state.dynamically_allocated, true, true, Storage("$sp", 4, 0, true), Storage("#marker_dynamic_bottom"))}, {}, {block.back});
 		analysis_state.dynamically_allocated += output_size;
 	}
 	// (Note: these are two separate allocations we're making: one will be made after analysis of blocks later on, and the offsets will be adjust appropriate using our dynamic marker, and another allocation (4 byte pointer rounded to 8 bytes) is being made now to hold the pointer to the dynamic allocation, which can be larger (e.g. 512 bytes).
