@@ -1575,7 +1575,7 @@ public:
 		// conflicts / duplicates.
 		MIPSIO::Index    front = 0;  // Ignored if instructions is empty.
 		MIPSIO::Index    back  = 0;  // Ignored if instructions is empty.
-		std::map<std::string, TypeIndex> local_variables;  // Turns out no statements can introduce local variables, so this is unneeded.
+		std::map<std::string, TypeIndex> local_variables;  // Turns out no statements can introduce local variables that aren't handled by scopes, so this is unneeded.
 		uint64_t         lexeme_begin = 0;
 		uint64_t         lexeme_end   = 0;
 

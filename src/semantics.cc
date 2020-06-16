@@ -14144,6 +14144,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				// lvalue would be more expressive.  The specification notes identifiers, however.
 
 				// Lookup the lvalue.
+#if 0
 				if (!combined_scope.has(identifier.text)) {
 					std::ostringstream sstr;
 					sstr
@@ -14151,7 +14152,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 						<< identifier.line << " col " << identifier.column
 						<< "): identifier not found; it is out of scope: "
 						<< identifier.text
-						<< ".  (In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible.)"
+						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -14162,11 +14163,28 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 						<< identifier.line << " col " << identifier.column
 						<< "): variable identifier not found; it is out of variable scope: "
 						<< identifier.text
-						<< ".  (In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible.)"
+						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
-				const Var       &var           = var_scope.get(identifier.text).get_var();
+#endif /* #if 0 */
+				IdentifierScope for_var_scope(std::as_const(var_scope));
+				IdentifierScope for_combined_scope(std::as_const(combined_scope));
+				Var var;
+				if (var_scope.has(identifier.text)) {
+					// Re-use the existing variable.
+					var = var_scope.get(identifier.text).get_var();
+				} else {
+					// Dynamically allocate space on the stack for a new local integer variable.
+					const uint32_t size = Type::integer_type.get_size();
+					routine_block_state.dynamically_allocated = I::AddSp::round_to_align(routine_block_state.dynamically_allocated, size);
+
+					var = Var(type_scope.index("integer"), Storage("$sp", size, routine_block_state.dynamically_allocated), false);
+					for_var_scope.insert({identifier.text, IdentifierScope::IdentifierBinding(var)});
+					for_combined_scope.insert({identifier.text, IdentifierScope::IdentifierBinding(var)});
+
+					routine_block_state.dynamically_allocated += size;
+				}
 				const TypeIndex  type_index    = var.type;
 				const Type      &type          = storage_scope.type(type_index);
 				const Type      &resolved_type = storage_scope.resolve_type(type_index);
@@ -14179,7 +14197,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 						<< identifier.line << " col " << identifier.column
 						<< "): the identifier must refer to an integer variable, not to a variable of non-primitive type ``" << type.get_repr(storage_scope) << "\": "
 						<< identifier.text
-						<< ".  (In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible.)"
+						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -14191,7 +14209,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 						<< identifier.line << " col " << identifier.column
 						<< "): the identifier must refer to an integer variable, not to a variable of type ``" << type.get_repr(storage_scope) << "\": "
 						<< identifier.text
-						<< ".  (In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible.)"
+						<< "."
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -14231,7 +14249,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 						<< "Semantics::analyze_statements: error (line "
 						<< grammar.lexemes.at(first_expression.lexeme_begin).get_line() << " col " << grammar.lexemes.at(first_expression.lexeme_begin).get_column()
 						<< "): the ``first\" value in the for statement range must be an integer, not to a value of type ``" << storage_scope.type(first_expression.output_type).get_repr(storage_scope)
-						<< "\".  (In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible.)"
+						<< "\"."
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -14241,7 +14259,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 						<< "Semantics::analyze_statements: error (line "
 						<< grammar.lexemes.at(last_expression.lexeme_begin).get_line() << " col " << grammar.lexemes.at(last_expression.lexeme_begin).get_column()
 						<< "): the ``last\" value in the for statement range must be an integer, not to a value of type ``" << storage_scope.type(last_expression.output_type).get_repr(storage_scope)
-						<< "\".  (In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible.)"
+						<< "\"."
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -14256,7 +14274,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 				const Symbol     endfor_symbol   = Symbol(labelify(grammar.lexemes_text(for_statement.identifier, last_expression.lexeme_end), "endfor"), "", for_statement.end_keyword0);
 
 				// Analyze the "for" block.
-				const Block for_block = analyze_statements(routine_declaration, statement_sequence, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, cleanup_symbol, routine_block_state);
+				const Block for_block = analyze_statements(routine_declaration, statement_sequence, constant_scope, type_scope, routine_scope, for_var_scope, for_combined_scope, storage_scope, cleanup_symbol, routine_block_state);
 
 				// First, initialize the iterator variable.
 				if (!var.is_primitive_and_ref) {
