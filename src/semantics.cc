@@ -9851,6 +9851,7 @@ std::pair<std::vector<uint32_t>, std::vector<uint64_t>> Semantics::MIPSIO::prepa
 		// are none, unclaim it.  If all have already been emitted, then this
 		// instruction is the last instruction that needs this working storage
 		// unit: unclaim it.
+		std::set<IO> already_unclaimed_outputs;  // Handle duplicate inputs.
 		for (IOIndex input_index = 0; input_index < instruction.get_input_sizes().size(); ++input_index) {
 			std::map<IO, IO>::const_iterator connections_search = connections.find({this_node, input_index});
 			if (connections_search != connections.cend()) {
@@ -9882,13 +9883,19 @@ std::pair<std::vector<uint32_t>, std::vector<uint64_t>> Semantics::MIPSIO::prepa
 					}
 				}
 
-				assert(reverse_claimed_working_storages.find(child_with_output) != reverse_claimed_working_storages.cend());
-
 				if (!child_output_has_unemitted_output_nodes) {
 					// Unclaim this output.
-					const Storage::Index claimed_storage = reverse_claimed_working_storages.at(child_with_output);
-					reverse_claimed_working_storages.erase(child_with_output);
-					claimed_working_storages.erase(claimed_storage);
+
+					// Handle duplicate inputs.
+					if (already_unclaimed_outputs.find(child_with_output) == already_unclaimed_outputs.cend()) {
+						already_unclaimed_outputs.insert(child_with_output);
+
+						assert(reverse_claimed_working_storages.find(child_with_output) != reverse_claimed_working_storages.cend());
+
+						const Storage::Index claimed_storage = reverse_claimed_working_storages.at(child_with_output);
+						reverse_claimed_working_storages.erase(child_with_output);
+						claimed_working_storages.erase(claimed_storage);
+					}
 				}
 			}
 		}
@@ -10689,6 +10696,7 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 		// are none, unclaim it.  If all have already been emitted, then this
 		// instruction is the last instruction that needs this working storage
 		// unit: unclaim it.
+		std::set<IO> already_unclaimed_outputs;  // Handle duplicate inputs.
 		for (IOIndex input_index = 0; input_index < instruction.get_input_sizes().size(); ++input_index) {
 			std::map<IO, IO>::const_iterator connections_search = connections.find({this_node, input_index});
 			if (connections_search != connections.cend()) {
@@ -10720,13 +10728,19 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 					}
 				}
 
-				assert(reverse_claimed_working_storages.find(child_with_output) != reverse_claimed_working_storages.cend());
-
 				if (!child_output_has_unemitted_output_nodes) {
 					// Unclaim this output.
-					const Storage::Index claimed_storage = reverse_claimed_working_storages.at(child_with_output);
-					reverse_claimed_working_storages.erase(child_with_output);
-					claimed_working_storages.erase(claimed_storage);
+
+					// Handle duplicate inputs.
+					if (already_unclaimed_outputs.find(child_with_output) == already_unclaimed_outputs.cend()) {
+						already_unclaimed_outputs.insert(child_with_output);
+
+						assert(reverse_claimed_working_storages.find(child_with_output) != reverse_claimed_working_storages.cend());
+
+						const Storage::Index claimed_storage = reverse_claimed_working_storages.at(child_with_output);
+						reverse_claimed_working_storages.erase(child_with_output);
+						claimed_working_storages.erase(claimed_storage);
+					}
 				}
 			}
 		}
@@ -12421,6 +12435,8 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				// Apply bitwise NOT depending on the integer type.
 				expression_semantics.output_type = value.output_type;
 				const Index value_index = expression_semantics.merge(value);
+				//const Index copy_value_index = expression_semantics.instructions.add_instruction({I::LoadFrom(B(), value_type.is_word())}, {value_index});
+				//const Index not_index   = expression_semantics.instructions.add_instruction({I::NorFrom(B(), value_type.is_word())}, {value_index, copy_value_index});
 				const Index not_index   = expression_semantics.instructions.add_instruction({I::NorFrom(B(), value_type.is_word())}, {value_index, value_index});
 				expression_semantics.output_index = not_index;
 				break;
@@ -13180,7 +13196,8 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 	// 6. Saved registers.  This entire component is 8-byte aligned.
 	//    MIPSIO::emit() handles the pseudoinstruction we add.
 	// 7. If the output of the function we're calling, dynamically allocate
-	//    extra space for it to write to.  (Currently not in $a0-$a3.)
+	//    extra space for it to write to (currently not in $a0-$a3) and push a
+	//    4-byte pointer to it.
 	// 8. Arguments.  Array and record arguments will point to the original
 	//    array or record for Ref parameters, or it will point to the copied
 	//    array or record for Var parameters.  For all primitive Var arguments,
