@@ -1,4 +1,4 @@
-#include <algorithm>     // std::max, std::reverse, std::stable_sort, std::swap
+#include <algorithm>     // std::max, std::min, std::reverse, std::stable_sort, std::swap
 #include <cassert>       // assert
 #include <cctype>        // isalnum, isprint, tolower
 #include <cstddef>       // std::size_t
@@ -4824,7 +4824,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::AddSp::emit(const s
 	return lines;
 }
 
-int32_t Semantics::Instruction::AddSp::round_to_align(int32_t offset, uint32_t alignment) {
+int32_t Semantics::Instruction::AddSp::round_to_align(int32_t offset, uint32_t alignment, uint32_t max_alignment) {
 	if (alignment <= 0) {
 		std::ostringstream sstr;
 		sstr
@@ -4832,6 +4832,10 @@ int32_t Semantics::Instruction::AddSp::round_to_align(int32_t offset, uint32_t a
 			<< "\toffset : " << offset
 			;
 		throw SemanticsError(sstr.str());
+	}
+
+	if (max_alignment != 0) {
+		alignment = std::min(alignment, max_alignment);
 	}
 
 	if (offset >= 0) {
@@ -13228,7 +13232,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			var_nonprimitive_offsets.push_back(std::numeric_limits<uint32_t>::max());  // Unused.
 		} else {
 			is_argument_expression_var_nonprimitives.push_back(true);
-			var_nonprimitive_allocated = Instruction::AddSp::round_to_align(var_nonprimitive_allocated, argument_type.get_size());
+			var_nonprimitive_allocated = Instruction::AddSp::round_to_align(var_nonprimitive_allocated, argument_type.get_size(), 4);
 			var_nonprimitive_offsets.push_back(var_nonprimitive_allocated);
 			var_nonprimitive_allocated += argument_type.get_size();
 		}
@@ -13362,7 +13366,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 		} else {
 			// primref parameter; varref argument; direct register.
 			is_argument_direct_register_ref.push_back(true);
-			direct_ref_allocated = Instruction::AddSp::round_to_align(direct_ref_allocated, storage_scope.type(argument_type_index).get_size());
+			direct_ref_allocated = Instruction::AddSp::round_to_align(direct_ref_allocated, storage_scope.type(argument_type_index).get_size(), 4);
 			direct_register_ref_offsets.push_back(direct_ref_allocated);
 			direct_ref_allocated += storage_scope.type(argument_type_index).get_size();
 		}
@@ -13462,7 +13466,7 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			pushed_argument_offsets.push_back(std::numeric_limits<uint32_t>::max());  // Unused.
 		} else {
 			is_argument_pushed.push_back(true);
-			pushed_arg_allocated = Instruction::AddSp::round_to_align(pushed_arg_allocated, is_word ? 4 : 1);
+			pushed_arg_allocated = Instruction::AddSp::round_to_align(pushed_arg_allocated, is_word ? 4 : 1, 4);
 			pushed_argument_offsets.push_back(pushed_arg_allocated);
 			pushed_arg_allocated += is_word ? 4 : 1;
 		}
@@ -15098,7 +15102,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 		} else {
 			const bool is_word = is_resolved_type_word || parameter_is_ref;
 
-			stack_argument_total_size = Instruction::AddSp::round_to_align(stack_argument_total_size, is_word ? 4 : 1);
+			stack_argument_total_size = Instruction::AddSp::round_to_align(stack_argument_total_size, is_word ? 4 : 1, 4);
 
 			// If it's an array, this storage dereferences the argument to get the real pointer to the beginning of the array.  (The first element involves 2 dereferences.)
 			const Storage parameter_storage
@@ -15192,7 +15196,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			local_combined_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, temporary_storage))});
 		} else {
 			const uint32_t size = storage_scope.type(local_variable_type).get_size();
-			stack_allocated = Instruction::AddSp::round_to_align(stack_allocated + size, size);
+			stack_allocated = Instruction::AddSp::round_to_align(stack_allocated + size, size, 4);
 			Storage stack_storage;
 			if (!storage_scope.type(local_variable_type).resolve_type(storage_scope).is_record() && !storage_scope.type(local_variable_type).resolve_type(storage_scope).is_array()) {
 				stack_storage = Storage(size, false, Symbol(), "$sp", true, -(stack_allocated + push_ra_allocated), false, false);
@@ -15324,7 +15328,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			local_combined_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, temporary_storage))});
 		} else {
 			const uint32_t size = storage_scope.type(local_variable_type).get_size();
-			stack_allocated = Instruction::AddSp::round_to_align(stack_allocated + size, size);
+			stack_allocated = Instruction::AddSp::round_to_align(stack_allocated + size, size, 4);
 			Storage stack_storage;
 			if (!storage_scope.type(local_variable_type).resolve_type(storage_scope).is_record() && !storage_scope.type(local_variable_type).resolve_type(storage_scope).is_array()) {
 				stack_storage = Storage(size, false, Symbol(), "$sp", true, -(stack_allocated + push_ra_allocated), false, false);
@@ -15352,7 +15356,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			working_storages.push_back(temporary_storage);
 		} else {
 			const uint32_t size = working_storage_requirement;
-			stack_allocated = Instruction::AddSp::round_to_align(stack_allocated + size, size);
+			stack_allocated = Instruction::AddSp::round_to_align(stack_allocated + size, size, 4);
 			Storage stack_storage;
 			if (true) {
 				stack_storage = Storage(size, false, Symbol(), "$sp", true, -(stack_allocated + push_ra_allocated), false, false);

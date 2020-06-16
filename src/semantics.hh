@@ -850,7 +850,7 @@ public:
 
 			std::vector<Output::Line> emit(const std::vector<Storage> &storages) const;
 
-			static int32_t round_to_align(int32_t offset, uint32_t alignment = 8);
+			static int32_t round_to_align(int32_t offset, uint32_t alignment = 8, uint32_t max_alignment = 0);
 		};
 
 		// | Load an immediate value into a storage unit, e.g. 3 or the address of "string literal".
