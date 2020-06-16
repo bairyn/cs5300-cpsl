@@ -13520,6 +13520,8 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 
 		const LvalueSourceAnalysis &argument_lvalue_source_analysis = lvalue_source_analyses[argument_expression_index];
 
+		const Index &lvalue_output = lvalue_outputs[argument_expression_index];
+
 		//const bool is_word = !storage_scope.resolve_type(argument_type_index).is_primitive() || storage_scope.resolve_type(argument_type_index).get_primitive().is_word() || (!argument_is_var_nonprimitive && !parameter_is_primitive_ref);
 		const bool is_word = !storage_scope.resolve_type(argument_type_index).is_primitive() || storage_scope.resolve_type(argument_type_index).get_primitive().is_word() || argument_is_var_nonprimitive || parameter_is_ref;
 		const Storage argument_storage
@@ -13529,17 +13531,33 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 			: Storage("$sp", is_word ? 4 : 1, pushed_argument_offsets[argument_expression_index], true)
 			;
 
+		if (parameter_is_ref && !argument_lvalue_source_analysis.is_mutable) {
+			std::ostringstream sstr;
+			sstr
+				<< "Semantics::analyze_call: error (line "
+				<< grammar.lexemes.at(argument_expression.lexeme_begin).get_line() << " col " << grammar.lexemes.at(argument_expression.lexeme_begin).get_column()
+				<< "): for argument #" << argument_expression_index + 1 << ", cannot provide constant value as a ref when supplying arguments, for type "
+				<< "<" << storage_scope.type(argument_expression.output_type).get_repr(storage_scope) << ">"
+				;
+			throw SemanticsError(sstr.str());
+		}
+
 		if (argument_is_var_nonprimitive) {
 			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, pushed_arg_allocated + dynamic_output_allocated + direct_ref_allocated + var_nonprimitive_offsets[argument_expression_index], true, true, argument_storage, Storage("$sp", true))}, {}, {block.back});
 		} else if (is_direct_register) {
 			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, true, pushed_arg_allocated + dynamic_output_allocated + direct_register_ref_offsets[argument_expression_index], true, true, argument_storage, Storage("$sp", true))}, {}, {block.back});
 		} else if (!parameter_is_ref || !storage_scope.resolve_type(argument_type_index).is_primitive()) {
 			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {argument_output}, {block.back});
+		} else if (!argument_lvalue_source_analysis.is_lvalue_fixed_storage && parameter_is_ref) {
+			// Primitive array[3] or record.foo as a reference.
+
+			// Copy the value, which is a pointer.
+			const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, false, argument_storage, Storage())}, {lvalue_output}, {block.back});
 		} else {
 			// primref parameter and primref or primvar argument.
 			assert(argument_lvalue_source_analysis.is_lvalue_fixed_storage);
 
-			// If it's a constant value, it's primitive and parameter is ref, so the previous elseif clause should apply.
+			// If it's a constant value, it's primitive and parameter is not ref, so the second previous elseif clause should apply.
 			assert(argument_lvalue_source_analysis.is_mutable);
 
 			// primref argument?
@@ -13549,17 +13567,17 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 				// Copy the value, which is a pointer.
 				assert(argument_lvalue_source_analysis.lvalue_fixed_storage.is_register_dereference());
 				const Index load_lvalue_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, false, true, Storage(), argument_lvalue_source_analysis.lvalue_fixed_storage)}, {}, {block.back});
-				const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {load_lvalue_index}, {block.back});
+				const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, true, 0, true, false, argument_storage, Storage())}, {load_lvalue_index}, {block.back});
 			} else {
 				// primvar argument.
 				//
 				// The lvalue storage would dereference it.  Unpack it to get the address instead, much like "&foo" in C.
 				assert(argument_lvalue_source_analysis.lvalue_fixed_storage.is_register_dereference());
-				Storage addressed = argument_lvalue_source_analysis.lvalue_fixed_storage;
+				Storage addressed = Storage(std::as_const(argument_lvalue_source_analysis.lvalue_fixed_storage));
 				addressed.offset = 0;
 				addressed.dereference = false;
 				const Index load_lvalue_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, argument_lvalue_source_analysis.lvalue_fixed_storage.offset, false, true, Storage(), addressed)}, {}, {block.back});
-				const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {load_lvalue_index}, {block.back});
+				const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, true, 0, true, false, argument_storage, Storage())}, {load_lvalue_index}, {block.back});
 			}
 		}
 	}
