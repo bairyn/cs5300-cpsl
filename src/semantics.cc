@@ -11152,7 +11152,7 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 			}
 
 			// It's a variable.
-			lvalue_source_analysis.is_mutable              = false;
+			lvalue_source_analysis.is_mutable              = true;
 			lvalue_source_analysis.lvalue_type             = type;
 			lvalue_source_analysis.lvalue_index            = std::numeric_limits<Index>::max();
 			lvalue_source_analysis.lvalue_fixed_storage    = var.storage;
@@ -11313,7 +11313,7 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 				}
 			}
 
-			lvalue_source_analysis.is_mutable              = false;
+			lvalue_source_analysis.is_mutable              = true;
 			lvalue_source_analysis.lvalue_type             = last_output_type;
 			lvalue_source_analysis.lvalue_index            = last_output_index;
 			lvalue_source_analysis.lvalue_fixed_storage    = Storage();
@@ -11330,29 +11330,41 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 			throw SemanticsError(sstr.str());
 		}
 	} else if (constant_scope.has(lvalue_identifier.text)) {
-		if (require_mutable) {
-			std::ostringstream sstr;
-			sstr
-				<< "Semantics::analyze_lvalue_source: error (line "
-				<< lvalue_identifier.line << " col " << lvalue_identifier.column
-				<< "): the lvalue identifier refers to a constant, not a mutable location: "
-				<< lvalue_identifier.text
-				<< "."
-				;
-			throw SemanticsError(sstr.str());
-		} else {
-			lvalue_source_analysis.is_mutable     = false;
-			lvalue_source_analysis.constant_value = constant_scope.get(lvalue_identifier.text).get_static().constant_value;
-			lvalue_source_analysis.lvalue_type    = type_scope.index(lvalue_source_analysis.constant_value.get_static_primitive_type().get_tag_repr());
+		// First, if it's a string, just copy the base address of it.
+		if (constant_scope.get(lvalue_identifier.text).get_static().constant_value.is_string()) {
+			const Index load_string = lvalue_source_analysis.instructions.add_instruction({I::LoadImmediate(B(), true, constant_scope.get(lvalue_identifier.text).get_static().constant_value)});
 
-			lvalue_source_analysis.lvalue_index            = std::numeric_limits<Index>::max();
+			lvalue_source_analysis.is_mutable              = true;
+			lvalue_source_analysis.lvalue_type             = type_scope.index(lvalue_source_analysis.constant_value.get_static_primitive_type().get_tag_repr());
+			lvalue_source_analysis.lvalue_index            = load_string;
 			lvalue_source_analysis.lvalue_fixed_storage    = Storage();
-			lvalue_source_analysis.is_lvalue_fixed_storage = true;
-			lvalue_source_analysis.is_lvalue_primref       = false;
+			lvalue_source_analysis.is_lvalue_fixed_storage = false;
+		} else {
+			// It's a constant.
+			if (require_mutable) {
+				std::ostringstream sstr;
+				sstr
+					<< "Semantics::analyze_lvalue_source: error (line "
+					<< lvalue_identifier.line << " col " << lvalue_identifier.column
+					<< "): the lvalue identifier refers to a constant, not a mutable location: "
+					<< lvalue_identifier.text
+					<< "."
+					;
+				throw SemanticsError(sstr.str());
+			} else {
+				lvalue_source_analysis.is_mutable     = false;
+				lvalue_source_analysis.constant_value = constant_scope.get(lvalue_identifier.text).get_static().constant_value;
+				lvalue_source_analysis.lvalue_type    = type_scope.index(lvalue_source_analysis.constant_value.get_static_primitive_type().get_tag_repr());
 
-			// To preserve registers, add an empty instruction, so that
-			// lvalue_source_analysis can always be merged.
-			lvalue_source_analysis.lvalue_index = lvalue_source_analysis.instructions.add_instruction({I::Ignore(B(), false, false)});
+				lvalue_source_analysis.lvalue_index            = std::numeric_limits<Index>::max();
+				lvalue_source_analysis.lvalue_fixed_storage    = Storage();
+				lvalue_source_analysis.is_lvalue_fixed_storage = true;
+				lvalue_source_analysis.is_lvalue_primref       = false;
+
+				// To preserve registers, add an empty instruction, so that
+				// lvalue_source_analysis can always be merged.
+				lvalue_source_analysis.lvalue_index = lvalue_source_analysis.instructions.add_instruction({I::Ignore(B(), false, false)});
+			}
 		}
 	} else {
 		std::ostringstream sstr;
@@ -12741,7 +12753,7 @@ Semantics::Expression Semantics::analyze_expression(const ::Expression &expressi
 				expression_semantics.output_type  = lvalue_source_analysis.lvalue_type;
 				expression_semantics.lexeme_begin = lvalue_source_analysis.lexeme_begin;
 				expression_semantics.lexeme_end   = lvalue_source_analysis.lexeme_end;
-				if (lvalue_source_analysis.is_mutable) {
+				if (!lvalue_source_analysis.is_mutable) {
 					// This should have been picked up by the constant expression check.
 					expression_semantics.lexeme_begin = lvalue_source_analysis.constant_value.lexeme_begin;
 					expression_semantics.lexeme_end   = lvalue_source_analysis.constant_value.lexeme_end;
