@@ -10235,12 +10235,14 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 		}
 
 		// Concatenate the instruction's storage.
-		std::vector<Storage> instruction_storage(std::move(input_storage));
+		std::vector<Storage> instruction_storage(std::as_const(input_storage));
 		instruction_storage.insert(instruction_storage.end(), instruction_working_storage.cbegin(), instruction_working_storage.cend());
 		instruction_storage.insert(instruction_storage.end(), output_storage.cbegin(), output_storage.cend());
 
 		// Adjust dereferenced "$sp" storage units.
 		for (Storage &instruction_storage_unit : instruction_storage) {
+			instruction_storage_unit = Storage(std::as_const(instruction_storage_unit));
+
 #if 0
 			if (instruction_storage_unit.is_register_dereference() && instruction_storage_unit.register_ == "$sp" && !instruction_storage_unit.no_sp_adjust) {
 				instruction_storage_unit.no_sp_adjust = true;
@@ -14973,7 +14975,8 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 	// sufficient space on the stack.
 	//
 	// Take into account that we will first push the return address.
-	int32_t stack_allocated = Instruction::AddSp::round_to_align(4);
+	const int32_t push_ra_allocated = Instruction::AddSp::round_to_align(4);
+	int32_t stack_allocated = 0;
 
 	// Commented out: these are already copied on a call!  Instead, just add a binding to the appropriate storage.  We do that here.
 #if 0
@@ -15152,9 +15155,9 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			stack_allocated = Instruction::AddSp::round_to_align(stack_allocated + size, size);
 			Storage stack_storage;
 			if (!storage_scope.type(local_variable_type).resolve_type(storage_scope).is_record() && !storage_scope.type(local_variable_type).resolve_type(storage_scope).is_array()) {
-				stack_storage = Storage(size, false, Symbol(), "$sp", true, -stack_allocated, false, false);
+				stack_storage = Storage(size, false, Symbol(), "$sp", true, -(stack_allocated - push_ra_allocated), false, false);
 			} else {
-				stack_storage = Storage(4, false, Symbol(), "$sp", false, -stack_allocated, false, false);
+				stack_storage = Storage(4, false, Symbol(), "$sp", false, -(stack_allocated - push_ra_allocated), false, false);
 			}
 			local_var_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
 			local_combined_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
@@ -15283,9 +15286,9 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			stack_allocated = Instruction::AddSp::round_to_align(stack_allocated + size, size);
 			Storage stack_storage;
 			if (!storage_scope.type(local_variable_type).resolve_type(storage_scope).is_record() && !storage_scope.type(local_variable_type).resolve_type(storage_scope).is_array()) {
-				stack_storage = Storage(size, false, Symbol(), "$sp", true, -stack_allocated, false, false);
+				stack_storage = Storage(size, false, Symbol(), "$sp", true, -(stack_allocated - push_ra_allocated), false, false);
 			} else {
-				stack_storage = Storage(4, false, Symbol(), "$sp", false, -stack_allocated, false, false);
+				stack_storage = Storage(4, false, Symbol(), "$sp", false, -(stack_allocated - push_ra_allocated), false, false);
 			}
 			local_var_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
 			local_combined_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
@@ -15311,9 +15314,9 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			stack_allocated = Instruction::AddSp::round_to_align(stack_allocated + size, size);
 			Storage stack_storage;
 			if (true) {
-				stack_storage = Storage(size, false, Symbol(), "$sp", true, -stack_allocated, false, false);
+				stack_storage = Storage(size, false, Symbol(), "$sp", true, -(stack_allocated - push_ra_allocated), false, false);
 			} else {
-				stack_storage = Storage(4, false, Symbol(), "$sp", false, -stack_allocated, false, false);
+				stack_storage = Storage(4, false, Symbol(), "$sp", false, -(stack_allocated - push_ra_allocated), false, false);
 			}
 			working_storages.push_back(stack_storage);
 		}
@@ -15339,7 +15342,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 
 	// Allocate space on the stack.
 	if (stack_allocated != 0) {
-		last_intro_index = block_semantics.instructions.add_instruction({I::AddSp(B(), -(stack_allocated - Instruction::AddSp::round_to_align(4)))}, {}, last_intro_index);
+		last_intro_index = block_semantics.instructions.add_instruction({I::AddSp(B(), -stack_allocated)}, {}, last_intro_index);
 	}
 
 	// Allocate the total dynamic allocations on the stack (known at compile-time) needed by the block after aligning it.
@@ -15402,7 +15405,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 		block_semantics.back = block_semantics.instructions.add_instruction({I::AddSp(B(), Instruction::AddSp::round_to_align(analysis_state.dynamically_allocated))}, {}, block_semantics.back);
 	}
 	if (stack_allocated != 0) {
-		block_semantics.back = block_semantics.instructions.add_instruction({I::AddSp(B(), stack_allocated - Instruction::AddSp::round_to_align(4))}, {}, block_semantics.back);
+		block_semantics.back = block_semantics.instructions.add_instruction({I::AddSp(B(), stack_allocated)}, {}, block_semantics.back);
 	}
 	block_semantics.back = block_semantics.instructions.add_instruction({I::LoadFrom(B(), true, true, 0, true, true, Storage("$ra"), Storage("$sp", 4, 0, true), false, false)}, {}, block_semantics.back);
 	block_semantics.back = block_semantics.instructions.add_instruction({I::AddSp(B(), 4)}, {}, block_semantics.back);
