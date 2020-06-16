@@ -62,6 +62,10 @@ public:
 		// pushed beneath working storages.
 		//
 		// (New allocations are generally lower/deeper in the stack.)
+		//
+		// TODO: this required being reset, so this seems too global too.
+		// Maybe at least make it RoutineBlockState (for analyze_block, not
+		// Semantics::Block).
 		int32_t dynamically_allocated = 0;
 
 		// | This feels a little like a hack and involves state that's more

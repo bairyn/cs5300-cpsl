@@ -4512,6 +4512,17 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::emit_binary_operati
 	const Storage &right_source_storage = storages[1];
 	const Storage &destination_storage  = storages[2];
 
+	if (left_source_storage.is_register_direct() && left_source_storage.offset != 0) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::emit_binary_operation: internal error: this operation on direct registers with offsets is currently unsupported.  Use LoadFrom meanwhile.";
+		throw SemanticsError(sstr.str());
+	}
+	if (right_source_storage.is_register_direct() && right_source_storage.offset != 0) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::emit_binary_operation: internal error: this operation on direct registers with offsets is currently unsupported.  Use LoadFrom meanwhile.";
+		throw SemanticsError(sstr.str());
+	}
+
 	// Prepare output vector.
 	std::vector<Output::Line> lines;
 
@@ -5040,6 +5051,9 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 		sized_save = "\tsb    ";
 	}
 
+	// Get virtual addition.
+	int32_t virtual_addition = addition;
+
 	// Part 1: load/read into $t9 unless it's a non-dereferenced direct register.
 	std::string source_register = "$t9";
 	bool is_t9_free = false;
@@ -5049,21 +5063,22 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 	}
 	bool addition_pending = false;
 	if        (source_storage.is_register_direct()) {
-		if (!post_dereference_load && (addition == 0 || (destination_storage.is_register_direct() && !post_dereference_save))) {
+		virtual_addition += source_storage.offset;
+		if (!post_dereference_load && (virtual_addition == 0 || (destination_storage.is_register_direct() && !post_dereference_save))) {
 			is_t9_free = true;
 			source_register = source_storage.register_;
-			if (addition != 0) {
+			if (virtual_addition != 0) {
 				addition_pending = true;
 			}
 		} else {
 			if (post_dereference_load) {
 				lines.push_back(sized_load + source_register + ", (" + source_storage.register_ + ")");
-				if (addition != 0) {
-					lines.push_back("\tla    " + source_register + ", " + std::to_string(addition) + "(" + source_register + ")");
+				if (virtual_addition != 0) {
+					lines.push_back("\tla    " + source_register + ", " + std::to_string(virtual_addition) + "(" + source_register + ")");
 				}
 			} else {
-				// addition != 0 && !post_dereference_load
-				lines.push_back("\tla    " + source_register + ", " + std::to_string(addition) + "(" + source_storage.register_ + ")");
+				// virtual_addition != 0 && !post_dereference_load
+				lines.push_back("\tla    " + source_register + ", " + std::to_string(virtual_addition) + "(" + source_storage.register_ + ")");
 			}
 		}
 	} else if (source_storage.is_register_dereference()) {
@@ -5074,16 +5089,16 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 			lines.push_back("\tlw    " + source_register + ", " + offset_string + "(" + source_storage.register_ + ")");
 			lines.push_back(sized_load + source_register + ", ($t9)");
 		}
-		if (addition != 0) {
-			lines.push_back("\tla    " + source_register + ", " + std::to_string(addition) + "(" + source_register + ")");
+		if (virtual_addition != 0) {
+			lines.push_back("\tla    " + source_register + ", " + std::to_string(virtual_addition) + "(" + source_register + ")");
 		}
 	} else if (source_storage.is_global_address()) {
 		lines.push_back("\tla    " + source_register + ", " + source_storage.global_address);
 		if (post_dereference_load) {
 			lines.push_back(sized_load + source_register + ", (" + source_register + ")");
 		}
-		if (addition != 0) {
-			lines.push_back("\tla    " + source_register + ", " + std::to_string(addition) + "(" + source_register + ")");
+		if (virtual_addition != 0) {
+			lines.push_back("\tla    " + source_register + ", " + std::to_string(virtual_addition) + "(" + source_register + ")");
 		}
 	} else { //source_storage.is_global_dereference()
 		lines.push_back("\tla    " + source_register + ", " + source_storage.global_address);
@@ -5097,8 +5112,8 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 			lines.push_back("\tlw    " + source_register + ", " + offset_string + "(" + source_register + ")");
 			lines.push_back(sized_load + source_register + ", (" + source_register + ")");
 		}
-		if (addition != 0) {
-			lines.push_back("\tla    " + source_register + ", " + std::to_string(addition) + "(" + source_register + ")");
+		if (virtual_addition != 0) {
+			lines.push_back("\tla    " + source_register + ", " + std::to_string(virtual_addition) + "(" + source_register + ")");
 		}
 	}
 
@@ -5112,7 +5127,7 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::LoadFrom::emit(cons
 				}
 			} else {
 				addition_pending = false;
-				lines.push_back("\tla    " + destination_storage.register_ + ", " + std::to_string(addition) + "(" + source_register + ")");
+				lines.push_back("\tla    " + destination_storage.register_ + ", " + std::to_string(virtual_addition) + "(" + source_register + ")");
 			}
 		} else {
 			lines.push_back(sized_save + source_register + ", (" + destination_storage.register_ + ")");
@@ -5317,6 +5332,17 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::MultFrom::emit(cons
 	const Storage &left_destination_storage  = ignore_lo ? null_storage : storages[next_storage_index++];
 	const Storage &right_destination_storage = ignore_hi ? null_storage : storages[next_storage_index++];
 
+	if (left_source_storage.is_register_direct() && left_source_storage.offset != 0) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::emit_binary_operation: internal error: this operation on direct registers with offsets is currently unsupported.  Use LoadFrom meanwhile.";
+		throw SemanticsError(sstr.str());
+	}
+	if (right_source_storage.is_register_direct() && right_source_storage.offset != 0) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::emit_binary_operation: internal error: this operation on direct registers with offsets is currently unsupported.  Use LoadFrom meanwhile.";
+		throw SemanticsError(sstr.str());
+	}
+
 	std::vector<std::string>::size_type next_temporary = 0;
 	std::vector<std::string> temporaries;
 	if (!ignore_hi && right_destination_storage.is_register_direct() && right_destination_storage.register_ != left_destination_storage.register_ && right_destination_storage.register_ != right_destination_storage.register_) {
@@ -5477,6 +5503,17 @@ std::vector<Semantics::Output::Line> Semantics::Instruction::DivFrom::emit(const
 	const Storage &right_source_storage      = storages[next_storage_index++];
 	const Storage &left_destination_storage  = ignore_lo ? null_storage : storages[next_storage_index++];
 	const Storage &right_destination_storage = ignore_hi ? null_storage : storages[next_storage_index++];
+
+	if (left_source_storage.is_register_direct() && left_source_storage.offset != 0) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::emit_binary_operation: internal error: this operation on direct registers with offsets is currently unsupported.  Use LoadFrom meanwhile.";
+		throw SemanticsError(sstr.str());
+	}
+	if (right_source_storage.is_register_direct() && right_source_storage.offset != 0) {
+		std::ostringstream sstr;
+		sstr << "Semantics::Instruction::emit_binary_operation: internal error: this operation on direct registers with offsets is currently unsupported.  Use LoadFrom meanwhile.";
+		throw SemanticsError(sstr.str());
+	}
 
 	std::vector<std::string>::size_type next_temporary = 0;
 	std::vector<std::string> temporaries;
@@ -15155,9 +15192,9 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			stack_allocated = Instruction::AddSp::round_to_align(stack_allocated + size, size);
 			Storage stack_storage;
 			if (!storage_scope.type(local_variable_type).resolve_type(storage_scope).is_record() && !storage_scope.type(local_variable_type).resolve_type(storage_scope).is_array()) {
-				stack_storage = Storage(size, false, Symbol(), "$sp", true, -(stack_allocated - push_ra_allocated), false, false);
+				stack_storage = Storage(size, false, Symbol(), "$sp", true, -(stack_allocated + push_ra_allocated), false, false);
 			} else {
-				stack_storage = Storage(4, false, Symbol(), "$sp", false, -(stack_allocated - push_ra_allocated), false, false);
+				stack_storage = Storage(4, false, Symbol(), "$sp", false, -(stack_allocated + push_ra_allocated), false, false);
 			}
 			local_var_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
 			local_combined_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
@@ -15167,6 +15204,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 	stack_allocated = Instruction::AddSp::round_to_align(stack_allocated);
 
 	// Analyze the statements in the block.
+	analysis_state.dynamically_allocated = 0;
 	Block block_semantics = analyze_statements(routine_declaration, statement_sequence, constant_scope, type_scope, routine_scope, local_var_scope, local_combined_scope, storage_scope, cleanup_symbol, analysis_state);
 
 	// Make sure front and back are valid by making sure there is at least one instruction.
@@ -15286,9 +15324,9 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			stack_allocated = Instruction::AddSp::round_to_align(stack_allocated + size, size);
 			Storage stack_storage;
 			if (!storage_scope.type(local_variable_type).resolve_type(storage_scope).is_record() && !storage_scope.type(local_variable_type).resolve_type(storage_scope).is_array()) {
-				stack_storage = Storage(size, false, Symbol(), "$sp", true, -(stack_allocated - push_ra_allocated), false, false);
+				stack_storage = Storage(size, false, Symbol(), "$sp", true, -(stack_allocated + push_ra_allocated), false, false);
 			} else {
-				stack_storage = Storage(4, false, Symbol(), "$sp", false, -(stack_allocated - push_ra_allocated), false, false);
+				stack_storage = Storage(4, false, Symbol(), "$sp", false, -(stack_allocated + push_ra_allocated), false, false);
 			}
 			local_var_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
 			local_combined_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
@@ -15314,9 +15352,9 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			stack_allocated = Instruction::AddSp::round_to_align(stack_allocated + size, size);
 			Storage stack_storage;
 			if (true) {
-				stack_storage = Storage(size, false, Symbol(), "$sp", true, -(stack_allocated - push_ra_allocated), false, false);
+				stack_storage = Storage(size, false, Symbol(), "$sp", true, -(stack_allocated + push_ra_allocated), false, false);
 			} else {
-				stack_storage = Storage(4, false, Symbol(), "$sp", false, -(stack_allocated - push_ra_allocated), false, false);
+				stack_storage = Storage(4, false, Symbol(), "$sp", false, -(stack_allocated + push_ra_allocated), false, false);
 			}
 			working_storages.push_back(stack_storage);
 		}
@@ -15403,6 +15441,7 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 	// Reverse what intro did.
 	if (analysis_state.dynamically_allocated != 0) {
 		block_semantics.back = block_semantics.instructions.add_instruction({I::AddSp(B(), Instruction::AddSp::round_to_align(analysis_state.dynamically_allocated))}, {}, block_semantics.back);
+		analysis_state.dynamically_allocated = 0;
 	}
 	if (stack_allocated != 0) {
 		block_semantics.back = block_semantics.instructions.add_instruction({I::AddSp(B(), stack_allocated)}, {}, block_semantics.back);
