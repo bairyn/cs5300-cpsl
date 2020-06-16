@@ -14151,7 +14151,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 						<< identifier.line << " col " << identifier.column
 						<< "): identifier not found; it is out of scope: "
 						<< identifier.text
-						<< ".  In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible."
+						<< ".  (In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible.)"
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -14162,7 +14162,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 						<< identifier.line << " col " << identifier.column
 						<< "): variable identifier not found; it is out of variable scope: "
 						<< identifier.text
-						<< ".  In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible."
+						<< ".  (In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible.)"
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -14179,7 +14179,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 						<< identifier.line << " col " << identifier.column
 						<< "): the identifier must refer to an integer variable, not to a variable of non-primitive type ``" << type.get_repr(storage_scope) << "\": "
 						<< identifier.text
-						<< ".  In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible."
+						<< ".  (In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible.)"
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -14191,7 +14191,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 						<< identifier.line << " col " << identifier.column
 						<< "): the identifier must refer to an integer variable, not to a variable of type ``" << type.get_repr(storage_scope) << "\": "
 						<< identifier.text
-						<< ".  In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible."
+						<< ".  (In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible.)"
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -14231,7 +14231,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 						<< "Semantics::analyze_statements: error (line "
 						<< grammar.lexemes.at(first_expression.lexeme_begin).get_line() << " col " << grammar.lexemes.at(first_expression.lexeme_begin).get_column()
 						<< "): the ``first\" value in the for statement range must be an integer, not to a value of type ``" << storage_scope.type(first_expression.output_type).get_repr(storage_scope)
-						<< "\".  In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible."
+						<< "\".  (In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible.)"
 						;
 					throw SemanticsError(sstr.str());
 				}
@@ -14241,7 +14241,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 						<< "Semantics::analyze_statements: error (line "
 						<< grammar.lexemes.at(last_expression.lexeme_begin).get_line() << " col " << grammar.lexemes.at(last_expression.lexeme_begin).get_column()
 						<< "): the ``last\" value in the for statement range must be an integer, not to a value of type ``" << storage_scope.type(last_expression.output_type).get_repr(storage_scope)
-						<< "\".  In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible."
+						<< "\".  (In ``for\" statements, the grammar is specified as supporting only identifier lvalues, although support for accessed arrays and records would be possible.)"
 						;
 					throw SemanticsError(sstr.str());
 				}
