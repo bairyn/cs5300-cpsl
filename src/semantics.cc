@@ -10294,9 +10294,9 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 				const int32_t bottom = markers_search->second.second;
 
 				if (is_top) {
-					instruction_storage_unit.offset -= top;
+					instruction_storage_unit.offset -= add_sp_total - top;
 				} else {
-					instruction_storage_unit.offset -= bottom;
+					instruction_storage_unit.offset -= add_sp_total - bottom;
 				}
 				instruction_storage_unit.register_ = "$sp";
 			}
@@ -10361,9 +10361,9 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 						const int32_t bottom = markers_search->second.second;
 
 						if (is_top) {
-							alt_load_from.fixed_save_storage.offset -= top;
+							alt_load_from.fixed_save_storage.offset -= add_sp_total - top;
 						} else {
-							alt_load_from.fixed_save_storage.offset -= bottom;
+							alt_load_from.fixed_save_storage.offset -= add_sp_total - bottom;
 						}
 						alt_load_from.fixed_save_storage.register_ = "$sp";
 					}
@@ -10422,9 +10422,9 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 							const int32_t bottom = markers_search->second.second;
 
 							if (is_top) {
-								alt_load_from.fixed_load_storage.offset -= top;
+								alt_load_from.fixed_load_storage.offset -= add_sp_total - top;
 							} else {
-								alt_load_from.fixed_load_storage.offset -= bottom;
+								alt_load_from.fixed_load_storage.offset -= add_sp_total - bottom;
 							}
 							alt_load_from.fixed_load_storage.register_ = "$sp";
 						}
@@ -10475,9 +10475,9 @@ std::vector<Semantics::Output::Line> Semantics::MIPSIO::emit(const std::map<IO, 
 							const int32_t bottom = markers_search->second.second;
 
 							if (is_top) {
-								alt_load_from.addition -= top;
+								alt_load_from.addition -= add_sp_total - top;
 							} else {
-								alt_load_from.addition -= bottom;
+								alt_load_from.addition -= add_sp_total - bottom;
 							}
 							alt_load_from.fixed_load_storage.register_ = "$sp";
 						}
