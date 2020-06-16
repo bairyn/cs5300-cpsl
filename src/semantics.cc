@@ -13487,7 +13487,10 @@ std::pair<Semantics::Block, std::optional<std::pair<Semantics::MIPSIO::Index, Se
 				//
 				// The lvalue storage would dereference it.  Unpack it to get the address instead, much like "&foo" in C.
 				assert(argument_lvalue_source_analysis.lvalue_fixed_storage.is_register_dereference());
-				const Index load_lvalue_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, argument_lvalue_source_analysis.lvalue_fixed_storage.offset, false, true, Storage(), argument_lvalue_source_analysis.lvalue_fixed_storage.register_)}, {}, {block.back});
+				Storage addressed = argument_lvalue_source_analysis.lvalue_fixed_storage;
+				addressed.offset = 0;
+				addressed.dereference = false;
+				const Index load_lvalue_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), true, true, argument_lvalue_source_analysis.lvalue_fixed_storage.offset, false, true, Storage(), addressed)}, {}, {block.back});
 				const Index copy_index = block.back = block.instructions.add_instruction({I::LoadFrom(B(), is_word, is_word, 0, true, false, argument_storage, Storage())}, {load_lvalue_index}, {block.back});
 			}
 		}
