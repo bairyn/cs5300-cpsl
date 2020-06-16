@@ -15149,9 +15149,9 @@ std::vector<Semantics::Output::Line> Semantics::analyze_block(const IdentifierSc
 			stack_allocated = Instruction::AddSp::round_to_align(stack_allocated + size, size);
 			Storage stack_storage;
 			if (!storage_scope.type(local_variable_type).resolve_type(storage_scope).is_record() && !storage_scope.type(local_variable_type).resolve_type(storage_scope).is_array()) {
-				stack_storage = Storage(size, false, Symbol(), "$sp", true, -stack_argument_total_size, false, false);
+				stack_storage = Storage(size, false, Symbol(), "$sp", true, -stack_allocated, false, false);
 			} else {
-				stack_storage = Storage(4, false, Symbol(), "$sp", false, -stack_argument_total_size, false, false);
+				stack_storage = Storage(4, false, Symbol(), "$sp", false, -stack_allocated, false, false);
 			}
 			local_var_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
 			local_combined_scope.insert({local_variable_identifier, IdentifierScope::IdentifierBinding(IdentifierScope::IdentifierBinding::Var(local_variable_type, stack_storage))});
