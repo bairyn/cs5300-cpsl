@@ -633,6 +633,15 @@ std::vector<std::string> cli::readlines(const ParsedArgs &parsed_args, const std
 		try {
 			// Iterate over the lines of input_path.
 			std::ifstream input(input_path, static_cast<std::ios_base::openmode>(std::ios_base::in));
+
+			// Make sure the input file handle is in a good state.
+			// c.f. https://stackoverflow.com/a/12774387
+			if (!input.good()) {
+				std::ostringstream sstr;
+				sstr << "cli::readlines: an IO error occurred while opening `" << input_path << "' for reading.";
+				throw cli::RunError(sstr.str());
+			}
+
 			// Ensure exceptions are thrown on failure.
 			//input.exceptions(input.exceptions() | static_cast<std::ios_base::iostate>(std::ios_base::badbit | std::ios_base::failbit));
 			input.exceptions(input.exceptions() | static_cast<std::ios_base::iostate>(std::ios_base::badbit));
@@ -682,6 +691,15 @@ void cli::writelines(const ParsedArgs &parsed_args, const std::string &output_pa
 		try {
 			// Open the output file.
 			std::ofstream output(output_path, static_cast<std::ios_base::openmode>(std::ios_base::out | std::ios_base::trunc));
+
+			// Make sure the output file handle is in a good state.
+			// c.f. https://stackoverflow.com/a/12774387
+			if (!output.good()) {
+				std::ostringstream sstr;
+				sstr << "cli::readlines: an IO error occurred while opening `" << output_path << "' for writing.";
+				throw cli::RunError(sstr.str());
+			}
+
 			// Ensure exceptions are thrown on failure.
 			//output.exceptions(output.exceptions() | static_cast<std::ios_base::iostate>(std::ios_base::badbit | std::ios_base::failbit));
 			output.exceptions(output.exceptions() | static_cast<std::ios_base::iostate>(std::ios_base::badbit));
