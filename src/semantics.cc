@@ -4422,32 +4422,48 @@ Semantics::Type Semantics::analyze_type(const std::string &identifier, const ::T
 				throw SemanticsError(sstr.str());
 			}
 
-			// Make sure they're integers.
-			if (!min_index_value.is_integer()) {
+			// Make sure they're integer, chars, or booleans.
+			if (!min_index_value.is_integer() && !min_index_value.is_char() && !min_index_value.is_boolean()) {
 				std::ostringstream sstr;
 				sstr
 					<< "Semantics::analyze_type: error (line "
 					<< grammar.lexemes.at(min_index_value.lexeme_begin).get_line() << " col " << grammar.lexemes.at(min_index_value.lexeme_begin).get_column()
-					<< "): the minimum index of an array is not an integer value."
+					<< "): the minimum index of an array is not an integer, char, or boolean value."
 					;
 				throw SemanticsError(sstr.str());
 			}
-			if (!max_index_value.is_integer()) {
+			if (!max_index_value.is_integer() && !min_index_value.is_char() && !min_index_value.is_boolean()) {
 				std::ostringstream sstr;
 				sstr
 					<< "Semantics::analyze_type: error (line "
 					<< grammar.lexemes.at(max_index_value.lexeme_begin).get_line() << " col " << grammar.lexemes.at(max_index_value.lexeme_begin).get_column()
-					<< "): the maximum index of an array is not an integer value."
+					<< "): the maximum index of an array is not an integer, char, or boolean value."
 					;
 				throw SemanticsError(sstr.str());
 			}
 
 			// Get the minimum and maximum indices.
-			int32_t min_index = min_index_value.get_integer();
-			int32_t max_index = max_index_value.get_integer();
+			int32_t min_index;
+			int32_t max_index;
+
+			if (min_index_value.is_integer()) {
+				min_index = min_index_value.get_integer();
+			} else if (min_index_value.is_char()) {
+				min_index = static_cast<int32_t>(min_index_value.get_char());
+			} else {
+				min_index = static_cast<int32_t>(min_index_value.get_boolean());
+			}
+
+			if (max_index_value.is_integer()) {
+				max_index = max_index_value.get_integer();
+			} else if (max_index_value.is_char()) {
+				max_index = static_cast<int32_t>(max_index_value.get_char());
+			} else {
+				max_index = static_cast<int32_t>(max_index_value.get_boolean());
+			}
 
 			// Make sure the minimum index is not > the maximum index.
-			if (!min_index_value.is_integer()) {
+			if (min_index > max_index) {
 				std::ostringstream sstr;
 				sstr
 					<< "Semantics::analyze_type: error (line "
@@ -11324,10 +11340,10 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 							throw SemanticsError(sstr.str());
 						}
 
-						// Get the index expression, which should be an integer.
+						// Get the index expression, which should be an integer, char, or boolean.
 						const Expression value = analyze_expression(expression0, constant_scope, type_scope, routine_scope, var_scope, combined_scope, storage_scope, routine_block_state);
 						const Type &value_resolved_type = storage_scope.type(value.output_type).resolve_type(storage_scope);
-						if (!value_resolved_type.is_primitive() || !value_resolved_type.get_primitive().is_integer()) {
+						if (!value_resolved_type.is_primitive() || !(value_resolved_type.get_primitive().is_integer() || value_resolved_type.get_primitive().is_char() || value_resolved_type.get_primitive().is_boolean())) {
 							std::ostringstream sstr;
 							sstr
 								<< "Semantics::analyze_lvalue_source: error (line "
@@ -11343,8 +11359,14 @@ Semantics::LvalueSourceAnalysis Semantics::analyze_lvalue_source(const Lvalue &l
 
 						// | The last output type is now the base type.
 						last_output_type = array_type.base_type;
-						// | Get the integer's index.
-						const Index value_index                 = lvalue_source_analysis.merge_expression(value);
+						// | Get the integer's index; make sure it's a word, as integers are.
+						assert(type_scope.resolve_type("integer").is_primitive() && type_scope.resolve_type("integer").get_primitive().is_word());
+						const Index presized_value_index                 = lvalue_source_analysis.merge_expression(value);
+						const Index value_index
+							= value_resolved_type.get_primitive().is_word()
+							? presized_value_index
+							: lvalue_source_analysis.instructions.add_instruction({I::LoadFrom(B(), true, value_resolved_type.get_primitive().is_word(), 0)}, {presized_value_index});
+							;
 						Index shifted_value_index;
 						if (min_index == 0) {
 							shifted_value_index = value_index;
