@@ -14570,7 +14570,7 @@ Semantics::Block Semantics::analyze_statements(const IdentifierScope::Identifier
 							// Unpack the list.
 							const LvaluePrefixedList::Cons &last_lvalue_prefixed_list_cons = grammar.lvalue_prefixed_list_cons_storage.at(last_list->data);
 							const LvaluePrefixedList       &last_lvalue_prefixed_list      = grammar.lvalue_prefixed_list_storage.at(last_lvalue_prefixed_list_cons.lvalue_prefixed_list);
-							const LexemeKeyword            &last_comma_operator0           = grammar.lexemes.at(last_lvalue_prefixed_list_cons.comma_operator0).get_keyword(); (void) last_comma_operator0;
+							const LexemeOperator           &last_comma_operator0           = grammar.lexemes.at(last_lvalue_prefixed_list_cons.comma_operator0).get_operator(); (void) last_comma_operator0;
 							const Lvalue                   &last_lvalue                    = grammar.lvalue_storage.at(last_lvalue_prefixed_list_cons.lvalue);
 
 							// Add the lvalue.
